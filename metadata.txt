@@ -1,0 +1,21 @@
+[general]
+name=TopoTrail
+qgisMinimumVersion=3.22
+description=Ferramenta de viabilidade topografica para planejamento preliminar de trilhas, rotas sugeridas e corredores de acesso com DEM/MDE em QGIS.
+version=0.4.0-beta
+author=MACIEL, L. S.
+email=LuanCortesM@users.noreply.github.com
+homepage=https://github.com/LuanCortesM/TopoTrail#readme
+tracker=https://github.com/LuanCortesM/TopoTrail/issues
+repository=https://github.com/LuanCortesM/TopoTrail
+category=Raster
+tags=trilhas,acessibilidade,unidades de conservacao,analise multicriterio,declividade,curvatura,MDE,SIG,QGIS
+icon=logo.png
+about=TopoTrail e um plugin para QGIS desenvolvido para apoiar o planejamento preliminar de novas trilhas, acessos e deslocamentos de campo em areas naturais e unidades de conservacao. A ferramenta modela viabilidade topografica com Modelo Digital de Elevacao, declividade, curvaturas, risco topografico relativo, adequabilidade, zonas potenciais, rotas sugeridas e corredores. O plugin nao reconhece automaticamente estradas, pastos, trilhas existentes, uso do solo, hidrografia ou restricoes legais; essas camadas sao complementares e podem ser cruzadas posteriormente no QGIS. Dependencias Python externas esperadas no ambiente Python do QGIS/OSGeo4W: NumPy, SciPy, Pandas, GeoPandas, Shapely e GDAL. Desenvolvido por Luan da Silva Cortes Maciel (MACIEL, L. S.) como produto de pesquisa de mestrado em Biodiversidade em Unidades de Conservacao, vinculada a Escola Nacional de Botanica Tropical e ao Jardim Botanico do Rio de Janeiro, sob orientacao de Leandro Freitas. Projeto associado: Herpeto Mantiqueira.
+license=MIT
+experimental=True
+deprecated=False
+
+[changelog]
+version=0.4.0-beta
+changes=Versao beta com CRS metrico de trabalho, validacao de rasters, diagnosticos, cenarios de rota e modo de producao com ferramentas de desenvolvimento ocultas por padrao.

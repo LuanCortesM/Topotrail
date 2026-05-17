@@ -1,0 +1,32 @@
+# Python/QGIS caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local development and validation data
+outputs/
+diagnostics/
+Cartas/
+analise_dados/
+backups/
+tests/
+tools/qgis_bridge/bridge_logs/
+tools/qgis_bridge/command_inbox/
+tools/qgis_bridge/command_outbox/
+tools/qgis_bridge/processed/
+
+# Generated reports and temporary validation artifacts
+RELATORIO*.md
+geographic_methodological_matrix_real.*
+parameter_importance.*
+reference_layer_*.csv
+*.log
+*.jsonl
+
+# Release build artifacts
+dist/
+
+# Local machine notes
+python_qgis_path.txt
+oque eu fiz topotrail.json
+
