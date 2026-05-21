@@ -1,0 +1,90 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage/
+htmlcov/
+
+# Local environments and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+id_rsa
+id_dsa
+*.kdbx
+*.age
+*.asc
+
+# Dependency and build folders
+node_modules/
+vendor/
+dist/
+build/
+.next/
+*.egg-info/
+
+# Logs and diagnostics
+*.log
+logs/
+test_runs/
+*_diagnostico_topotrail.log
+
+# Local backups and restored working copies
+backups/
+github_publish/
+_restore*/
+*.bak
+*.backup
+*.tmp
+*.temp
+*.zip
+
+# Generated GIS data and analysis outputs
+*.tif
+*.tiff
+*.gpkg
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.qix
+*.geojson
+*.kml
+*.kmz
+*.gpx
+*.vrt
+*.aux.xml
+*.ovr
+
+# Local databases and dumps
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.sql
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+~$*
+.idea/
+.vscode/
+
+# QGIS local project/session files
+*.qgz
+*.qgs
+*.qgd

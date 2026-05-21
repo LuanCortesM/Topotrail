@@ -1,0 +1,21 @@
+[general]
+name=TopoTrail
+qgisMinimumVersion=3.22
+description=Topographic suitability tool for preliminary trail, access-route and field-corridor planning with DEM-based analysis in QGIS.
+version=0.5.0
+author=MACIEL, L. S.
+email=LuanCortesM@users.noreply.github.com
+homepage=https://github.com/LuanCortesM/Topotrail#readme
+tracker=https://github.com/LuanCortesM/Topotrail/issues
+repository=https://github.com/LuanCortesM/Topotrail
+category=Raster
+tags=trails,accessibility,protected areas,multicriteria analysis,slope,curvature,DEM,GIS,QGIS,least cost path
+icon=logo.png
+about=TopoTrail is a QGIS plugin designed to support preliminary planning of new trails, access routes and field corridors in natural areas and protected areas. The tool models topographic suitability using a Digital Elevation Model, slope, curvature, relative topographic risk, suitability classes, potential access zones, suggested least-cost routes and access corridors. The plugin does not automatically detect roads, pastures, existing trails, land cover, hydrography or legal restrictions; these layers should be used as complementary evidence in QGIS. Expected external Python dependencies in the QGIS/OSGeo4W Python environment: NumPy, SciPy, Pandas, GeoPandas, Shapely and GDAL. Developed by Luan da Silva Cortes Maciel (MACIEL, L. S.) as a product of his master's research in Biodiversity in Protected Areas, associated with the Escola Nacional de Botanica Tropical and Jardim Botanico do Rio de Janeiro, under the supervision of Leandro Freitas. Associated project: Herpeto Mantiqueira.
+license=MIT
+experimental=True
+deprecated=False
+
+[changelog]
+version=0.5.0
+changes=Version 0.5.0 updates the public documentation to English, keeps Portuguese reference copies, adds a PT-BR/ENG interface switch, removes legacy incomplete helper code, and preserves the validated topographic suitability workflow.
