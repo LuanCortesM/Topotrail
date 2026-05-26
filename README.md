@@ -56,6 +56,8 @@ Developer: Luan da Silva Cortes Maciel (MACIEL, L. S.)
 
 Advisor: Leandro Freitas
 
+Citation: MACIEL, L. S. C. (2026). TopoTrail: a QGIS plugin for preliminary trail planning using digital elevation models (0.5.0). Zenodo. https://doi.org/10.5281/zenodo.20320495
+
 Context: developed as a product of the author's master's research in Biodiversity in Protected Areas, associated with the Escola Nacional de Botanica Tropical and Jardim Botanico do Rio de Janeiro.
 
 Associated project: Herpeto Mantiqueira.
