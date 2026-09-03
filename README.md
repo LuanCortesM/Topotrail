@@ -184,12 +184,14 @@ so it can be scripted or placed in a model.
 
 **Inputs**
 
-- Digital Elevation Model (DEM)
-- Slope raster
-- Horizontal curvature raster
-- Vertical curvature raster
-- Optional origin and destination, as point layers, as coordinates in the
-  project CRS, or picked from the map canvas
+- A Digital Elevation Model. **That is the only requirement.**
+- Optionally, your own slope and curvature rasters, if you would rather control
+  how they are derived. Say so with the slope unit parameter, and give them the
+  DEM's grid.
+- Optionally, a vector layer to keep away from — hydrography, roads, tenure
+  boundaries, anything.
+- Optionally, an origin and a destination, as point layers, as coordinates in
+  the project CRS, or picked from the map canvas.
 
 **Outputs**
 
@@ -199,6 +201,60 @@ so it can be scripted or placed in a model.
 - Access corridor around that route
 - Relative topographic risk raster
 - Technical diagnostic log
+
+## Working outside the area it was built for
+
+TopoTrail was written for the Serra da Mantiqueira, and until 0.6.0 that
+showed. Running it in QGIS against DEMs georeferenced in the Alps, Nepal, the
+Andes, Lofoten, Alaska, the Netherlands, the Dead Sea, New Zealand and Colorado
+turned up three things that broke silently, all of which are now handled:
+
+**Slope unit.** `gdaldem slope` and the QGIS Slope algorithm return *degrees*;
+TopoTrail works in *percent*. A degrees raster used to be accepted without
+comment and produce a plausible wrong answer — on a test area the hard slope
+constraint fell from 4.39% of pixels to 0.01%. The unit cannot be inferred from
+the raster, because below 45 degrees and percent occupy the same numeric range,
+so it is now declared and converted, and a raster exceeding 90 declared as
+degrees is refused.
+
+**DEM vertical unit.** A DEM in feet — still common in the United States — was
+read as metres, so a Colorado scene at 8000–13500 ft was entirely discarded and
+the run failed with a message that never mentioned elevation. Metres and feet
+are now selectable.
+
+**Elevation range.** The 0–2600 m defaults are Mantiqueira values. Elsewhere
+they quietly delete the study area: 52% of an Alpine scene, 85% of an Andean
+one, 87% of a Himalayan one. The plugin now reports how much it discarded, in
+which direction, and the DEM's actual range.
+
+Three things turned out to be portable already, and are worth knowing about:
+the automatic UTM zone selection is correct worldwide; the alignment step
+handles derived rasters at a different resolution, in a different CRS, or
+clipped smaller than the DEM; and the suitability model is **immune to the
+scale and sign convention of the curvature rasters** — multiplying both by 1000,
+or flipping their sign, gives an identical result, because each is normalised
+by a percentile of its own distribution and scored by distance from zero. Any
+curvature provider will do.
+
+## Watercourses
+
+A route that is excellent on slope and curvature can still be unusable because
+it fords a stream every kilometre. On the test area, the route TopoTrail
+suggested crossed **24 watercourses over 35 km** — one every 1.5 km — and
+nothing in the model knew they existed.
+
+Asking for a hydrography layer would have solved this only for people who have
+one. Official hydrography differs by country in scale, licence and availability.
+So TopoTrail extracts the drainage network from the DEM you already supplied:
+depressions are filled with Priority-Flood, flow is routed with D8, and cells
+whose upslope contributing area exceeds a threshold you choose are treated as
+channels. Report that threshold; the resulting drainage density is logged
+alongside the working cell size so it can be checked against the 1–3 km/km²
+typical of humid mountainous terrain.
+
+Any vector layer can be used the same way, with a buffer — for a legally
+protected riparian strip, an exclusion around a road, or a tenure boundary.
+Restrictions can either exclude cells outright or simply make them expensive.
 
 ## How the model works
 
@@ -265,6 +321,18 @@ critical review of those choices is in
   derivatives already aligned to the DEM.
 - The route model is **isotropic** and does not distinguish directional uphill
   and downhill cost.
+- The default cost model, `1 / (S + 0.05)`, looks like it spans 20:1 but only
+  does so if suitability spans [0, 1]. In a real scene it does not: on the test
+  area the 5th and 95th percentiles were 0.55 and 0.87, giving an effective
+  contrast near 5:1. The resulting route had a sinuosity of 1.04 — essentially
+  the straight line between origin and destination. The exponential cost model,
+  `exp(k(1 - S))`, keeps the contrast regardless, and `k` becomes an explicit
+  control over how far it is worth deviating to find better ground; at k=6 the
+  same route reached sinuosity 1.19 and raised mean suitability along the route
+  from 0.810 to 0.848, for 14% more length.
+- The drainage network is computed on a grid capped for responsiveness, so a
+  channel is never narrower than that working cell. A requested setback smaller
+  than the working cell has no practical effect; the plugin says so.
 - The route search is confined to a rectangle around origin and destination,
   expanded by the search margin. A globally cheaper path that leaves that
   rectangle will not be found.

@@ -20,7 +20,10 @@ import numpy as np  # noqa: E402
 from osgeo import gdal, ogr, osr  # noqa: E402
 from scipy import ndimage  # noqa: E402
 from shapely.geometry import LineString  # noqa: E402
+from shapely.ops import unary_union  # noqa: E402
 from qgis.PyQt.QtCore import QCoreApplication  # noqa: E402
+from .hydrology import stream_network  # noqa: E402
+from .terrain import derive_terrain  # noqa: E402
 from qgis.core import (  # noqa: E402
     QgsProcessingAlgorithm,
     QgsProcessingParameterRasterLayer,
@@ -29,6 +32,7 @@ from qgis.core import (  # noqa: E402
     QgsProcessingParameterFileDestination,
     QgsProcessingParameterEnum,
     QgsProcessingParameterCrs,
+    QgsProcessingParameterVectorLayer,
     QgsProcessingParameterBoolean,
     QgsProcessingOutputVectorLayer,
     QgsProcessingOutputRasterLayer,
@@ -40,7 +44,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.5.1"
+PLUGIN_VERSION = "0.6.0"
 STRICT_CRS_MODE = True
 
 # Empirical modelling constants. They preserve the current published behavior,
@@ -60,6 +64,23 @@ MIN_ALTITUDE_BAND_SIZE_M = 50.0
 # TopoTrail trabalha sempre em porcentagem.
 SLOPE_UNIT_PERCENT = 0
 SLOPE_UNIT_DEGREES = 1
+
+# Unidade vertical do MDE. Metros e o padrao; pes ainda e corrente em dados
+# publicos dos Estados Unidos, e um MDE em pes lido como metros faz o plugin
+# descartar toda a area e falhar sem mencionar altitude.
+VERTICAL_UNIT_METRES = 0
+VERTICAL_UNIT_FEET = 1
+FEET_TO_METRES = 0.3048
+
+# Como a adequabilidade vira custo de deslocamento.
+ROUTE_COST_INVERSE = 0      # 1/(S + eps), comportamento das versoes 0.5.x
+ROUTE_COST_EXPONENTIAL = 1  # exp(k(1 - S)), contraste controlado pelo usuario
+DEFAULT_ROUTE_CONTRAST = 6.0
+
+# O que fazer com celulas restritas (cursos d'agua, camada vetorial do usuario).
+CONSTRAINT_AVOID = 0        # exclusao dura
+CONSTRAINT_PENALISE = 1     # encarece sem proibir
+CONSTRAINT_PENALTY_FACTOR = 8.0
 
 
 def diagnostic_log_path(output_path):
@@ -556,6 +577,120 @@ def slope_to_percent(slope_data, slope_unit, feedback=None, log_path=None):
         maximo_entrada=maximum, p99_entrada=p99,
     )
     return slope_data
+
+
+def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
+                               feedback=None, log_path=None):
+    """Converte uma camada vetorial de restricao numa mascara booleana.
+
+    A camada e reprojetada para o CRS metrico de trabalho, dilatada pelo buffer
+    pedido e queimada na grade do MDE. Aceita ponto, linha ou poligono: um
+    buffer transforma qualquer um deles em area, que e o que a restricao
+    significa na pratica -- "fique a tantos metros disto".
+
+    O buffer e a razao de a reprojecao vir antes: em CRS geografico um buffer de
+    30 unidades seriam 30 graus.
+    """
+    gdf = gpd.read_file(layer_source)
+    if gdf.empty:
+        if feedback:
+            feedback.pushWarning("A camada de restricao esta vazia; foi ignorada.")
+        return None
+
+    if gdf.crs is None:
+        raise Exception(
+            "A camada de restricao nao possui CRS definido. Defina o CRS na origem "
+            "do dado antes de usa-la como restricao."
+        )
+    try:
+        gdf = gdf.to_crs(proj)
+    except Exception as exc:
+        raise Exception(
+            f"Nao foi possivel reprojetar a camada de restricao para o CRS de trabalho: {exc}"
+        )
+
+    geometries = [g for g in gdf.geometry.values if g is not None and not g.is_empty]
+    if not geometries:
+        if feedback:
+            feedback.pushWarning("A camada de restricao nao possui geometrias validas.")
+        return None
+
+    merged = unary_union(geometries)
+    if buffer_m > 0:
+        merged = merged.buffer(float(buffer_m))
+
+    rows, cols = shape
+    driver = ogr.GetDriverByName("Memory")
+    datasource = driver.CreateDataSource("restricoes")
+    srs = osr.SpatialReference()
+    if proj:
+        srs.ImportFromWkt(proj)
+    layer = datasource.CreateLayer("restricoes", srs=srs, geom_type=ogr.wkbMultiPolygon)
+    feature = ogr.Feature(layer.GetLayerDefn())
+    feature.SetGeometry(ogr.CreateGeometryFromWkb(merged.wkb))
+    layer.CreateFeature(feature)
+    feature = None
+
+    target = gdal.GetDriverByName("MEM").Create("", cols, rows, 1, gdal.GDT_Byte)
+    target.SetGeoTransform(transform)
+    if proj:
+        target.SetProjection(proj)
+    gdal.RasterizeLayer(target, [1], layer, burn_values=[1])
+    mask = target.GetRasterBand(1).ReadAsArray().astype(bool)
+    target = None
+    datasource = None
+
+    append_diagnostic_log(
+        log_path, "camada_restricao",
+        origem=str(layer_source), feicoes=int(len(gdf)),
+        buffer_m=float(buffer_m), celulas_restritas=int(mask.sum()),
+        proporcao=float(mask.sum() / mask.size),
+    )
+    if feedback:
+        feedback.pushInfo(
+            "Camada de restricao: {} feicoes, buffer de {:.0f} m, "
+            "{:,} celulas atingidas ({:.2f}% da grade).".format(
+                len(gdf), buffer_m, int(mask.sum()), 100.0 * mask.sum() / mask.size)
+        )
+    return mask
+
+
+def build_route_cost(score_array, cost_model, contrast, penalty_mask=None, feedback=None):
+    """Converte adequabilidade em custo de deslocamento.
+
+    O modelo inverso, `1/(S + eps)`, e o das versoes 0.5.x. Ele parece dar um
+    contraste de 20:1, mas isso supoe S percorrendo todo o intervalo [0, 1]. Em
+    cena real S fica concentrado no miolo -- numa area da Serra da Mantiqueira o
+    P05 foi 0,55 e o P95 0,87 -- e o contraste efetivo cai para cerca de 5:1.
+    Plano demais para desviar a rota: a rota resultante teve sinuosidade 1,04,
+    ou seja, praticamente a linha reta entre origem e destino.
+
+    O modelo exponencial, `exp(k(1 - S))`, mantem o contraste independentemente
+    de quao comprimida esteja a distribuicao de S, e `k` passa a ser o controle
+    explicito de quanto vale a pena desviar para achar terreno melhor. Na mesma
+    cena, k=6 elevou a sinuosidade para 1,19 e a adequabilidade media ao longo
+    da rota de 0,810 para 0,848, ao custo de 14% de comprimento.
+    """
+    finite = np.isfinite(score_array)
+    if cost_model == ROUTE_COST_EXPONENTIAL:
+        cost = np.where(finite, np.exp(float(contrast) * (1.0 - score_array)), np.inf)
+    else:
+        cost = np.where(finite, 1.0 / (score_array + ROUTE_COST_EPSILON), np.inf)
+
+    if penalty_mask is not None:
+        cost = np.where(penalty_mask & finite, cost * CONSTRAINT_PENALTY_FACTOR, cost)
+
+    if feedback:
+        usable = cost[np.isfinite(cost)]
+        if usable.size:
+            feedback.pushInfo(
+                "Superficie de custo ({}): min={:.3f}, max={:.3f}, contraste={:.1f}:1".format(
+                    "exponencial k=%.1f" % contrast if cost_model == ROUTE_COST_EXPONENTIAL
+                    else "inverso",
+                    float(usable.min()), float(usable.max()),
+                    float(usable.max() / max(usable.min(), 1e-9)))
+            )
+    return cost
 
 
 def normalize_linear(array, min_val, max_val, feedback=None, name="Critério"):
@@ -1256,6 +1391,9 @@ def save_access_route(
     elevation_array=None,
     output_crs=None,
     log_path=None,
+    cost_model=ROUTE_COST_INVERSE,
+    contrast=DEFAULT_ROUTE_CONTRAST,
+    penalty_mask=None,
 ):
     """Generate least-cost route and metric corridor files.
 
@@ -1296,16 +1434,21 @@ def save_access_route(
             "A area de busca da rota ficou grande demais. Reduza a margem de busca ou use pontos mais proximos "
             "para evitar travamento durante o calculo."
         )
-    cost_crop = np.where(
-        np.isfinite(score_crop),
-        1.0 / (score_crop + ROUTE_COST_EPSILON),
-        np.inf,
-    ).astype(np.float32)
+    penalty_crop = None
+    if penalty_mask is not None:
+        penalty_crop = penalty_mask[row_min:row_max, col_min:col_max]
+    cost_crop = build_route_cost(
+        score_crop, cost_model, contrast, penalty_crop, feedback).astype(np.float32)
     finite_costs = cost_crop[np.isfinite(cost_crop)]
     append_diagnostic_log(
         log_path,
         "superficie_custo_rota",
-        metodo=f"cost = 1 / (adequabilidade + {ROUTE_COST_EPSILON})",
+        metodo=(f"cost = exp({contrast:.1f} * (1 - adequabilidade))"
+                if cost_model == ROUTE_COST_EXPONENTIAL
+                else f"cost = 1 / (adequabilidade + {ROUTE_COST_EPSILON})"),
+        contraste_dinamico=(float(np.nanmax(finite_costs) / max(float(np.nanmin(finite_costs)), 1e-9))
+                            if finite_costs.size else None),
+        restricoes_encarecidas=bool(penalty_crop is not None and penalty_crop.any()),
         recorte_shape=list(cost_crop.shape),
         custo_min=float(np.nanmin(finite_costs)) if finite_costs.size else None,
         custo_max=float(np.nanmax(finite_costs)) if finite_costs.size else None,
@@ -1446,7 +1589,16 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
     OUTPUT_CRS = "OUTPUT_CRS"
     ALT_MIN = "ALT_MIN"
     ALT_MAX = "ALT_MAX"
+    DERIVE_FROM_DEM = "DERIVE_FROM_DEM"
+    VERTICAL_UNIT = "VERTICAL_UNIT"
     SLOPE_UNIT = "SLOPE_UNIT"
+    STREAMS_FROM_DEM = "STREAMS_FROM_DEM"
+    STREAM_MIN_BASIN_KM2 = "STREAM_MIN_BASIN_KM2"
+    CONSTRAINT_LAYER = "CONSTRAINT_LAYER"
+    CONSTRAINT_BUFFER_M = "CONSTRAINT_BUFFER_M"
+    CONSTRAINT_MODE = "CONSTRAINT_MODE"
+    ROUTE_COST_MODEL = "ROUTE_COST_MODEL"
+    ROUTE_CONTRAST = "ROUTE_CONTRAST"
     SLOPE_MAX = "SLOPE_MAX"
     SLOPE_SCORE_MAX = "SLOPE_SCORE_MAX"
     WEIGHT_ALT = "WEIGHT_ALT"
@@ -1498,9 +1650,30 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
 
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterRasterLayer(self.INPUT_DEM, self.tr("Altitude / MDE")))
-        self.addParameter(QgsProcessingParameterRasterLayer(self.INPUT_SLOPE, self.tr("Declividade")))
-        self.addParameter(QgsProcessingParameterRasterLayer(self.INPUT_CURVH, self.tr("Curvatura horizontal")))
-        self.addParameter(QgsProcessingParameterRasterLayer(self.INPUT_CURVV, self.tr("Curvatura vertical")))
+        self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.DERIVE_FROM_DEM,
+                self.tr("Derivar declividade e curvaturas do proprio MDE"),
+                defaultValue=True,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.VERTICAL_UNIT,
+                self.tr("Unidade vertical do MDE"),
+                options=[self.tr("Metros"), self.tr("Pes")],
+                defaultValue=VERTICAL_UNIT_METRES,
+            )
+        )
+        # Opcionais desde a 0.6.0: so sao exigidos quando DERIVE_FROM_DEM e
+        # desmarcado. Fornece-los da ao usuario controle total sobre o metodo de
+        # derivacao, ao custo de ter de garantir unidade, convencao e grade.
+        self.addParameter(QgsProcessingParameterRasterLayer(
+            self.INPUT_SLOPE, self.tr("Declividade (opcional)"), optional=True))
+        self.addParameter(QgsProcessingParameterRasterLayer(
+            self.INPUT_CURVH, self.tr("Curvatura horizontal (opcional)"), optional=True))
+        self.addParameter(QgsProcessingParameterRasterLayer(
+            self.INPUT_CURVV, self.tr("Curvatura vertical (opcional)"), optional=True))
 
         self.addParameter(
             QgsProcessingParameterNumber(
@@ -1593,7 +1766,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterBoolean(
                 self.WALKABILITY_ZONES,
                 self.tr("Gerar zonas como area caminhavel continua"),
-                defaultValue=True,
+                defaultValue=False,
             )
         )
 
@@ -1648,6 +1821,65 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 QgsProcessingParameterNumber.Double,
                 defaultValue=5000.0,
                 minValue=100.0,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.STREAMS_FROM_DEM,
+                self.tr("Considerar cursos d'agua extraidos do MDE"),
+                defaultValue=False,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.STREAM_MIN_BASIN_KM2,
+                self.tr("Area de contribuicao minima para considerar canal (km2)"),
+                QgsProcessingParameterNumber.Double,
+                defaultValue=1.0,
+                minValue=0.01,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterVectorLayer(
+                self.CONSTRAINT_LAYER,
+                self.tr("Camada de restricao (hidrografia, estradas, limites...)"),
+                optional=True,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.CONSTRAINT_BUFFER_M,
+                self.tr("Distancia a manter das restricoes (m)"),
+                QgsProcessingParameterNumber.Double,
+                defaultValue=30.0,
+                minValue=0.0,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.CONSTRAINT_MODE,
+                self.tr("Tratamento das restricoes"),
+                options=[self.tr("Evitar (exclusao)"), self.tr("Encarecer (penalidade)")],
+                defaultValue=CONSTRAINT_AVOID,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.ROUTE_COST_MODEL,
+                self.tr("Modelo de custo da rota"),
+                options=[self.tr("Inverso da adequabilidade (0.5.x)"),
+                         self.tr("Exponencial - segue mais o relevo")],
+                defaultValue=ROUTE_COST_INVERSE,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.ROUTE_CONTRAST,
+                self.tr("Contraste do custo (modelo exponencial)"),
+                QgsProcessingParameterNumber.Double,
+                defaultValue=DEFAULT_ROUTE_CONTRAST,
+                minValue=0.5,
+                maxValue=20.0,
             )
         )
         self.addParameter(
@@ -1714,6 +1946,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         curvh_layer = self.parameterAsRasterLayer(parameters, self.INPUT_CURVH, context)
         curvv_layer = self.parameterAsRasterLayer(parameters, self.INPUT_CURVV, context)
 
+        # Desde a 0.6.0 apenas o MDE e obrigatorio: declividade e curvaturas sao
+        # derivadas dele quando nao forem fornecidas. A checagem de ausencia
+        # ficou em _run_algorithm, junto da decisao de derivar ou nao, porque
+        # depende do parametro DERIVE_FROM_DEM.
         for label, layer in [
             ("Altitude / MDE", dem_layer),
             ("Declividade", slope_layer),
@@ -1721,7 +1957,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             ("Curvatura vertical", curvv_layer),
         ]:
             if layer is None:
-                raise Exception(f"Camada obrigatória ausente: {label}")
+                if label == "Altitude / MDE":
+                    raise Exception(f"Camada obrigatória ausente: {label}")
+                continue
             if not layer.crs().isValid():
                 raise Exception(f"O raster {label} não possui CRS definido.")
             if not os.path.exists(layer.source()):
@@ -1729,6 +1967,15 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
 
         min_altitude = self.parameterAsDouble(parameters, self.ALT_MIN, context)
         max_altitude = self.parameterAsDouble(parameters, self.ALT_MAX, context)
+        derive_from_dem = self.parameterAsBool(parameters, self.DERIVE_FROM_DEM, context)
+        vertical_unit = self.parameterAsEnum(parameters, self.VERTICAL_UNIT, context)
+        streams_from_dem = self.parameterAsBool(parameters, self.STREAMS_FROM_DEM, context)
+        stream_min_basin_km2 = self.parameterAsDouble(parameters, self.STREAM_MIN_BASIN_KM2, context)
+        constraint_layer = self.parameterAsVectorLayer(parameters, self.CONSTRAINT_LAYER, context)
+        constraint_buffer_m = self.parameterAsDouble(parameters, self.CONSTRAINT_BUFFER_M, context)
+        constraint_mode = self.parameterAsEnum(parameters, self.CONSTRAINT_MODE, context)
+        route_cost_model = self.parameterAsEnum(parameters, self.ROUTE_COST_MODEL, context)
+        route_contrast = self.parameterAsDouble(parameters, self.ROUTE_CONTRAST, context)
         slope_unit = self.parameterAsEnum(parameters, self.SLOPE_UNIT, context)
         max_slope = self.parameterAsDouble(parameters, self.SLOPE_MAX, context)
         slope_score_max = self.parameterAsDouble(parameters, self.SLOPE_SCORE_MAX, context)
@@ -1872,10 +2119,29 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         )
         dem_path = dem_crs_info["dem_path"]
         prepared_rasters = {"dem": dem_path}
+        derivative_layers = [
+            ("Declividade", slope_layer, "slope"),
+            ("Curvatura horizontal", curvh_layer, "curvh"),
+            ("Curvatura vertical", curvv_layer, "curvv"),
+        ]
+        missing = [label for label, layer, _ in derivative_layers if layer is None]
+        if not derive_from_dem and missing:
+            raise Exception(
+                "Sem derivar do MDE, as camadas a seguir sao obrigatorias: "
+                + ", ".join(missing)
+                + ". Marque 'Derivar declividade e curvaturas do proprio MDE' ou forneca os rasters."
+            )
+        if derive_from_dem and not missing and feedback:
+            feedback.pushInfo(
+                "Rasters de declividade e curvatura foram fornecidos e serao usados; "
+                "a derivacao a partir do MDE foi ignorada."
+            )
+        derive_from_dem = derive_from_dem and bool(missing)
+
         for label, source_path, key in [
-            ("Declividade", slope_layer.source(), "slope"),
-            ("Curvatura horizontal", curvh_layer.source(), "curvh"),
-            ("Curvatura vertical", curvv_layer.source(), "curvv"),
+            (label, layer.source(), key)
+            for label, layer, key in derivative_layers
+            if layer is not None
         ]:
             compatibility = validate_raster_grid_compatibility(dem_path, source_path)
             append_diagnostic_log(
@@ -1899,9 +2165,31 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 )
 
         dem_data, transform, proj = read_raster(prepared_rasters["dem"], feedback)
-        slope_data, slope_transform, slope_proj = read_raster(prepared_rasters["slope"], feedback)
-        curvh_data, curvh_transform, curvh_proj = read_raster(prepared_rasters["curvh"], feedback)
-        curvv_data, curvv_transform, curvv_proj = read_raster(prepared_rasters["curvv"], feedback)
+
+        if vertical_unit == VERTICAL_UNIT_FEET:
+            dem_data = (dem_data * FEET_TO_METRES).astype(np.float32)
+            if feedback:
+                finite = dem_data[np.isfinite(dem_data)]
+                feedback.pushInfo(
+                    "MDE convertido de pes para metros: agora cobre de {:.0f} a {:.0f} m.".format(
+                        float(finite.min()), float(finite.max())) if finite.size else
+                    "MDE convertido de pes para metros."
+                )
+            append_diagnostic_log(debug_log_path, "unidade_vertical",
+                                  unidade_declarada="pes", convertido_para_metros=True)
+
+        if derive_from_dem:
+            slope_data, curvh_data, curvv_data = derive_terrain(dem_data, transform, feedback)
+            slope_unit = SLOPE_UNIT_PERCENT      # a derivacao ja devolve porcentagem
+            slope_transform = curvh_transform = curvv_transform = transform
+            slope_proj = curvh_proj = curvv_proj = proj
+            append_diagnostic_log(debug_log_path, "derivadas_calculadas_do_mde",
+                                  metodo="gradiente central; curvatura Zevenbergen-Thorne",
+                                  pixel_x=abs(float(transform[1])), pixel_y=abs(float(transform[5])))
+        else:
+            slope_data, slope_transform, slope_proj = read_raster(prepared_rasters["slope"], feedback)
+            curvh_data, curvh_transform, curvh_proj = read_raster(prepared_rasters["curvh"], feedback)
+            curvv_data, curvv_transform, curvv_proj = read_raster(prepared_rasters["curvv"], feedback)
         append_diagnostic_log(
             debug_log_path,
             "rasters_lidos",
@@ -1915,24 +2203,25 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             curvatura_vertical=array_diagnostics(curvv_data),
         )
 
-        validate_raster_alignment(
-            dem_data.shape,
-            transform,
-            [
-                ("Declividade", slope_data, slope_transform),
-                ("Curvatura horizontal", curvh_data, curvh_transform),
-                ("Curvatura vertical", curvv_data, curvv_transform),
-            ],
-            feedback,
-        )
+        if not derive_from_dem:
+            validate_raster_alignment(
+                dem_data.shape,
+                transform,
+                [
+                    ("Declividade", slope_data, slope_transform),
+                    ("Curvatura horizontal", curvh_data, curvh_transform),
+                    ("Curvatura vertical", curvv_data, curvv_transform),
+                ],
+                feedback,
+            )
 
-        for label, raster_proj in [
-            ("Declividade", slope_proj),
-            ("Curvatura horizontal", curvh_proj),
-            ("Curvatura vertical", curvv_proj),
-        ]:
-            if proj and raster_proj and proj != raster_proj:
-                raise Exception(f"{label} possui projeção diferente do MDE.")
+            for label, raster_proj in [
+                ("Declividade", slope_proj),
+                ("Curvatura horizontal", curvh_proj),
+                ("Curvatura vertical", curvv_proj),
+            ]:
+                if proj and raster_proj and proj != raster_proj:
+                    raise Exception(f"{label} possui projeção diferente do MDE.")
 
         slope_data = slope_to_percent(slope_data, slope_unit, feedback, debug_log_path)
 
@@ -1945,6 +2234,48 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         altitude_range_mask = (dem_data >= min_altitude) & (dem_data <= max_altitude)
         zone_constraint_mask = valid_mask & altitude_range_mask & (slope_data <= max_slope)
         route_constraint_mask = valid_mask & (slope_data <= max_slope)
+
+        # ---- restricoes: cursos d'agua e camada vetorial do usuario ----
+        restricted_mask = np.zeros(dem_data.shape, dtype=bool)
+        if streams_from_dem:
+            channels, stream_metrics = stream_network(
+                dem_data, transform, stream_min_basin_km2, feedback)
+            append_diagnostic_log(debug_log_path, "drenagem_extraida_do_mde", **stream_metrics)
+            if constraint_buffer_m > 0:
+                pixels = max(1, int(round(meters_to_pixels(transform, dem_data.shape, proj, constraint_buffer_m))))
+                channels = ndimage.binary_dilation(
+                    channels, structure=np.ones((3, 3), np.uint8), iterations=pixels)
+            restricted_mask |= channels
+
+        if constraint_layer is not None:
+            layer_mask = rasterize_constraint_layer(
+                constraint_layer.source(), constraint_buffer_m, transform,
+                dem_data.shape, proj, feedback, debug_log_path)
+            if layer_mask is not None:
+                restricted_mask |= layer_mask
+
+        penalty_mask = None
+        if restricted_mask.any():
+            affected = int((restricted_mask & valid_mask).sum())
+            if constraint_mode == CONSTRAINT_AVOID:
+                zone_constraint_mask = zone_constraint_mask & ~restricted_mask
+                route_constraint_mask = route_constraint_mask & ~restricted_mask
+                tratamento = "excluidas"
+            else:
+                penalty_mask = restricted_mask
+                tratamento = f"encarecidas em {CONSTRAINT_PENALTY_FACTOR:.0f}x"
+            if feedback:
+                feedback.pushInfo(
+                    "Restricoes: {:,} celulas atingidas ({:.2f}% da area valida), {}.".format(
+                        affected, 100.0 * affected / max(1, int(valid_mask.sum())), tratamento)
+                )
+            append_diagnostic_log(
+                debug_log_path, "restricoes_aplicadas",
+                celulas=affected, modo=("evitar" if constraint_mode == CONSTRAINT_AVOID else "encarecer"),
+                buffer_m=float(constraint_buffer_m),
+                fonte_drenagem=bool(streams_from_dem),
+                fonte_camada=bool(constraint_layer is not None),
+            )
 
         if feedback:
             valid_count = int(np.sum(valid_mask))
@@ -2051,6 +2382,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 dem_data,
                 output_crs,
                 debug_log_path,
+                cost_model=route_cost_model,
+                contrast=route_contrast,
+                penalty_mask=penalty_mask,
             )
             append_diagnostic_log(
                 debug_log_path,

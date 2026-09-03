@@ -2,8 +2,8 @@
 name=TopoTrail
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-description=Topographic suitability tool for preliminary trail, access-route and field-corridor planning with DEM-based analysis in QGIS.
-version=0.5.1
+description=Topographic suitability, access zones and least-cost routes for preliminary trail and field planning, from a single DEM.
+version=0.6.0
 author=MACIEL, L. S.
 email=LuanCortesM@users.noreply.github.com
 homepage=https://github.com/LuanCortesM/Topotrail#readme
@@ -17,6 +17,7 @@ license=MIT
 experimental=False
 deprecated=False
 hasProcessingProvider=True
-changelog=0.5.1 - QGIS 4 / Qt6 compatibility while preserving QGIS 3.22+ support; responsive interface for small screens and high-DPI scaling; theme-aware styling; experimental flag removed; interface text encoding corrected.
+changelog=0.6.0 - Only the DEM is required: slope and both curvatures are derived from it by default, which removes the unit, sign-convention, grid-alignment and coverage problems in one step. Slope unit and DEM vertical unit are now explicit parameters. Watercourses can be extracted from the DEM and used as a constraint, and any vector layer can be used the same way. Route cost model is selectable. Potential zones now use the multicriteria model by default. Temporary directories are cleaned up.
+    0.5.1 - QGIS 4 / Qt6 compatibility while preserving QGIS 3.22+ support; responsive interface for small screens and high-DPI scaling; theme-aware styling; experimental flag removed; interface text encoding corrected.
     0.5.0 - English documentation promoted to primary; Portuguese reference copies kept in docs/pt_BR; PT-BR | ENG language switch; legacy helper code removed; suitability, relative-risk, route and corridor workflow preserved.
     0.4.0 - Initial public beta.
