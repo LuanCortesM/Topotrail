@@ -1,4 +1,6 @@
-# TOPO_TRAIL_METHODOLOGICAL_AUDIT.md
+# Auditoria metodologica do TopoTrail
+
+> Copia de referencia em portugues de [`docs/METHODOLOGICAL_AUDIT.md`](../METHODOLOGICAL_AUDIT.md).
 
 ## 1. Resumo executivo
 

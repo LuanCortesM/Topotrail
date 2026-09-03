@@ -8,13 +8,23 @@ O TopoTrail nao tenta reconhecer automaticamente estradas, pastos, trilhas exist
 
 ## Status da versao
 
-Versao atual: `0.5.0`.
+Versao atual: `0.5.1`.
 
-Esta e uma versao experimental para testes de viabilidade topografica. Use os resultados como apoio tecnico preliminar e valide em campo antes de qualquer decisao operacional.
+Esta versao destina-se ao planejamento tecnico preliminar em QGIS 3.22+ e QGIS 4. Use os resultados como apoio tecnico preliminar e valide em campo antes de qualquer decisao operacional.
 
 A interface grafica inclui um seletor simples `PT-BR | ENG` para alternar entre portugues e ingles.
 
+> Esta e uma copia de referencia em portugues. O [README em ingles](../../README.md) e a documentacao primaria e esta mais completa.
+
 ## Changelog
+
+### 0.5.1
+
+- Compatibilidade com QGIS 4 / Qt6 preservando suporte ao QGIS 3.22+.
+- Interface responsiva para telas pequenas, alta densidade de pixels e temas claro/escuro.
+- Removida a marcacao de plugin experimental nos metadados.
+- Corrigida a codificacao de textos da interface que apareciam com caracteres acentuados corrompidos.
+- Repositorio: integracao continua, testes automatizados de consistencia, guia de contribuicao, modelos de issue e metadados de citacao.
 
 ### 0.5.0
 
