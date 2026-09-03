@@ -1,7 +1,11 @@
 import os
 
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction
+
+try:
+    from qgis.PyQt.QtGui import QAction
+except ImportError:
+    from qgis.PyQt.QtWidgets import QAction
 from qgis.core import QgsApplication, QgsProcessingProvider
 
 from .processing.algorithm import TopotrailAlgorithm

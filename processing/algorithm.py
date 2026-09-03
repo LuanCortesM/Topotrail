@@ -40,7 +40,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.5.0"
+PLUGIN_VERSION = "0.5.1"
 STRICT_CRS_MODE = True
 
 # Empirical modelling constants. They preserve the current published behavior,

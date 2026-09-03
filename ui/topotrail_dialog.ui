@@ -18,18 +18,6 @@
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
       <widget class="QLabel" name="logoLabel">
-       <property name="minimumSize">
-        <size>
-         <width>50</width>
-         <height>50</height>
-        </size>
-       </property>
-       <property name="maximumSize">
-        <size>
-         <width>50</width>
-         <height>50</height>
-        </size>
-       </property>
        <property name="pixmap">
         <pixmap>../logo.png</pixmap>
        </property>
@@ -43,9 +31,6 @@
        <property name="text">
         <string>Planejamento de Trilhas
 e Acessos</string>
-       </property>
-       <property name="styleSheet">
-        <string>font-family: &quot;Britannic Bold&quot;; font-size: 14pt; color: #16402a;</string>
        </property>
       </widget>
      </item>
@@ -84,13 +69,10 @@ e Acessos</string>
       </item>
       <item row="0" column="2">
        <widget class="QLabel" name="demCrsLabel">
-        <property name="text">
-         <string>CRS: -</string>
-        </property>
-        <property name="styleSheet">
-         <string>color: #888;</string>
-        </property>
-       </widget>
+       <property name="text">
+        <string>CRS: -</string>
+       </property>
+      </widget>
       </item>
       <item row="0" column="3">
        <widget class="QPushButton" name="demCrsButton">
@@ -126,13 +108,10 @@ e Acessos</string>
       </item>
       <item row="1" column="2">
        <widget class="QLabel" name="slopeCrsLabel">
-        <property name="text">
-         <string>CRS: -</string>
-        </property>
-        <property name="styleSheet">
-         <string>color: #888;</string>
-        </property>
-       </widget>
+       <property name="text">
+        <string>CRS: -</string>
+       </property>
+      </widget>
       </item>
       <item row="1" column="3">
        <widget class="QPushButton" name="slopeCrsButton">
@@ -168,13 +147,10 @@ e Acessos</string>
       </item>
       <item row="2" column="2">
        <widget class="QLabel" name="curvHCrsLabel">
-        <property name="text">
-         <string>CRS: -</string>
-        </property>
-        <property name="styleSheet">
-         <string>color: #888;</string>
-        </property>
-       </widget>
+       <property name="text">
+        <string>CRS: -</string>
+       </property>
+      </widget>
       </item>
       <item row="2" column="3">
        <widget class="QPushButton" name="curvHCrsButton">
@@ -210,13 +186,10 @@ e Acessos</string>
       </item>
       <item row="3" column="2">
        <widget class="QLabel" name="curvVCrsLabel">
-        <property name="text">
-         <string>CRS: -</string>
-        </property>
-        <property name="styleSheet">
-         <string>color: #888;</string>
-        </property>
-       </widget>
+       <property name="text">
+        <string>CRS: -</string>
+       </property>
+      </widget>
       </item>
       <item row="3" column="3">
        <widget class="QPushButton" name="curvVCrsButton">

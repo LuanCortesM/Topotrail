@@ -5,13 +5,14 @@ import traceback
 from datetime import datetime
 
 from qgis.PyQt import uic
-from qgis.PyQt.QtCore import Qt
-from qgis.PyQt.QtGui import QColor, QPixmap
+from qgis.PyQt.QtCore import QSize, Qt
+from qgis.PyQt.QtGui import QColor, QFont, QPalette, QPixmap
 from qgis.PyQt.QtWidgets import (
     QDialog,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -22,6 +23,7 @@ from qgis.PyQt.QtWidgets import (
     QCheckBox,
     QScrollArea,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
     QApplication,
@@ -46,6 +48,65 @@ import qgis.processing as processing
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), "topotrail_dialog.ui"))
+
+
+def qt_enum(enum_group, value):
+    """Return Qt enum values in a way that works with both Qt5 and Qt6."""
+    group = getattr(Qt, enum_group, Qt)
+    return getattr(group, value)
+
+
+def size_policy(value):
+    """Return QSizePolicy values in a way that works with Qt5 and Qt6."""
+    group = getattr(QSizePolicy, "Policy", QSizePolicy)
+    return getattr(group, value)
+
+
+def class_enum(cls, enum_group, value):
+    """Return class-scoped enum values in a way that works with Qt5 and Qt6."""
+    group = getattr(cls, enum_group, cls)
+    return getattr(group, value)
+
+
+ALIGN_RIGHT = qt_enum("AlignmentFlag", "AlignRight")
+ALIGN_LEFT = qt_enum("AlignmentFlag", "AlignLeft")
+ALIGN_TOP = qt_enum("AlignmentFlag", "AlignTop")
+ALIGN_CENTER = qt_enum("AlignmentFlag", "AlignCenter")
+ALIGN_VCENTER = qt_enum("AlignmentFlag", "AlignVCenter")
+KEEP_ASPECT_RATIO = qt_enum("AspectRatioMode", "KeepAspectRatio")
+SMOOTH_TRANSFORMATION = qt_enum("TransformationMode", "SmoothTransformation")
+RICH_TEXT = qt_enum("TextFormat", "RichText")
+SCROLLBAR_ALWAYS_OFF = qt_enum("ScrollBarPolicy", "ScrollBarAlwaysOff")
+SCROLLBAR_AS_NEEDED = qt_enum("ScrollBarPolicy", "ScrollBarAsNeeded")
+ELIDE_RIGHT = qt_enum("TextElideMode", "ElideRight")
+POLICY_FIXED = size_policy("Fixed")
+POLICY_MINIMUM = size_policy("Minimum")
+POLICY_MINIMUM_EXPANDING = size_policy("MinimumExpanding")
+POLICY_EXPANDING = size_policy("Expanding")
+FORM_GROW_ALL_NON_FIXED = class_enum(
+    QFormLayout,
+    "FieldGrowthPolicy",
+    "AllNonFixedFieldsGrow",
+)
+FRAME_NO_FRAME = class_enum(QFrame, "Shape", "NoFrame")
+FONT_BOLD = class_enum(QFont, "Weight", "Bold")
+PAL_WINDOW = class_enum(QPalette, "ColorRole", "Window")
+PAL_WINDOW_TEXT = class_enum(QPalette, "ColorRole", "WindowText")
+PAL_BASE = class_enum(QPalette, "ColorRole", "Base")
+PAL_TEXT = class_enum(QPalette, "ColorRole", "Text")
+PAL_BUTTON = class_enum(QPalette, "ColorRole", "Button")
+PAL_BUTTON_TEXT = class_enum(QPalette, "ColorRole", "ButtonText")
+PAL_HIGHLIGHT = class_enum(QPalette, "ColorRole", "Highlight")
+PAL_HIGHLIGHTED_TEXT = class_enum(QPalette, "ColorRole", "HighlightedText")
+PAL_MID = class_enum(QPalette, "ColorRole", "Mid")
+PAL_MIDLIGHT = class_enum(QPalette, "ColorRole", "Midlight")
+
+try:
+    MESSAGE_YES = QMessageBox.StandardButton.Yes
+    MESSAGE_NO = QMessageBox.StandardButton.No
+except AttributeError:
+    MESSAGE_YES = getattr(QMessageBox, "Yes")
+    MESSAGE_NO = getattr(QMessageBox, "No")
 
 
 def topotrail_log_path(output_path):
@@ -115,7 +176,7 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         self.altMaxSpin.setToolTip("Limite usado nas zonas potenciais. A rota pode chegar a pontos mais altos se o destino estiver no MDE.")
         self.maxSlopeSpin.setMaximum(200)
         self.maxSlopeSpin.setValue(55)
-        self.maxSlopeSpin.setToolTip("Limite rígido para áreas caminháveis e rota. 55% exclui encostas muito íngremes; aumente se uma rota de montanha ficar bloqueada.")
+        self.maxSlopeSpin.setToolTip("Limite rÃ­gido para Ã¡reas caminhÃ¡veis e rota. 55% exclui encostas muito Ã­ngremes; aumente se uma rota de montanha ficar bloqueada.")
         self.slopeScoreMaxSpin = QDoubleSpinBox()
         self.slopeScoreMaxSpin.setMinimum(1.0)
         self.slopeScoreMaxSpin.setMaximum(200.0)
@@ -150,11 +211,11 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         self.altitudeBandSizeSpin.setToolTip("Tamanho das faixas usadas para equilibrar as zonas por altitude.")
         self.paramsGroup.layout().insertRow(6, "", self.altitudeBandThresholdCheck)
         self.paramsGroup.layout().insertRow(7, "Faixa altimetrica (m):", self.altitudeBandSizeSpin)
-        self.walkabilityZonesCheck = QCheckBox("Zonas = área caminhável contínua")
+        self.walkabilityZonesCheck = QCheckBox("Zonas = Ã¡rea caminhÃ¡vel contÃ­nua")
         self.walkabilityZonesCheck.setChecked(True)
         self.walkabilityZonesCheck.setToolTip(
-            "Quando ativo, as zonas mostram tudo que é caminhável segundo altitude e declividade, "
-            "em vez de selecionar apenas as células com maior pontuação."
+            "Quando ativo, as zonas mostram tudo que Ã© caminhÃ¡vel segundo altitude e declividade, "
+            "em vez de selecionar apenas as cÃ©lulas com maior pontuaÃ§Ã£o."
         )
         self.paramsGroup.layout().insertRow(8, "", self.walkabilityZonesCheck)
         self.minPatchAreaSpin = QDoubleSpinBox()
@@ -163,7 +224,7 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         self.minPatchAreaSpin.setDecimals(2)
         self.minPatchAreaSpin.setSingleStep(0.5)
         self.minPatchAreaSpin.setValue(50.0)
-        self.minPatchAreaSpin.setToolTip("Remove fragmentos menores antes de gerar o vetor final. Valores maiores reduzem áreas picotadas no mapa.")
+        self.minPatchAreaSpin.setToolTip("Remove fragmentos menores antes de gerar o vetor final. Valores maiores reduzem Ã¡reas picotadas no mapa.")
         self.paramsGroup.layout().insertRow(9, "Area minima do fragmento (ha):", self.minPatchAreaSpin)
         self.weightAltSpin.setValue(0.0)
         self.weightSlopeSpin.setValue(1.0)
@@ -201,11 +262,11 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         self.languageButton.setObjectName("languageButton")
         self.languageButton.setCheckable(True)
         self.languageButton.setChecked(False)
-        self.languageButton.setFixedWidth(104)
+        self.languageButton.setSizePolicy(POLICY_MINIMUM, POLICY_FIXED)
         self.languageButton.setToolTip("Alternar idioma da interface / Switch interface language")
         self.languageButton.clicked.connect(self.toggle_language)
         self.horizontalLayout.addStretch(1)
-        self.horizontalLayout.addWidget(self.languageButton, 0, Qt.AlignRight | Qt.AlignTop)
+        self.horizontalLayout.addWidget(self.languageButton, 0, ALIGN_RIGHT | ALIGN_TOP)
 
     def toggle_language(self):
         self.language = "en" if self.language == "pt_BR" else "pt_BR"
@@ -496,6 +557,8 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         self.endCoordEdit.setPlaceholderText(t("end_coord_placeholder"))
         self.outputFileEdit.setPlaceholderText(t("output_placeholder"))
         self.aboutTextLabel.setText(t("about_html"))
+        if hasattr(self, "_scrollArea"):
+            self._apply_responsive_hud()
 
     def add_route_section(self):
         route_group = QGroupBox("Planejamento de acesso (opcional)")
@@ -504,17 +567,23 @@ class TopotrailDialog(QDialog, FORM_CLASS):
 
         self.startPointEdit = QLineEdit()
         self.startPointEdit.setReadOnly(True)
-        self.startPointBrowseButton = QPushButton("...")
-        self.startPointBrowseButton.setFixedWidth(34)
+        self.startPointBrowseButton = QToolButton()
+        self.startPointBrowseButton.setText("...")
+        self.startPointBrowseButton.setToolTip("Selecionar arquivo da origem")
+        self.startPointBrowseButton.setSizePolicy(POLICY_FIXED, POLICY_FIXED)
         start_row = QHBoxLayout()
+        start_row.setContentsMargins(0, 0, 0, 0)
         start_row.addWidget(self.startPointEdit)
         start_row.addWidget(self.startPointBrowseButton)
 
         self.endPointEdit = QLineEdit()
         self.endPointEdit.setReadOnly(True)
-        self.endPointBrowseButton = QPushButton("...")
-        self.endPointBrowseButton.setFixedWidth(34)
+        self.endPointBrowseButton = QToolButton()
+        self.endPointBrowseButton.setText("...")
+        self.endPointBrowseButton.setToolTip("Selecionar arquivo do destino")
+        self.endPointBrowseButton.setSizePolicy(POLICY_FIXED, POLICY_FIXED)
         end_row = QHBoxLayout()
+        end_row.setContentsMargins(0, 0, 0, 0)
         end_row.addWidget(self.endPointEdit)
         end_row.addWidget(self.endPointBrowseButton)
 
@@ -542,11 +611,15 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         self.pickEndButton = QPushButton("Marcar destino no mapa")
         self.pickStartButton.setEnabled(bool(self.iface))
         self.pickEndButton.setEnabled(bool(self.iface))
+        self.pickStartButton.setSizePolicy(POLICY_MINIMUM, POLICY_FIXED)
+        self.pickEndButton.setSizePolicy(POLICY_MINIMUM, POLICY_FIXED)
 
         start_coord_row = QHBoxLayout()
+        start_coord_row.setContentsMargins(0, 0, 0, 0)
         start_coord_row.addWidget(self.startCoordEdit)
         start_coord_row.addWidget(self.pickStartButton)
         end_coord_row = QHBoxLayout()
+        end_coord_row.setContentsMargins(0, 0, 0, 0)
         end_coord_row.addWidget(self.endCoordEdit)
         end_coord_row.addWidget(self.pickEndButton)
 
@@ -601,56 +674,212 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         layout = QVBoxLayout()
 
         logo_row = QHBoxLayout()
-        logo_row.setAlignment(Qt.AlignCenter)
+        logo_row.setAlignment(ALIGN_CENTER)
+        self.aboutLogoLabels = []
         for filename in [
             "logo_herpeto_mantiqueira.png",
             "logo_enbt.jpg",
             "logo_jbrj.jpg",
         ]:
             label = QLabel()
-            label.setAlignment(Qt.AlignCenter)
-            label.setMinimumSize(92, 74)
-            label.setMaximumSize(150, 86)
-            pixmap = QPixmap(os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", filename))
-            if not pixmap.isNull():
-                label.setPixmap(pixmap.scaled(140, 82, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            label.setAlignment(ALIGN_CENTER)
+            label.setSizePolicy(POLICY_EXPANDING, POLICY_FIXED)
+            label._topotrail_pixmap = QPixmap(os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", filename))
+            label._topotrail_aspect = 150.0 / 86.0
+            self.aboutLogoLabels.append(label)
             logo_row.addWidget(label)
         layout.addLayout(logo_row)
 
         text = QLabel(
             "<b>TopoTrail</b><br>"
             "Ferramenta para apoiar o planejamento de trilhas, acessos e deslocamentos de campo "
-            "em áreas naturais e unidades de conservação, integrando altitude, declividade e "
-            "curvaturas do relevo por análise multicritério em SIG.<br><br>"
+            "em Ã¡reas naturais e unidades de conservaÃ§Ã£o, integrando altitude, declividade e "
+            "curvaturas do relevo por anÃ¡lise multicritÃ©rio em SIG.<br><br>"
             "<b>Desenvolvedor:</b> Luan da Silva Cortes Maciel (MACIEL, L. S.)<br>"
             "<b>Orientador:</b> Leandro Freitas<br>"
             "<b>Contexto:</b> desenvolvido como produto da pesquisa de mestrado em Biodiversidade em "
-            "Unidades de Conservação, Escola Nacional de Botânica Tropical / Jardim Botânico "
+            "Unidades de ConservaÃ§Ã£o, Escola Nacional de BotÃ¢nica Tropical / Jardim BotÃ¢nico "
             "do Rio de Janeiro.<br>"
             "<b>Projeto associado:</b> Herpeto Mantiqueira."
         )
         text.setWordWrap(True)
-        text.setTextFormat(Qt.RichText)
+        text.setTextFormat(RICH_TEXT)
+        text.setSizePolicy(POLICY_EXPANDING, POLICY_MINIMUM)
         self.aboutTextLabel = text
         layout.addWidget(text)
 
         about_group.setLayout(layout)
         self.layout().insertWidget(self.layout().count() - 2, about_group)
 
+    def _dpi_ratio(self):
+        """DPI scaling: derive logical sizes from Qt screen scaling."""
+        window = self.windowHandle()
+        screen = window.screen() if window else QApplication.primaryScreen()
+        if not screen:
+            return 1.0
+        return max(0.85, min(2.25, screen.logicalDotsPerInch() / 96.0))
+
+    def _scaled(self, value):
+        return max(1, int(round(value * self._dpi_ratio())))
+
+    def _scaled_size(self, width, height):
+        return QSize(self._scaled(width), self._scaled(height))
+
+    def _palette_hex(self, role):
+        return self.palette().color(role).name()
+
+    def _contrast_text_hex(self, background_hex, preferred_hex):
+        color = QColor(background_hex)
+        preferred = QColor(preferred_hex)
+        if not color.isValid() or not preferred.isValid():
+            return preferred_hex
+
+        def luminance(qcolor):
+            channels = [qcolor.redF(), qcolor.greenF(), qcolor.blueF()]
+            linear = []
+            for channel in channels:
+                linear.append(channel / 12.92 if channel <= 0.03928 else ((channel + 0.055) / 1.055) ** 2.4)
+            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+        bg_lum = luminance(color)
+        fg_lum = luminance(preferred)
+        ratio = (max(bg_lum, fg_lum) + 0.05) / (min(bg_lum, fg_lum) + 0.05)
+        if ratio >= 4.5:
+            return preferred_hex
+        return "#000000" if bg_lum > 0.45 else "#ffffff"
+
+    def _hud_mode(self):
+        """Responsive breakpoints: compact, normal and wide HUD modes."""
+        available_width = max(self.width(), self.minimumSizeHint().width())
+        if available_width < self._scaled(820):
+            return "compact"
+        if available_width >= self._scaled(1320):
+            return "wide"
+        return "normal"
+
+    def _clear_layout_items(self, layout):
+        while layout.count():
+            layout.takeAt(0)
+
+    def _set_point_button_texts(self, compact):
+        start_text = self.text_for("pick_start")
+        end_text = self.text_for("pick_end")
+        self.pickStartButton.setText("Mapa" if compact else start_text)
+        self.pickEndButton.setText("Mapa" if compact else end_text)
+        self.pickStartButton.setToolTip(start_text)
+        self.pickEndButton.setToolTip(end_text)
+
+    def _update_adaptive_logos(self, mode):
+        logo_size = self._scaled(46 if mode == "compact" else 58 if mode == "normal" else 66)
+        self.logoLabel.setMinimumSize(logo_size, logo_size)
+        self.logoLabel.setMaximumSize(logo_size, logo_size)
+
+        max_logo_height = self._scaled(48 if mode == "compact" else 66 if mode == "normal" else 82)
+        for label in getattr(self, "aboutLogoLabels", []):
+            label.setMinimumSize(0, 0)
+            label.setMaximumHeight(max_logo_height)
+            label.setMinimumHeight(max_logo_height)
+            pixmap = getattr(label, "_topotrail_pixmap", QPixmap())
+            if not pixmap.isNull():
+                width = max(self._scaled(72), int(max_logo_height * getattr(label, "_topotrail_aspect", 1.6)))
+                label.setPixmap(pixmap.scaled(width, max_logo_height, KEEP_ASPECT_RATIO, SMOOTH_TRANSFORMATION))
+
+    def _apply_text_overflow_guards(self):
+        for label in list(getattr(self, "inputRowLabels", {}).values()) + list(getattr(self, "routeRowLabels", {}).values()):
+            original = label.text() if not label.text().endswith("...") else (label.toolTip() or label.text())
+            label.setToolTip(original)
+            width = max(label.width(), self._scaled(80))
+            label.setText(label.fontMetrics().elidedText(original, ELIDE_RIGHT, width))
+
+        for button in [
+            self.pickStartButton,
+            self.pickEndButton,
+            self.generateButton,
+            self.languageButton,
+        ]:
+            if not button.toolTip():
+                button.setToolTip(button.text())
+
+    def _relayout_content_columns(self, mode):
+        layout = getattr(self, "_contentLayout", None)
+        if layout is None:
+            return
+
+        self._clear_layout_items(layout)
+        if mode == "compact":
+            layout.addLayout(self._leftColumn, 0, 0)
+            layout.addLayout(self._rightColumn, 1, 0)
+            layout.setColumnStretch(0, 1)
+            layout.setColumnStretch(1, 0)
+        else:
+            layout.addLayout(self._leftColumn, 0, 0)
+            layout.addLayout(self._rightColumn, 0, 1)
+            layout.setColumnStretch(0, 3 if mode == "normal" else 4)
+            layout.setColumnStretch(1, 2 if mode == "normal" else 3)
+
+    def _apply_responsive_hud(self):
+        """Central HUD adaptation for monitor size, DPI and QGIS theme."""
+        mode = self._hud_mode()
+        if getattr(self, "_currentHudMode", None) != mode:
+            self._currentHudMode = mode
+            self._relayout_content_columns(mode)
+
+        compact = mode == "compact"
+        margin = self._scaled(8 if compact else 12 if mode == "normal" else 16)
+        spacing = self._scaled(6 if compact else 8 if mode == "normal" else 10)
+        self.layout().setContentsMargins(margin, margin, margin, margin)
+        self.layout().setSpacing(spacing)
+        self._set_point_button_texts(compact)
+        self._update_adaptive_logos(mode)
+
+        base_font = QFont(self.font())
+        base_font.setPointSizeF(max(8.5, min(11.5, 9.5 * self._dpi_ratio())))
+        self.setFont(base_font)
+        self.titleLabel.setFont(QFont(base_font.family(), max(12, int(base_font.pointSizeF() + (4 if compact else 8))), FONT_BOLD))
+
+        for spin in self.findChildren(QDoubleSpinBox):
+            spin.setMinimumWidth(self._scaled(88 if compact else 104))
+            spin.setSizePolicy(POLICY_MINIMUM_EXPANDING, POLICY_FIXED)
+        for line_edit in self.findChildren(QLineEdit):
+            line_edit.setMinimumWidth(0)
+            line_edit.setSizePolicy(POLICY_EXPANDING, POLICY_FIXED)
+        for group in [self.inputGroup, self.paramsGroup, self.routeGroup, self.outputGroup, self.aboutGroup]:
+            group.layout().setContentsMargins(margin, margin + spacing, margin, margin)
+            group.layout().setSpacing(spacing)
+
+        # Horizontal scrolling: keep a stable content floor so narrow plugin
+        # windows can be dragged sideways instead of clipping fields/buttons.
+        content_width = self._scaled(760 if compact else 980 if mode == "normal" else 1180)
+        self._contentWidget.setMinimumWidth(content_width)
+        self._scrollArea.setHorizontalScrollBarPolicy(SCROLLBAR_AS_NEEDED)
+        self._apply_text_overflow_guards()
+
+    def resizeEvent(self, event):
+        super(TopotrailDialog, self).resizeEvent(event)
+        if hasattr(self, "_scrollArea"):
+            self._apply_responsive_hud()
+
+    def _dialog_exec(self, dialog):
+        exec_method = getattr(dialog, "exec", None) or getattr(dialog, "exec_", None)
+        return exec_method()
+
     def make_layout_more_horizontal(self):
         self.setWindowTitle("TopoTrail - Planejamento de trilhas e acessos")
-        self.resize(1120, 700)
-        self.setMinimumSize(940, 590)
+        # Responsiveness: start from size hints and let Qt/DPI scaling choose
+        # the actual pixel size instead of forcing a rigid desktop dimension.
+        self.setMinimumSize(0, 0)
+        self.resize(self._scaled_size(1040, 680))
         self.setSizeGripEnabled(True)
 
         main_layout = self.layout()
-        main_layout.setContentsMargins(16, 14, 16, 14)
-        main_layout.setSpacing(10)
+        margin = self._scaled(12)
+        main_layout.setContentsMargins(margin, margin, margin, margin)
+        main_layout.setSpacing(self._scaled(8))
 
-        self.logoLabel.setMinimumSize(64, 64)
-        self.logoLabel.setMaximumSize(64, 64)
+        self.logoLabel.setSizePolicy(POLICY_FIXED, POLICY_FIXED)
         self.titleLabel.setText("TopoTrail\nPlanejamento de trilhas e acessos")
         self.titleLabel.setWordWrap(True)
+        self.titleLabel.setSizePolicy(POLICY_EXPANDING, POLICY_MINIMUM)
         self.rebuild_input_group()
 
         for edit in [
@@ -660,8 +889,8 @@ class TopotrailDialog(QDialog, FORM_CLASS):
             self.curvVFileEdit,
             self.outputFileEdit,
         ]:
-            edit.setMinimumWidth(280)
-            edit.setMinimumHeight(30)
+            edit.setMinimumWidth(0)
+            edit.setSizePolicy(POLICY_EXPANDING, POLICY_FIXED)
 
         for button in [
             self.demBrowseButton,
@@ -670,8 +899,8 @@ class TopotrailDialog(QDialog, FORM_CLASS):
             self.curvVBrowseButton,
             self.outputBrowseButton,
         ]:
-            button.setFixedWidth(34)
-            button.setMinimumHeight(30)
+            button.setSizePolicy(POLICY_FIXED, POLICY_FIXED)
+            button.setToolTip(button.toolTip() or "Selecionar arquivo")
 
         for button in [
             self.demCrsButton,
@@ -697,35 +926,38 @@ class TopotrailDialog(QDialog, FORM_CLASS):
                 self._take_widget(main_layout, group)
 
         content_widget = QWidget(self)
-        content_layout = QHBoxLayout(content_widget)
+        content_layout = QGridLayout(content_widget)
         content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(10)
+        content_layout.setSpacing(self._scaled(10))
 
         left_column = QVBoxLayout()
-        left_column.setSpacing(10)
+        left_column.setSpacing(self._scaled(10))
         left_column.addWidget(self.inputGroup)
         left_column.addWidget(self.routeGroup)
         left_column.addWidget(self.outputGroup)
         left_column.addStretch(1)
 
         right_column = QVBoxLayout()
-        right_column.setSpacing(10)
+        right_column.setSpacing(self._scaled(10))
         right_column.addWidget(self.paramsGroup)
         right_column.addWidget(self.aboutGroup)
         right_column.addStretch(1)
 
-        content_layout.addLayout(left_column, 3)
-        content_layout.addLayout(right_column, 2)
+        self._contentLayout = content_layout
+        self._contentWidget = content_widget
+        self._leftColumn = left_column
+        self._rightColumn = right_column
 
         scroll_area = QScrollArea(self)
         scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QScrollArea.NoFrame)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setFrameShape(FRAME_NO_FRAME)
+        scroll_area.setHorizontalScrollBarPolicy(SCROLLBAR_AS_NEEDED)
         scroll_area.setWidget(content_widget)
-        scroll_area.setMinimumHeight(360)
-        scroll_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        scroll_area.setSizePolicy(POLICY_EXPANDING, POLICY_EXPANDING)
+        self._scrollArea = scroll_area
 
         main_layout.insertWidget(1, scroll_area, 1)
+        self._apply_responsive_hud()
 
     def rebuild_input_group(self):
         old_group = self.inputGroup
@@ -755,128 +987,147 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         self.inputRowLabels = {}
         for row, (key, label_text, edit, browse_button, crs_label) in enumerate(rows):
             label = QLabel(label_text)
-            label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            label.setAlignment(ALIGN_RIGHT | ALIGN_VCENTER)
             self.inputRowLabels[key] = label
             layout.addWidget(label, row, 0)
             layout.addWidget(edit, row, 1)
             layout.addWidget(browse_button, row, 2)
-            crs_label.setMinimumWidth(92)
-            crs_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            crs_label.setMinimumWidth(self._scaled(72))
+            crs_label.setAlignment(ALIGN_LEFT | ALIGN_VCENTER)
             layout.addWidget(crs_label, row, 3)
 
         new_group.setLayout(layout)
         self.inputGroup = new_group
 
     def apply_visual_theme(self):
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #eef4e8;
-                color: #263526;
+        window = self._palette_hex(PAL_WINDOW)
+        window_text = self._palette_hex(PAL_WINDOW_TEXT)
+        base = self._palette_hex(PAL_BASE)
+        text = self._palette_hex(PAL_TEXT)
+        button = self._palette_hex(PAL_BUTTON)
+        button_text = self._palette_hex(PAL_BUTTON_TEXT)
+        highlight = self._palette_hex(PAL_HIGHLIGHT)
+        highlighted_text = self._contrast_text_hex(highlight, self._palette_hex(PAL_HIGHLIGHTED_TEXT))
+        mid = self._palette_hex(PAL_MID)
+        midlight = self._palette_hex(PAL_MIDLIGHT)
+
+        # Theme contrast: all colors are derived from the active QGIS/Qt
+        # palette, avoiding fixed light-theme assumptions in dark mode.
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {window};
+                color: {window_text};
                 font-family: "Segoe UI", "Arial";
                 font-size: 9.5pt;
-            }
-            QLabel {
-                color: #263526;
-            }
-            QLabel#titleLabel {
-                color: #24452d;
+            }}
+            QLabel {{
+                color: {window_text};
+            }}
+            QLabel#titleLabel {{
+                color: {window_text};
                 font-size: 24px;
                 font-weight: bold;
                 padding-left: 6px;
-            }
-            QLabel#logoLabel {
-                background-color: #fbf8ef;
-                border: 1px solid #c8d7c3;
+            }}
+            QLabel#logoLabel {{
+                background-color: {base};
+                border: 1px solid {mid};
                 border-radius: 8px;
                 padding: 4px;
-            }
-            QGroupBox {
-                background-color: #fbf8ef;
-                border: 1px solid #c8d7c3;
+            }}
+            QGroupBox {{
+                color: {window_text};
+                background-color: {base};
+                border: 1px solid {mid};
                 border-radius: 8px;
                 margin-top: 20px;
                 padding: 16px 12px 12px 12px;
                 font-weight: bold;
-                color: #2f5334;
-            }
-            QGroupBox::title {
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
                 left: 14px;
                 padding: 0px 8px;
-                background-color: #fbf8ef;
-                color: #2f5334;
-            }
-            QLineEdit, QDoubleSpinBox, QComboBox {
-                background-color: #fffdf6;
-                border: 1px solid #b9cbb3;
+                color: {window_text};
+                background-color: {base};
+            }}
+            QLineEdit, QDoubleSpinBox, QComboBox {{
+                color: {text};
+                background-color: {base};
+                border: 1px solid {mid};
                 border-radius: 6px;
                 min-height: 28px;
                 padding: 3px 7px;
-                color: #263526;
-            }
-            QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus {
-                border: 1px solid #6f8f5f;
-                background-color: #ffffff;
-            }
-            QPushButton {
-                background-color: #dfead7;
-                border: 1px solid #a9bea1;
+            }}
+            QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus {{
+                border: 1px solid {highlight};
+                background-color: {base};
+            }}
+            QPushButton, QToolButton {{
+                color: {button_text};
+                background-color: {button};
+                border: 1px solid {mid};
                 border-radius: 6px;
                 min-height: 28px;
                 padding: 4px 10px;
-                color: #2e4a32;
                 font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #d2e2ca;
-                border-color: #7f9d73;
-            }
-            QPushButton:pressed {
-                background-color: #c3d6ba;
-            }
-            QPushButton#generateButton {
-                background-color: #6f8f5f;
-                color: #fffdf6;
-                border: 1px solid #55734a;
+            }}
+            QPushButton:hover, QToolButton:hover {{
+                border-color: {highlight};
+            }}
+            QPushButton:pressed, QToolButton:pressed {{
+                background-color: {midlight};
+            }}
+            QPushButton#generateButton {{
+                background-color: {highlight};
+                color: {highlighted_text};
+                border: 1px solid {highlight};
                 min-height: 36px;
                 font-size: 10.5pt;
                 font-weight: 700;
-            }
-            QPushButton#generateButton:hover {
-                background-color: #628252;
-            }
-            QPushButton#languageButton {
-                background-color: #fffdf6;
-                border: 1px solid #9db993;
-                color: #31533a;
+            }}
+            QPushButton#generateButton:hover {{
+                border-color: {text};
+            }}
+            QPushButton#languageButton {{
+                color: {text};
+                background-color: {base};
+                border: 1px solid {mid};
                 font-size: 8.5pt;
                 min-height: 24px;
                 padding: 2px 8px;
-            }
-            QPushButton#languageButton:checked {
-                background-color: #d9e8cf;
-                border-color: #6f8f5f;
-            }
-            QProgressBar {
-                background-color: #fffdf6;
-                border: 1px solid #c8d7c3;
+            }}
+            QPushButton#languageButton:checked {{
+                background-color: {highlight};
+                color: {highlighted_text};
+            }}
+            QProgressBar {{
+                color: {text};
+                background-color: {base};
+                border: 1px solid {mid};
                 border-radius: 6px;
                 min-height: 18px;
-                color: #2f5334;
                 text-align: center;
-            }
-            QProgressBar::chunk {
-                background-color: #b8875a;
+            }}
+            QProgressBar::chunk {{
+                background-color: {highlight};
                 border-radius: 5px;
-            }
-            QScrollArea {
+            }}
+            QScrollArea {{
                 background-color: transparent;
                 border: none;
-            }
-            QWidget {
-                selection-background-color: #b8875a;
-            }
+            }}
+            QScrollBar:horizontal, QScrollBar:vertical {{
+                background: {base};
+                border: 1px solid {mid};
+            }}
+            QScrollBar::handle:horizontal, QScrollBar::handle:vertical {{
+                background: {midlight};
+                border: 1px solid {mid};
+                min-width: 32px;
+                min-height: 32px;
+            }}
         """)
 
         for group in [
@@ -892,15 +1143,14 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         for form in self.findChildren(QFormLayout):
             form.setHorizontalSpacing(10)
             form.setVerticalSpacing(8)
-            form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            form.setFormAlignment(Qt.AlignTop)
+            form.setLabelAlignment(ALIGN_RIGHT | ALIGN_VCENTER)
+            form.setFormAlignment(ALIGN_TOP)
 
         for spin in self.findChildren(QDoubleSpinBox):
-            spin.setMinimumWidth(112)
-            spin.setMinimumHeight(30)
+            spin.setMinimumWidth(self._scaled(104))
 
         for line_edit in self.findChildren(QLineEdit):
-            line_edit.setMinimumHeight(30)
+            line_edit.setMinimumWidth(0)
 
         self.startPointEdit.setPlaceholderText("Camada de ponto da origem")
         self.endPointEdit.setPlaceholderText("Camada de ponto do destino")
@@ -1148,12 +1398,12 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         wrapper.setSpacing(12)
 
         terrain_form = QFormLayout()
-        terrain_form.setLabelAlignment(Qt.AlignRight)
-        terrain_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        terrain_form.setLabelAlignment(ALIGN_RIGHT)
+        terrain_form.setFieldGrowthPolicy(FORM_GROW_ALL_NON_FIXED)
 
         weights_form = QFormLayout()
-        weights_form.setLabelAlignment(Qt.AlignRight)
-        weights_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        weights_form.setLabelAlignment(ALIGN_RIGHT)
+        weights_form.setFieldGrowthPolicy(FORM_GROW_ALL_NON_FIXED)
 
         weight_names = {
             "weightAltSpin",
@@ -1207,20 +1457,23 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         label = getattr(self, label_name)
         if not path or not os.path.exists(path):
             label.setText("CRS: -")
-            label.setStyleSheet("color: #888;")
+            label.setToolTip("CRS ainda nao detectado.")
+            label.setStyleSheet("")
             return
 
         layer = QgsRasterLayer(path, "tmp")
         if not layer.isValid() or not layer.crs().isValid():
             label.setText("CRS: Indefinido!")
-            label.setStyleSheet("color: red;")
+            label.setToolTip("Defina um CRS valido antes de processar.")
+            label.setStyleSheet("")
         else:
             label.setText(f"CRS: {layer.crs().authid()}")
-            label.setStyleSheet("color: #16402a;")
+            label.setToolTip(f"CRS detectado: {layer.crs().authid()}")
+            label.setStyleSheet("")
 
     def select_crs(self, line_edit_name, label_name):
         dlg = QgsProjectionSelectionDialog()
-        if dlg.exec_():
+        if self._dialog_exec(dlg):
             crs = dlg.crs()
             self.outputCrsSelector.setCrs(crs)
             self.update_crs_label(line_edit_name, label_name)
@@ -1371,10 +1624,10 @@ class TopotrailDialog(QDialog, FORM_CLASS):
                     self,
                     self.text_for("generate_zones_question_title"),
                     self.text_for("generate_zones_question_text"),
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No,
+                    MESSAGE_YES | MESSAGE_NO,
+                    MESSAGE_NO,
                 )
-                if answer != QMessageBox.Yes:
+                if answer != MESSAGE_YES:
                     return
 
             dem_layer = QgsRasterLayer(self.demFileEdit.text(), "DEM")
@@ -1463,10 +1716,10 @@ class TopotrailDialog(QDialog, FORM_CLASS):
                             self,
                             self.text_for("large_layer_title"),
                             self.text_for("large_layer_text").format(count=feature_count),
-                            QMessageBox.Yes | QMessageBox.No,
-                            QMessageBox.No,
+                            MESSAGE_YES | MESSAGE_NO,
+                            MESSAGE_NO,
                         )
-                        should_load = answer == QMessageBox.Yes
+                        should_load = answer == MESSAGE_YES
                     if should_load:
                         QgsProject.instance().addMapLayer(vector_layer)
                         loaded_layers.append(vector_layer)
