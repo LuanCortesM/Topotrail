@@ -176,7 +176,7 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         self.altMaxSpin.setToolTip("Limite usado nas zonas potenciais. A rota pode chegar a pontos mais altos se o destino estiver no MDE.")
         self.maxSlopeSpin.setMaximum(200)
         self.maxSlopeSpin.setValue(55)
-        self.maxSlopeSpin.setToolTip("Limite rÃ­gido para Ã¡reas caminhÃ¡veis e rota. 55% exclui encostas muito Ã­ngremes; aumente se uma rota de montanha ficar bloqueada.")
+        self.maxSlopeSpin.setToolTip("Limite rígido para áreas caminháveis e rota. 55% exclui encostas muito íngremes; aumente se uma rota de montanha ficar bloqueada.")
         self.slopeScoreMaxSpin = QDoubleSpinBox()
         self.slopeScoreMaxSpin.setMinimum(1.0)
         self.slopeScoreMaxSpin.setMaximum(200.0)
@@ -211,11 +211,11 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         self.altitudeBandSizeSpin.setToolTip("Tamanho das faixas usadas para equilibrar as zonas por altitude.")
         self.paramsGroup.layout().insertRow(6, "", self.altitudeBandThresholdCheck)
         self.paramsGroup.layout().insertRow(7, "Faixa altimetrica (m):", self.altitudeBandSizeSpin)
-        self.walkabilityZonesCheck = QCheckBox("Zonas = Ã¡rea caminhÃ¡vel contÃ­nua")
+        self.walkabilityZonesCheck = QCheckBox("Zonas = área caminhável contínua")
         self.walkabilityZonesCheck.setChecked(True)
         self.walkabilityZonesCheck.setToolTip(
-            "Quando ativo, as zonas mostram tudo que Ã© caminhÃ¡vel segundo altitude e declividade, "
-            "em vez de selecionar apenas as cÃ©lulas com maior pontuaÃ§Ã£o."
+            "Quando ativo, as zonas mostram tudo que é caminhável segundo altitude e declividade, "
+            "em vez de selecionar apenas as células com maior pontuação."
         )
         self.paramsGroup.layout().insertRow(8, "", self.walkabilityZonesCheck)
         self.minPatchAreaSpin = QDoubleSpinBox()
@@ -224,7 +224,7 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         self.minPatchAreaSpin.setDecimals(2)
         self.minPatchAreaSpin.setSingleStep(0.5)
         self.minPatchAreaSpin.setValue(50.0)
-        self.minPatchAreaSpin.setToolTip("Remove fragmentos menores antes de gerar o vetor final. Valores maiores reduzem Ã¡reas picotadas no mapa.")
+        self.minPatchAreaSpin.setToolTip("Remove fragmentos menores antes de gerar o vetor final. Valores maiores reduzem áreas picotadas no mapa.")
         self.paramsGroup.layout().insertRow(9, "Area minima do fragmento (ha):", self.minPatchAreaSpin)
         self.weightAltSpin.setValue(0.0)
         self.weightSlopeSpin.setValue(1.0)
@@ -693,12 +693,12 @@ class TopotrailDialog(QDialog, FORM_CLASS):
         text = QLabel(
             "<b>TopoTrail</b><br>"
             "Ferramenta para apoiar o planejamento de trilhas, acessos e deslocamentos de campo "
-            "em Ã¡reas naturais e unidades de conservaÃ§Ã£o, integrando altitude, declividade e "
-            "curvaturas do relevo por anÃ¡lise multicritÃ©rio em SIG.<br><br>"
+            "em áreas naturais e unidades de conservação, integrando altitude, declividade e "
+            "curvaturas do relevo por análise multicritério em SIG.<br><br>"
             "<b>Desenvolvedor:</b> Luan da Silva Cortes Maciel (MACIEL, L. S.)<br>"
             "<b>Orientador:</b> Leandro Freitas<br>"
             "<b>Contexto:</b> desenvolvido como produto da pesquisa de mestrado em Biodiversidade em "
-            "Unidades de ConservaÃ§Ã£o, Escola Nacional de BotÃ¢nica Tropical / Jardim BotÃ¢nico "
+            "Unidades de Conservação, Escola Nacional de Botânica Tropical / Jardim Botânico "
             "do Rio de Janeiro.<br>"
             "<b>Projeto associado:</b> Herpeto Mantiqueira."
         )
