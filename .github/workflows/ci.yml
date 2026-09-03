@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint, compile and test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the oldest interpreter shipped with a supported QGIS LTR;
+        # 3.12 is what current QGIS builds use.
+        python-version: ["3.9", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install development tools
+        run: python -m pip install --upgrade pip ruff pytest
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Byte-compile the plugin
+        run: python -m compileall -q processing ui topotrail.py __init__.py topotrail_config.py
+
+      - name: Test
+        run: pytest
+
+  metadata:
+    name: Validate CITATION.cff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip cffconvert
+      - run: cffconvert --validate

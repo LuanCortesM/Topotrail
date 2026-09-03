@@ -1,0 +1,25 @@
+# TopoTrail is a QGIS plugin: it is installed by QGIS, not by pip. This file
+# exists only to configure the development tools used in continuous
+# integration. Do not add a [project] table — it would make the repository look
+# pip-installable, which it is not.
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+# Deliberately narrow for now: real errors only, so that CI is meaningful
+# rather than noisy on a code base that predates linting. Widen this set as
+# the code is cleaned up.
+#   E9  syntax and IO errors
+#   F63 comparison / assertion mistakes
+#   F7  syntax constructs that are almost always bugs
+#   F82 undefined names
+#   E71 comparisons to None/True/False with == instead of is
+#   E722 bare except
+select = ["E9", "F63", "F7", "F82", "E71", "E722"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
