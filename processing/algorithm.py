@@ -56,6 +56,11 @@ MAX_ROUTE_CROP_CELLS = 8000000
 NEAREST_VALID_CELL_RADIUS = 30
 MIN_ALTITUDE_BAND_SIZE_M = 50.0
 
+# Unidade do raster de declividade fornecido pelo usuario. Internamente o
+# TopoTrail trabalha sempre em porcentagem.
+SLOPE_UNIT_PERCENT = 0
+SLOPE_UNIT_DEGREES = 1
+
 
 def diagnostic_log_path(output_path):
     base_path, _ = os.path.splitext(output_path)
@@ -506,6 +511,51 @@ def validate_raster_alignment(reference_shape, reference_transform, rasters, fee
 
         if feedback:
             feedback.pushInfo(f"{name} alinhado ao MDE: shape={array.shape}")
+
+
+def slope_to_percent(slope_data, slope_unit, feedback=None, log_path=None):
+    """Converte a declividade para porcentagem, a unidade interna do TopoTrail.
+
+    A unidade nao pode ser inferida com seguranca do proprio raster: abaixo de
+    45, graus e porcentagem cobrem a mesma faixa numerica e um terreno suave em
+    porcentagem e indistinguivel de um terreno ingreme em graus. Por isso ela e
+    declarada pelo usuario. Isso importa porque as ferramentas mais usadas nao
+    concordam: gdaldem slope e o algoritmo Slope do QGIS devolvem GRAUS por
+    padrao, enquanto muitos MDEs nacionais sao distribuidos em PORCENTAGEM.
+
+    Um raster em graus aceito como porcentagem nao gera erro: gera um resultado
+    plausivel e errado, porque um limite de 55 em graus quase nao exclui pixel
+    algum.
+    """
+    valid = slope_data[np.isfinite(slope_data)]
+    maximum = float(np.nanmax(valid)) if valid.size else float("nan")
+    p99 = float(np.nanpercentile(valid, 99)) if valid.size else float("nan")
+
+    convertido = False
+    if slope_unit == SLOPE_UNIT_DEGREES:
+        if valid.size and maximum > 90.0:
+            raise Exception(
+                "A declividade foi declarada em graus, mas o raster chega a "
+                f"{maximum:.1f}. Declividade em graus nao passa de 90: este raster "
+                "esta em porcentagem. Corrija a unidade no parametro."
+            )
+        with np.errstate(invalid="ignore"):
+            radianos = np.deg2rad(np.clip(slope_data, 0.0, 89.9))
+            slope_data = (np.tan(radianos) * 100.0).astype(np.float32)
+        convertido = True
+        if feedback:
+            feedback.pushInfo(
+                f"Declividade convertida de graus para porcentagem: entrada max={maximum:.1f} graus, "
+                f"saida max={float(np.nanmax(slope_data[np.isfinite(slope_data)])):.1f}%."
+            )
+
+    append_diagnostic_log(
+        log_path, "unidade_declividade",
+        unidade_declarada=("graus" if slope_unit == SLOPE_UNIT_DEGREES else "porcentagem"),
+        convertido_para_porcentagem=convertido,
+        maximo_entrada=maximum, p99_entrada=p99,
+    )
+    return slope_data
 
 
 def normalize_linear(array, min_val, max_val, feedback=None, name="Critério"):
@@ -1396,6 +1446,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
     OUTPUT_CRS = "OUTPUT_CRS"
     ALT_MIN = "ALT_MIN"
     ALT_MAX = "ALT_MAX"
+    SLOPE_UNIT = "SLOPE_UNIT"
     SLOPE_MAX = "SLOPE_MAX"
     SLOPE_SCORE_MAX = "SLOPE_SCORE_MAX"
     WEIGHT_ALT = "WEIGHT_ALT"
@@ -1465,6 +1516,14 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 self.tr("Altitude máxima para zonas (m)"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=2600.0,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.SLOPE_UNIT,
+                self.tr("Unidade do raster de declividade"),
+                options=[self.tr("Porcentagem (%)"), self.tr("Graus")],
+                defaultValue=SLOPE_UNIT_PERCENT,
             )
         )
         self.addParameter(
@@ -1619,6 +1678,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 self.OUTPUT_CRS,
                 self.tr("CRS de saída"),
                 defaultValue=QgsProject.instance().crs().authid(),
+                # Sem projeto aberto, authid() devolve string vazia. Sem
+                # optional=True o algoritmo recusa o proprio valor padrao
+                # quando chamado por script, modelo ou linha de comando.
+                optional=True,
             )
         )
         self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_VECTOR, self.tr("Zonas potenciais")))
@@ -1629,6 +1692,23 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addOutput(QgsProcessingOutputFile(self.OUTPUT_DEBUG_LOG, self.tr("Log diagnostico TopoTrail")))
 
     def processAlgorithm(self, parameters, context, feedback):
+        """Executa a analise e garante a limpeza dos diretorios temporarios.
+
+        O trabalho real fica em _run_algorithm; este invólucro existe para que
+        os diretórios criados durante o processamento sejam removidos mesmo
+        quando a execucao falha. Sem ele, cada execucao deixava no diretorio
+        temporario do sistema uma copia completa do MDE reprojetado e dos
+        rasters alinhados.
+        """
+        self._temp_dirs = []
+        try:
+            return self._run_algorithm(parameters, context, feedback)
+        finally:
+            for directory in self._temp_dirs:
+                shutil.rmtree(directory, ignore_errors=True)
+            self._temp_dirs = []
+
+    def _run_algorithm(self, parameters, context, feedback):
         dem_layer = self.parameterAsRasterLayer(parameters, self.INPUT_DEM, context)
         slope_layer = self.parameterAsRasterLayer(parameters, self.INPUT_SLOPE, context)
         curvh_layer = self.parameterAsRasterLayer(parameters, self.INPUT_CURVH, context)
@@ -1649,6 +1729,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
 
         min_altitude = self.parameterAsDouble(parameters, self.ALT_MIN, context)
         max_altitude = self.parameterAsDouble(parameters, self.ALT_MAX, context)
+        slope_unit = self.parameterAsEnum(parameters, self.SLOPE_UNIT, context)
         max_slope = self.parameterAsDouble(parameters, self.SLOPE_MAX, context)
         slope_score_max = self.parameterAsDouble(parameters, self.SLOPE_SCORE_MAX, context)
         threshold = self.parameterAsDouble(parameters, self.THRESHOLD, context)
@@ -1694,7 +1775,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             parametros={
                 "altitude_min_m": min_altitude,
                 "altitude_max_m": max_altitude,
-                "declividade_max_abs_pct": max_slope,
+                "declividade_unidade_entrada": "graus" if slope_unit == SLOPE_UNIT_DEGREES else "porcentagem",
+            "declividade_max_abs_pct": max_slope,
                 "declividade_custo_max_pct": slope_score_max,
                 "threshold": threshold,
                 "percentil_automatico": auto_percentile,
@@ -1761,6 +1843,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             feedback.pushInfo(f"Log diagnostico: {debug_log_path}")
             feedback.pushInfo(f"Altitude mínima: {min_altitude}")
             feedback.pushInfo(f"Altitude máxima: {max_altitude}")
+            feedback.pushInfo(
+                "Declividade do raster de entrada em "
+                + ("graus (sera convertida para porcentagem)" if slope_unit == SLOPE_UNIT_DEGREES else "porcentagem")
+            )
             feedback.pushInfo(f"Declividade máxima: {max_slope}%")
             feedback.pushInfo(f"Declividade de custo maximo: {slope_score_max}%")
             feedback.pushInfo(f"Threshold: {threshold}")
@@ -1777,6 +1863,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             feedback.pushInfo("================================")
 
         temp_work_dir = tempfile.mkdtemp(prefix="topotrail_work_")
+        getattr(self, "_temp_dirs", []).append(temp_work_dir)
         dem_crs_info = ensure_projected_working_crs(
             dem_layer.source(),
             feedback=feedback,
@@ -1847,6 +1934,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             if proj and raster_proj and proj != raster_proj:
                 raise Exception(f"{label} possui projeção diferente do MDE.")
 
+        slope_data = slope_to_percent(slope_data, slope_unit, feedback, debug_log_path)
+
         altitude_norm = normalize_linear(dem_data, min_altitude, max_altitude, feedback, "Altitude")
         slope_norm = normalize_cost(slope_data, 0, slope_score_max, feedback, "Declividade")
         curvh_norm = normalize_curvature_preference(curvh_data, feedback, "Curvatura horizontal")
@@ -1858,6 +1947,22 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         route_constraint_mask = valid_mask & (slope_data <= max_slope)
 
         if feedback:
+            valid_count = int(np.sum(valid_mask))
+            above = int(np.sum(valid_mask & (dem_data > max_altitude)))
+            below = int(np.sum(valid_mask & (dem_data < min_altitude)))
+            if valid_count and (above + below) > 0.01 * valid_count:
+                dem_valid = dem_data[valid_mask]
+                feedback.pushWarning(
+                    "A faixa de altitude configurada ({:.0f}-{:.0f} m) descarta "
+                    "{:.1f}% da area: {:.1f}% acima do maximo e {:.1f}% abaixo do minimo. "
+                    "O MDE cobre de {:.0f} a {:.0f}. Se o relevo desta area sai dessa faixa, "
+                    "ajuste os limites antes de interpretar o resultado.".format(
+                        min_altitude, max_altitude,
+                        100.0 * (above + below) / valid_count,
+                        100.0 * above / valid_count, 100.0 * below / valid_count,
+                        float(np.nanmin(dem_valid)), float(np.nanmax(dem_valid)),
+                    )
+                )
             viable = int(np.sum(zone_constraint_mask))
             route_viable = int(np.sum(route_constraint_mask))
             feedback.pushInfo(f"Máscara de zonas: {viable} pixels viáveis de {dem_data.size} ({viable / dem_data.size * 100:.2f}%)")
