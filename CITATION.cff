@@ -1,0 +1,44 @@
+# TODO before submitting to JOSS:
+#   1. Replace the ORCID placeholders below with real identifiers
+#      (register free at https://orcid.org). JOSS expects an ORCID for
+#      the corresponding author.
+#   2. After the first Zenodo deposit, add the DOI to `doi:` and to
+#      `identifiers:`, and update `date-released` and `version`.
+#   3. Confirm with Leandro Freitas whether he should be listed as an
+#      author of the software or only in the acknowledgements. JOSS
+#      authorship requires substantial contribution to the software
+#      itself; supervision alone is usually acknowledged instead.
+
+cff-version: 1.2.0
+title: "TopoTrail: a QGIS plugin for DEM-based topographic suitability and least-cost route planning"
+message: "If you use this software in your research, please cite it as below."
+type: software
+authors:
+  - given-names: "Luan da Silva Cortes"
+    family-names: "Maciel"
+    email: "LuanCortesM@users.noreply.github.com"
+    # orcid: "https://orcid.org/0000-0000-0000-0000"
+    affiliation: "Escola Nacional de Botânica Tropical, Instituto de Pesquisas Jardim Botânico do Rio de Janeiro, Brazil"
+repository-code: "https://github.com/LuanCortesM/Topotrail"
+url: "https://plugins.qgis.org/plugins/TopoTrail/"
+abstract: >-
+  TopoTrail is a QGIS plugin that supports preliminary planning of trails,
+  access routes and field corridors in natural and protected areas. It models
+  topographic suitability from a Digital Elevation Model, slope and horizontal
+  and vertical curvature using weighted multicriteria analysis, and derives a
+  relative topographic risk surface, potential access zones, a least-cost route
+  between an origin and a destination, and a metric corridor around that route.
+  Results are intended as decision-support evidence and require field
+  validation.
+keywords:
+  - QGIS
+  - GIS
+  - digital elevation model
+  - multicriteria analysis
+  - least-cost path
+  - trail planning
+  - protected areas
+  - geomorphometry
+license: MIT
+version: "0.5.1"
+date-released: "2026-05-27"

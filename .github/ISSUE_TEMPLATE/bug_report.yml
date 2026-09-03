@@ -1,0 +1,84 @@
+name: Bug report
+description: Something in the plugin fails, crashes or produces an obviously wrong file.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. If the plugin *ran* but the result looks
+        methodologically wrong rather than broken, please use the
+        **Methodological question** template instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got.
+      placeholder: |
+        I loaded a 30 m SRTM DEM and slope raster, set origin and destination,
+        and clicked Generate. QGIS showed an error dialog saying ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Diagnostic log
+      description: >-
+        The plugin writes a `*_diagnostico_topotrail.log` file next to your
+        output. Paste it here or attach it. It is the single most useful thing
+        you can provide — it records the plugin version, dependency versions,
+        every parameter and the statistics of each intermediate raster.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: qgis
+    attributes:
+      label: QGIS version
+      placeholder: "3.34.9 Prizren"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11 / Ubuntu 24.04 / macOS 15"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: TopoTrail version
+      placeholder: "0.5.1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: data
+    attributes:
+      label: Input data
+      description: >-
+        Source, resolution and CRS of the DEM, and how the slope and curvature
+        rasters were produced (GDAL, SAGA, GRASS, r.slope.aspect...).
+        Please do not attach large rasters — a description is usually enough.
+      placeholder: |
+        DEM: Copernicus GLO-30, EPSG:4326, resampled to EPSG:32723 at 30 m
+        Slope: GDAL Slope, percent
+        Curvatures: SAGA, same grid as the DEM
+    validations:
+      required: false
+
+  - type: textarea
+    id: params
+    attributes:
+      label: Parameters used
+      placeholder: |
+        Altitude 800–1900 m, max slope 55, threshold 0 (auto), percentile 75,
+        balance by elevation band on, band 200 m, min patch 50 ha,
+        weights 0 / 1 / 1 / 1, corridor 100 m, search margin 5000 m
+    validations:
+      required: false

@@ -1,0 +1,51 @@
+name: Methodological question or disagreement
+description: The plugin ran, but the result or a modelling choice seems wrong.
+labels: ["methodology"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Modelling choices are documented in
+        [`docs/METODOLOGIA_TOPOtrail.md`](../blob/main/docs/METODOLOGIA_TOPOtrail.md)
+        and audited in
+        [`docs/METHODOLOGICAL_AUDIT.md`](../blob/main/docs/METHODOLOGICAL_AUDIT.md).
+        Disagreeing with a documented choice is a legitimate issue — this is
+        where that discussion belongs.
+
+  - type: textarea
+    id: observation
+    attributes:
+      label: What you observed
+      description: Describe the output that seems wrong, and why.
+      placeholder: |
+        The suggested route crosses a ridge instead of following the valley,
+        even though the valley cells have higher suitability.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and on what basis
+      description: >-
+        Field knowledge, literature, another tool's output — anything that
+        grounds the expectation.
+    validations:
+      required: true
+
+  - type: input
+    id: section
+    attributes:
+      label: Related section of the methodology, if you know it
+      placeholder: "Multicriteria suitability / Least-cost route / Relative risk"
+    validations:
+      required: false
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Diagnostic log
+      description: The `*_diagnostico_topotrail.log` written next to your output.
+      render: text
+    validations:
+      required: false

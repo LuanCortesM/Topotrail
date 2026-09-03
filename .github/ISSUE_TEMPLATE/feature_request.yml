@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest a capability that would help your planning work.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The planning problem
+      description: >-
+        Describe the situation you are trying to handle, not only the control
+        you would like to see. The problem usually suggests a better solution
+        than the one we would each guess separately.
+      placeholder: |
+        I plan trails in a reserve where the limiting factor is not slope but
+        stream crossings, and I have no way to tell the plugin to avoid them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like the plugin to do
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: How you handle it today
+      description: What you currently do in QGIS instead, if anything.
+    validations:
+      required: false

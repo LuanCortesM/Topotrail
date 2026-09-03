@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: How to use the plugin
+    url: https://github.com/LuanCortesM/Topotrail/blob/main/docs/USUARIO_TOPOtrail.md
+    about: Step-by-step user guide, in English. Portuguese copy in docs/pt_BR.
+  - name: How the model works
+    url: https://github.com/LuanCortesM/Topotrail/blob/main/docs/METODOLOGIA_TOPOtrail.md
+    about: Formulas, constants, normalisation and documented limitations.
