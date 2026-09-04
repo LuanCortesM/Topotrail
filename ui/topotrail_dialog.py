@@ -38,6 +38,24 @@ from .support import (
 
 PLUGIN_DIR = os.path.dirname(os.path.dirname(__file__))
 
+
+def _plugin_version():
+    """A versão declarada em metadata.txt.
+
+    Lida do arquivo, e não por `from ..processing.algorithm import`: o import
+    relativo só resolve quando o módulo é carregado como parte do pacote do
+    plugin, e falhava em silêncio -- deixando a versão em branco na tela -- em
+    qualquer outro contexto, inclusive nos testes.
+    """
+    try:
+        with open(os.path.join(PLUGIN_DIR, "metadata.txt"), encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("version="):
+                    return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return "?"
+
 # --------------------------------------------------------------------------
 # Textos
 # --------------------------------------------------------------------------
@@ -49,10 +67,12 @@ PLUGIN_DIR = os.path.dirname(os.path.dirname(__file__))
 TEXTS = {
     "pt": {
         "window": "TopoTrail — planejamento de trilhas e acessos",
-        "tagline": "Planejamento de trilhas, acessos e deslocamentos de campo "
-                   "em áreas naturais",
         "steps": ["Dados", "O que você quer", "Ajustes", "Executar"],
-        "about": "Sobre e créditos",
+        "about": "Sobre",
+        "status_title": "SELEÇÃO ATUAL",
+        "status_no_dem": "Nenhum MDE escolhido",
+        "status_no_output": "Sem arquivo de saída",
+        "status_outputs_n": "{n} saídas marcadas",
         "about_text": (
             "<h3 style='margin-bottom:2px'>TopoTrail</h3>"
             "<p style='color:#6b7a74;margin-top:0'>Versão {version}</p>"
@@ -216,10 +236,12 @@ TEXTS = {
     },
     "en": {
         "window": "TopoTrail — trail and access planning",
-        "tagline": "Planning trails, access routes and field movement in "
-                   "natural areas",
         "steps": ["Data", "What you want", "Tuning", "Run"],
-        "about": "About and credits",
+        "about": "About",
+        "status_title": "CURRENT SELECTION",
+        "status_no_dem": "No DEM chosen",
+        "status_no_output": "No output file",
+        "status_outputs_n": "{n} outputs ticked",
         "about_text": (
             "<h3 style='margin-bottom:2px'>TopoTrail</h3>"
             "<p style='color:#6b7a74;margin-top:0'>Version {version}</p>"
@@ -419,6 +441,39 @@ def _icon(name, size=22, color=INK, width=1.9):
     label.setPixmap(icons.pixmap(name, size, color, width))
     label.setFixedSize(size, size)
     return label
+
+
+class _StepTrack(QFrame):
+    """Desenha o fio vertical que liga os marcadores dos passos.
+
+    Feito com paintEvent e não com um QFrame de 2 px entre as linhas porque o
+    fio precisa passar por trás dos marcadores e acompanhar a posição real
+    deles, que muda com a fonte e o DPI do sistema.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ttStepTrack")
+        self._badges = []
+
+    def set_rows(self, badges):
+        self._badges = badges
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if len(self._badges) < 2:
+            return
+        from qgis.PyQt.QtGui import QPainter, QPen, QColor
+        first, last = self._badges[0], self._badges[-1]
+        top = first.mapTo(self, first.rect().center())
+        bottom = last.mapTo(self, last.rect().center())
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        pen = QPen(QColor(255, 255, 255, 38))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        painter.drawLine(top.x(), top.y(), bottom.x(), bottom.y())
+        painter.end()
 
 
 class OptionCard(QFrame):
@@ -656,6 +711,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
     def _retranslate(self):
         self.setWindowTitle(self.t("window"))
+        self.version_label.setText(f"v{_plugin_version()}")
         for widget, key, attribute in self._labels:
             getattr(widget, attribute)(self.t(key))
         for index, name in enumerate(self.t("steps")):
@@ -701,75 +757,58 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         outer.addWidget(right, 1)
 
     def _build_sidebar(self):
-        """Barra lateral: identidade, passos e credito institucional.
+        """Barra lateral: marca, progresso, estado atual e crédito institucional.
 
-        As logos ficam aqui, sempre visiveis, em vez de dentro de uma caixa
-        "Sobre" que o usuario abre uma vez e nunca mais. Credito de projeto e de
-        instituicao nao e nota de rodape.
+        A primeira versão errava três coisas. A logo aparecia a 32 px ao lado de
+        um rótulo de texto "TopoTrail" -- mas a logo *é* um lockup que já contém
+        a palavra, então o nome saía duplicado e ilegível nos dois lugares. A
+        linha de apoio era um parágrafo de 11 px em três linhas, que se lê como
+        letra miúda. E sobravam 250 px de vazio entre os passos e o rodapé.
+
+        Aqui a marca aparece uma vez, no tamanho em que se lê; e o vazio virou
+        um painel de estado que responde à pergunta "o que já está escolhido?"
+        sem obrigar a voltar passo a passo.
         """
         side = QFrame()
         side.setObjectName("ttSide")
-        side.setFixedWidth(258)
+        side.setFixedWidth(272)
         layout = QVBoxLayout(side)
-        layout.setContentsMargins(22, 24, 22, 20)
+        layout.setContentsMargins(20, 20, 20, 18)
         layout.setSpacing(0)
 
-        brand = QHBoxLayout()
-        brand.setSpacing(11)
         logo_path = os.path.join(PLUGIN_DIR, "logo.png")
         if os.path.exists(logo_path):
+            plate = QFrame()
+            plate.setObjectName("ttPlate")
+            plate_layout = QVBoxLayout(plate)
+            plate_layout.setContentsMargins(16, 14, 16, 14)
             mark = QLabel()
-            mark.setObjectName("ttMark")
-            mark.setFixedSize(44, 44)
             mark.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
-            mark.setPixmap(QPixmap(logo_path).scaled(
-                32, 32, qt_enum("AspectRatioMode", "KeepAspectRatio"),
-                qt_enum("TransformationMode", "SmoothTransformation")))
-            brand.addWidget(mark)
-        name = QLabel("TopoTrail")
-        name.setObjectName("ttBrand")
-        brand.addWidget(name)
-        brand.addStretch(1)
-        layout.addLayout(brand)
-        self.tagline = QLabel()
-        self.tagline.setObjectName("ttTagline")
-        self.tagline.setWordWrap(True)
-        self._bind(self.tagline, "tagline")
-        layout.addSpacing(6)
-        layout.addWidget(self.tagline)
-        layout.addSpacing(26)
+            mark.setPixmap(QPixmap(logo_path).scaledToWidth(
+                122, qt_enum("TransformationMode", "SmoothTransformation")))
+            plate_layout.addWidget(mark)
+            layout.addWidget(plate)
+        else:
+            name = QLabel("TopoTrail")
+            name.setObjectName("ttBrand")
+            layout.addWidget(name)
 
-        self.step_labels = []
-        for index in range(4):
-            row = QFrame()
-            row.setObjectName("ttStepRow")
-            row.setProperty("active", "false")
-            row.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
-            row.mousePressEvent = lambda event, target=index: self._jump_to(target)
-            inner = QHBoxLayout(row)
-            inner.setContentsMargins(12, 9, 12, 9)
-            inner.setSpacing(11)
-            badge = QLabel(str(index + 1))
-            badge.setObjectName("ttBadge")
-            badge.setFixedSize(24, 24)
-            badge.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
-            label = QLabel()
-            label.setObjectName("ttStepText")
-            inner.addWidget(badge)
-            inner.addWidget(label, 1)
-            self.step_labels.append(label)
-            self._step_rows = getattr(self, "_step_rows", [])
-            self._step_rows.append((row, badge))
-            layout.addWidget(row)
-            layout.addSpacing(2)
+        self.version_label = QLabel()
+        self.version_label.setObjectName("ttVersion")
+        self.version_label.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
+        layout.addSpacing(9)
+        layout.addWidget(self.version_label)
+        layout.addSpacing(22)
 
+        layout.addWidget(self._build_steps())
+        layout.addSpacing(18)
+        layout.addWidget(self._build_status())
         layout.addStretch(1)
 
         credit = QFrame()
         credit.setObjectName("ttCredit")
         credit_layout = QVBoxLayout(credit)
-        credit_layout.setContentsMargins(10, 14, 10, 14)
-        credit_layout.setSpacing(10)
+        credit_layout.setContentsMargins(12, 14, 12, 14)
         logos = QHBoxLayout()
         logos.setSpacing(11)
         logos.addStretch(1)
@@ -788,21 +827,89 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         logos.addStretch(1)
         credit_layout.addLayout(logos)
         layout.addWidget(credit)
+        layout.addSpacing(12)
 
+        row = QHBoxLayout()
+        row.setSpacing(8)
         self.about_button = QPushButton()
-        self.about_button.setObjectName("ttLink")
+        self.about_button.setObjectName("ttSideLink")
         self.about_button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
         self.about_button.clicked.connect(self._show_about)
         self._bind(self.about_button, "about")
-        layout.addSpacing(8)
-        layout.addWidget(self.about_button)
-
-        self.language_button = QPushButton("PT-BR  |  ENG")
-        self.language_button.setObjectName("ttLink")
+        self.language_button = QPushButton("PT-BR | ENG")
+        self.language_button.setObjectName("ttSideLink")
         self.language_button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
         self.language_button.clicked.connect(self._toggle_language)
-        layout.addWidget(self.language_button)
+        row.addWidget(self.about_button, 3)
+        row.addWidget(self.language_button, 2)
+        holder = QWidget(); holder.setLayout(row)
+        row.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(holder)
         return side
+
+    def _build_steps(self):
+        """Os quatro passos, com o fio que liga os marcadores.
+
+        O fio não é enfeite: é o que transforma quatro linhas soltas numa
+        sequência com começo e fim, e mostra de relance quanto falta.
+        """
+        block = _StepTrack()
+        layout = QVBoxLayout(block)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        self.step_labels = []
+        self._step_rows = []
+        for index in range(4):
+            row = QFrame()
+            row.setObjectName("ttStepRow")
+            row.setProperty("active", "false")
+            row.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
+            row.mousePressEvent = lambda event, target=index: self._jump_to(target)
+            inner = QHBoxLayout(row)
+            inner.setContentsMargins(10, 11, 12, 11)
+            inner.setSpacing(13)
+            badge = QLabel(str(index + 1))
+            badge.setObjectName("ttBadge")
+            badge.setFixedSize(28, 28)
+            badge.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
+            label = QLabel()
+            label.setObjectName("ttStepText")
+            inner.addWidget(badge)
+            inner.addWidget(label, 1)
+            self.step_labels.append(label)
+            self._step_rows.append((row, badge))
+            layout.addWidget(row)
+        block.set_rows([badge for _row, badge in self._step_rows])
+        return block
+
+    def _build_status(self):
+        """Painel de estado: o que já foi escolhido, sem voltar passo a passo."""
+        panel = QFrame()
+        panel.setObjectName("ttStatus")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(14, 13, 14, 13)
+        layout.setSpacing(9)
+        title = QLabel()
+        title.setObjectName("ttStatusTitle")
+        self._bind(title, "status_title")
+        layout.addWidget(title)
+        self.status_rows = {}
+        for key, glyph in (("status_dem", "mountain"),
+                           ("status_outputs", "layers"),
+                           ("status_output_file", "save")):
+            row = QHBoxLayout()
+            row.setSpacing(9)
+            row.addWidget(_icon(glyph, 15, "#7fa694", 1.8), 0,
+                          qt_enum("AlignmentFlag", "AlignTop"))
+            value = QLabel("—")
+            value.setObjectName("ttStatusValue")
+            value.setMinimumWidth(1)
+            row.addWidget(value, 1)
+            holder = QWidget(); holder.setLayout(row)
+            row.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(holder)
+            self.status_rows[key] = value
+        return panel
 
     def _build_footer(self):
         footer = QFrame()
@@ -825,12 +932,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
     def _show_about(self):
         """Creditos completos. As logos ja estao na lateral; aqui fica o texto."""
-        try:
-            from ..processing.algorithm import PLUGIN_VERSION as version
-        except Exception:
-            version = "?"
         QMessageBox.about(self, self.t("about"),
-                          self.t("about_text").format(version=version))
+                          self.t("about_text").format(version=_plugin_version()))
 
     def _page_head(self, layout, glyph, title_key, subtitle_key):
         row = QHBoxLayout()
@@ -1172,24 +1275,34 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
             /* Lateral: verde-floresta da propria logo. */
             #ttSide {{ background: {FOREST}; }}
-            #ttBrand {{ color: #ffffff; font-size: 19px; font-weight: 600;
-                        letter-spacing: 0.3px; }}
-            #ttTagline {{ color: #9dc4b1; font-size: 11px; line-height: 150%; }}
+            #ttBrand {{ color: #ffffff; font-size: 21px; font-weight: 600; }}
+            #ttPlate {{ background: #ffffff; border-radius: 14px; }}
+            #ttVersion {{ color: #7fa694; font-size: 11px; letter-spacing: 0.6px; }}
+            #ttStepTrack {{ background: transparent; }}
+            #ttStatus {{ background: rgba(255,255,255,0.07); border-radius: 11px; }}
+            #ttStatusTitle {{ color: #7fa694; font-size: 9.5px; font-weight: 700;
+                              letter-spacing: 1.1px; }}
+            #ttStatusValue {{ color: #cfe3d8; font-size: 11.5px; }}
+            #ttSideLink {{ background: rgba(255,255,255,0.07); border: none;
+                           color: #b9d5c7; font-size: 11.5px; padding: 9px 6px;
+                           border-radius: 8px; }}
+            #ttSideLink:hover {{ background: rgba(255,255,255,0.15);
+                                 color: #ffffff; }}
 
             #ttStepRow {{ border-radius: 8px; background: transparent; }}
             #ttStepRow[active="true"] {{ background: rgba(255,255,255,0.13); }}
-            #ttStepText {{ color: #8fb5a3; font-size: 12.5px; }}
+            #ttStepText {{ color: #9dc4b1; font-size: 13.5px; }}
             #ttStepText[active="true"] {{ color: #ffffff; font-weight: 600; }}
             #ttStepText[active="done"] {{ color: #cfe3d8; }}
-            #ttBadge {{ border-radius: 12px; font-size: 11px; font-weight: 600;
-                        background: rgba(255,255,255,0.10); color: #8fb5a3; }}
-            #ttBadge[active="true"] {{ background: #ffffff; color: {FOREST}; }}
-            #ttBadge[active="done"] {{ background: {ACCENT}; color: #ffffff; }}
+            #ttBadge {{ border-radius: 14px; font-size: 12px; font-weight: 700;
+                        background: {FOREST}; color: #8fb5a3;
+                        border: 2px solid rgba(255,255,255,0.16); }}
+            #ttBadge[active="true"] {{ background: #ffffff; color: {FOREST};
+                                       border: 2px solid #ffffff; }}
+            #ttBadge[active="done"] {{ background: {ACCENT}; color: #ffffff;
+                                       border: 2px solid {ACCENT}; }}
 
             #ttCredit {{ background: #ffffff; border-radius: 10px; }}
-            #ttLink {{ background: transparent; border: none; color: #9dc4b1;
-                       font-size: 11.5px; text-align: left; padding: 5px 2px; }}
-            #ttLink:hover {{ color: #ffffff; }}
 
             #ttPage {{ background: {CANVAS}; }}
             #ttPageTitle {{ font-size: 20px; font-weight: 600; color: {INK};
@@ -1335,8 +1448,32 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
                 widget.setProperty("active", state)
                 widget.style().unpolish(widget)
                 widget.style().polish(widget)
+        self._refresh_status()
         if last:
             self._refresh_summary()
+
+    def _elide(self, label, text):
+        """Corta pelo meio, não pelo fim: a extensão do arquivo é justamente a
+        parte que o usuário usa para reconhecê-lo."""
+        metrics = label.fontMetrics()
+        width = max(label.width(), 176)
+        label.setText(metrics.elidedText(
+            text, qt_enum("TextElideMode", "ElideMiddle"), width))
+        label.setToolTip(text)
+
+    def _refresh_status(self):
+        """Mantém o painel da lateral em dia com o que já foi escolhido."""
+        dem = self.dem_file.text()
+        self._elide(self.status_rows["status_dem"],
+                    os.path.basename(dem) if dem else self.t("status_no_dem"))
+        count = 2 + sum(card.isChecked() for card in
+                        (self.want_zones, self.want_transit,
+                         self.want_streams, self.want_route))
+        self.status_rows["status_outputs"].setText(
+            self.t("status_outputs_n").format(n=count))
+        out = self.output_edit.text().strip()
+        self._elide(self.status_rows["status_output_file"],
+                    os.path.basename(out) if out else self.t("status_no_output"))
 
     def _refresh_summary(self):
         pt = self.lang == "pt"

@@ -210,3 +210,14 @@ def test_icons_render_without_a_display():
         for size in (18, 24, 44):
             image = icons.pixmap(name, size, "#0d452c")
             assert not image.isNull(), f"o glifo {name} nao desenhou em {size} px"
+
+
+def test_the_version_shown_in_the_interface_comes_from_metadata():
+    """A versão era lida por import relativo e voltava vazia sempre que o módulo
+    não era carregado como parte do pacote do plugin -- sem erro, só um espaço
+    em branco na tela. Agora vem do metadata.txt, que é a fonte de verdade."""
+    from ui.topotrail_dialog import _plugin_version
+    version = _plugin_version()
+    assert version != "?", "não consegui ler a versão do metadata.txt"
+    assert version in (ROOT / "metadata.txt").read_text(encoding="utf-8")
+    assert version in ALGORITHM, "metadata.txt e algorithm.py discordam da versão"
