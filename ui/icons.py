@@ -17,6 +17,16 @@ from qgis.PyQt.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 GRID = 24.0
 
 
+def _cls(cls, group, value):
+    """Enum de classe do Qt, escopado ou nao.
+
+    QPainter.Antialiasing existe no Qt5 e sai no Qt6, onde vira
+    QPainter.RenderHint.Antialiasing. Passou despercebido na revisao estatica
+    porque eu procurava por Qt.*, QFrame e QPalette, e nao por QPainter.
+    """
+    return getattr(getattr(cls, group, cls), value)
+
+
 def _qt(group, value):
     """Enum do Qt que funciona no Qt5 e no Qt6.
 
@@ -203,7 +213,7 @@ def pixmap(name, size=22, color="#1a2420", width=1.9, ratio=1):
     if glyph is None:
         return image
     painter = QPainter(image)
-    painter.setRenderHint(QPainter.Antialiasing, True)
+    painter.setRenderHint(_cls(QPainter, "RenderHint", "Antialiasing"), True)
     painter.scale(device / GRID, device / GRID)
     painter.setPen(_pen(color, width))
     painter.setBrush(_qt("BrushStyle", "NoBrush"))
