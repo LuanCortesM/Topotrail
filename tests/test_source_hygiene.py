@@ -12,6 +12,7 @@ code base and that are invisible until a user hits them:
 
 import ast
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -172,3 +173,21 @@ def test_geopandas_and_shapely_are_gone_from_shipped_code():
         if name in banned
     )
     assert not hits, "\n".join(hits)
+
+
+def test_stylesheet_font_sizes_are_whole_pixels():
+    """Qt ignora `font-size: 12.5px` em silencio -- a declaracao inteira cai.
+
+    Ate a 0.13 dezessete regras da janela usavam meio pixel, e todo esse texto
+    vinha no tamanho padrao do QGIS em vez do tamanho desenhado. Confirmado
+    medindo QLabel com "10.5px" (ignorado: 12 pt) contra "10px" (aplicado).
+    """
+    pattern = re.compile(r"font-size:\s*\d+\.\d+\s*(px|pt)")
+    offenders = []
+    for path in python_files():
+        if "ui" not in path.parts:
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{path.relative_to(ROOT)}:{number}: {line.strip()}")
+    assert not offenders, "\n".join(offenders)

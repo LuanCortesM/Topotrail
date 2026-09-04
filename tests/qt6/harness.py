@@ -124,6 +124,37 @@ def main():
                     problemas.append(
                         f"{code} passo {passo+1}: '{texto[:26]}' cortado")
 
+    # Depois de passar por todos os idiomas e terminar em japones, nada pode
+    # ter ficado em portugues: cada texto escrito uma vez na construcao, e nao
+    # vinculado, e uma frase que sobrevive a troca de idioma.
+    import json
+    from PyQt6.QtWidgets import QCheckBox, QComboBox
+    def _frases(code):
+        with open(os.path.join(raiz, "i18n", f"{code}.json"), encoding="utf-8") as f:
+            dados = json.load(f)
+        frases = set()
+        for valor in dados.values():
+            if isinstance(valor, str) and len(valor) > 3:
+                frases.add(valor)
+            elif isinstance(valor, list):
+                frases.update(valor)
+        return frases
+    em_ja = _frases("ja")
+    em_outros = set()
+    for code in ("pt", "en", "es", "fr", "zh"):
+        em_outros |= _frases(code)
+    em_outros -= em_ja
+    dialog.language_box.setCurrentIndex(dialog.language_box.findData("ja"))
+    app.processEvents()
+    for widget in dialog.findChildren((QLabel, QPushButton, QCheckBox)):
+        for texto in (widget.text(), widget.toolTip()):
+            if texto in em_outros:
+                problemas.append(f"ficou noutro idioma apos trocar para ja: '{texto[:40]}'")
+    for caixa in dialog.findChildren(QComboBox):
+        for i in range(caixa.count()):
+            if caixa.itemText(i) in em_outros:
+                problemas.append(f"opcao ficou noutro idioma: '{caixa.itemText(i)}'")
+
     for modo in ("light", "dark", "auto"):
         dialog.theme_mode = modo
         dialog._apply_theme()

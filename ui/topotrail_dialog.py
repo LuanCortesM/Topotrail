@@ -204,7 +204,10 @@ class OptionCard(QFrame):
         self.tick = QLabel()
         self.tick.setObjectName("ttTick")
         self.tick.setAlignment(qt_enum("AlignmentFlag", "AlignRight"))
-        layout.addWidget(self.tick, 0, qt_enum("AlignmentFlag", "AlignVCenter"))
+        # No alto, e nao ao centro: num cartao expandido (rota) o centro e o
+        # meio do formulario, e a marca ficava boiando longe do titulo.
+        layout.addWidget(self.tick, 0, qt_enum("AlignmentFlag", "AlignTop"))
+        self.tick.setContentsMargins(0, 2, 0, 0)
         self.setFocusPolicy(qt_enum("FocusPolicy", "StrongFocus"))
 
         self.body = QWidget()
@@ -252,12 +255,16 @@ class OptionCard(QFrame):
         self.setProperty("checked", "false")
         self.setProperty("locked", "true")
         self.setFocusPolicy(qt_enum("FocusPolicy", "NoFocus"))
-        self.icon_label.setPixmap(icons.pixmap(self.glyph, 22, MUTED, 1.85))
+        # Icone na cor de destaque, e nao apagado: o cartao e um produto que
+        # SERA gerado. Apagar o icone e o titulo dizia o contrario.
+        self.icon_label.setPixmap(icons.pixmap(self.glyph, 22, ACCENT, 1.85))
         self.tick.setPixmap(QPixmap())
+        self.tick.setObjectName("ttIncludedPill")
         self.tick.setText(badge_text)
+        self.tick.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
 
     def refresh_theme(self):
-        colour = MUTED if (self._locked() or not self._checked) else ACCENT
+        colour = ACCENT if (self._locked() or self._checked) else MUTED
         self.icon_label.setPixmap(icons.pixmap(self.glyph, 22, colour, 1.85))
         if self._checked and not self._locked():
             self.tick.setPixmap(icons.pixmap("check", 20, ACCENT, 1.9))
@@ -559,13 +566,15 @@ class _Section(QWidget):
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(4)
+        holder = QWidget()
+        holder._labels = []
         for index, (label, widget) in enumerate(rows):
             text = QLabel(label)
             text.setWordWrap(True)
             grid.addWidget(text, index, 0)
             grid.addWidget(widget, index, 1)
+            holder._labels.append(text)
         grid.setColumnStretch(0, 1)
-        holder = QWidget()
         holder.setLayout(grid)
         self.layout_.addWidget(holder)
         return holder
@@ -711,7 +720,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         header.setObjectName("ttHeader")
         column = QVBoxLayout(header)
         column.setContentsMargins(24, 16, 24, 0)
-        column.setSpacing(14)
+        column.setSpacing(12)
 
         brand = QHBoxLayout()
         brand.setSpacing(12)
@@ -784,22 +793,20 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             self._step_rows.append((pill, badge))
             steps.addWidget(pill)
         steps.addStretch(1)
-        column.addLayout(steps)
-
-        meta = QHBoxLayout()
-        meta.setContentsMargins(2, 0, 2, 0)
+        # "Sobre" e a versao moram na mesma linha das etapas, a direita: numa
+        # linha propria eram 30 px de faixa quase vazia entre o cabecalho e o
+        # conteudo, e a janela e menor do que parece num plugin.
         self.about_button = QPushButton()
         self.about_button.setObjectName("ttQuiet")
         self.about_button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
         self.about_button.clicked.connect(self._show_about)
         self._bind(self.about_button, "about")
-        meta.addWidget(self.about_button)
-        meta.addStretch(1)
+        steps.addWidget(self.about_button, 0, qt_enum("AlignmentFlag", "AlignVCenter"))
         self.version_label = QLabel()
         self.version_label.setObjectName("ttQuietText")
-        meta.addWidget(self.version_label)
-        column.addLayout(meta)
-        column.addSpacing(2)
+        steps.addWidget(self.version_label, 0, qt_enum("AlignmentFlag", "AlignVCenter"))
+        column.addLayout(steps)
+        column.addSpacing(12)
         return header
 
     def _build_credits(self):
@@ -957,12 +964,14 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self.curvh_file = _FileRow("GeoTIFF (*.tif *.tiff)", "Curvatura H")
         self.curvv_file = _FileRow("GeoTIFF (*.tif *.tiff)", "Curvatura V")
         self.slope_unit = QComboBox()
-        self.own_section.add_form([
+        form = self.own_section.add_form([
             (self.t("slope"), self.slope_file),
             (self.t("sunit"), self.slope_unit),
             (self.t("curvh"), self.curvh_file),
             (self.t("curvv"), self.curvv_file),
         ])
+        for label, key in zip(form._labels, ("slope", "sunit", "curvh", "curvv")):
+            self._bind(label, key)
         self.own_rasters.toggled.connect(self.own_section.setVisible)
         inner.addWidget(self.own_section)
         layout.addWidget(card)
@@ -999,7 +1008,9 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             row.addWidget(badge, 0, qt_enum("AlignmentFlag", "AlignTop"))
             holder._chip = badge
         else:
-            subtitle.setText(self.t(subtitle_key))
+            # Vinculado, e nao so escrito: escrito uma vez, ficava em portugues
+            # depois de a pessoa trocar para japones.
+            self._bind(subtitle, subtitle_key)
         return holder
 
     def _step_outputs(self, layout):
@@ -1286,14 +1297,15 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         header_bg = "#0f1a15" if dark else "#0d452c"
         self.setStyleSheet(f"""
             QDialog {{ background: {t['canvas']}; }}
-            QLabel {{ color: {t['ink']}; }}
+            QLabel {{ color: {t['ink']}; font-size: 13px; }}
+            QPushButton {{ font-size: 13px; }}
 
             #ttHeader {{ background: {header_bg};
                          border-bottom: 1px solid {'#22302a' if dark else '#0a3a25'}; }}
             #ttMark {{ background: {t['plate']}; border-radius: 11px; }}
             #ttBrand {{ color: #ffffff; font-size: 13px; font-weight: 700;
                         letter-spacing: 1.4px; }}
-            #ttTagline {{ color: #86a89a; font-size: 10.5px; }}
+            #ttTagline {{ color: #86a89a; font-size: 11px; }}
             #ttHeaderSelect {{ background: rgba(255,255,255,0.08); border: none;
                                color: #cfe3d8; font-size: 11px; padding: 6px 10px;
                                border-radius: 8px; }}
@@ -1308,9 +1320,9 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             #ttHeaderAction:hover {{ background: rgba(255,255,255,0.16);
                                      color: #ffffff; }}
             #ttQuiet {{ background: transparent; border: none; color: #7d9a8d;
-                        font-size: 10.5px; padding: 4px 2px; text-align: left; }}
+                        font-size: 11px; padding: 4px 2px; text-align: left; }}
             #ttQuiet:hover {{ color: #ffffff; }}
-            #ttQuietText {{ color: #7d9a8d; font-size: 10.5px; }}
+            #ttQuietText {{ color: #7d9a8d; font-size: 11px; padding-left: 4px; }}
 
             #ttPill {{ background: transparent; border-radius: 10px; }}
             #ttPill:hover {{ background: rgba(255,255,255,0.06); }}
@@ -1328,9 +1340,9 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             #ttEyebrow {{ color: {t['accent']}; font-size: 10px; font-weight: 700;
                           letter-spacing: 1.3px; }}
             #ttPageTitle {{ font-size: 22px; font-weight: 600; color: {t['ink']}; }}
-            #ttPageSub {{ font-size: 12.5px; color: {t['muted']}; }}
-            #ttGroupLabel {{ font-size: 12.5px; font-weight: 600; color: {t['ink']}; }}
-            #ttGroupSub {{ font-size: 10.5px; color: {t['muted']}; }}
+            #ttPageSub {{ font-size: 13px; color: {t['muted']}; }}
+            #ttGroupLabel {{ font-size: 14px; font-weight: 600; color: {t['ink']}; }}
+            #ttGroupSub {{ font-size: 12px; color: {t['muted']}; }}
             #ttCountChip {{ background: {t['accent_soft']}; color: {t['accent']};
                             font-size: 10px; font-weight: 600; padding: 4px 9px;
                             border-radius: 9px; }}
@@ -1343,22 +1355,22 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
             #ttCard {{ background: {t['surface']}; border: 1px solid {t['line']};
                        border-radius: 14px; }}
-            #ttCardTitle {{ font-size: 13.5px; font-weight: 600; color: {t['ink']}; }}
+            #ttCardTitle {{ font-size: 14px; font-weight: 600; color: {t['ink']}; }}
             #ttBadgeChip {{ background: {t['accent_soft']}; color: {t['accent']};
-                            font-size: 9.5px; font-weight: 700; padding: 4px 9px;
+                            font-size: 10px; font-weight: 700; padding: 4px 9px;
                             border-radius: 8px; }}
-            #ttHelp {{ color: {t['muted']}; font-size: 11.5px; }}
+            #ttHelp {{ color: {t['muted']}; font-size: 12px; }}
             #ttDivider {{ background: {t['line']}; border: none; }}
 
             #ttChip {{ background: {t['surface_alt']}; border: 1px solid {t['line']};
                        border-radius: 11px; }}
-            #ttChipName {{ font-size: 12.5px; font-weight: 600; color: {t['ink']}; }}
-            #ttChipDetail {{ font-size: 10.5px; color: {t['muted']}; }}
+            #ttChipName {{ font-size: 13px; font-weight: 600; color: {t['ink']}; }}
+            #ttChipDetail {{ font-size: 11px; color: {t['muted']}; }}
 
             #ttSegment {{ background: {t['surface_alt']};
                           border: 1px solid {t['line']}; border-radius: 10px; }}
             #ttSegmentButton {{ background: transparent; border: none;
-                                color: {t['muted']}; font-size: 11.5px;
+                                color: {t['muted']}; font-size: 12px;
                                 padding: 6px 18px; border-radius: 7px; }}
             #ttSegmentButton:checked {{ background: {t['accent']}; color: #ffffff;
                                         font-weight: 600; }}
@@ -1368,16 +1380,19 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             #ttOption:hover {{ border-color: {t['line_strong']}; }}
             #ttOption[checked="true"] {{ border: 1.5px solid {t['accent']};
                                          background: {t['accent_tint']}; }}
-            #ttOption[locked="true"] {{ background: {t['surface_alt']}; }}
-            #ttOption[locked="true"]:hover {{ border-color: {t['line']}; }}
-            #ttOptionTitle {{ font-size: 12.5px; font-weight: 600; color: {t['ink']}; }}
-            #ttOption[locked="true"] #ttOptionTitle {{ color: {t['disabled']}; }}
+            #ttOption[locked="true"] {{ background: {t['surface_alt']};
+                                        border: 1px dashed {t['line_strong']}; }}
+            #ttOption[locked="true"]:hover {{ border-color: {t['line_strong']}; }}
+            #ttOptionTitle {{ font-size: 13px; font-weight: 600; color: {t['ink']}; }}
             #ttTick {{ color: {t['muted']}; font-size: 10px; }}
+            #ttIncludedPill {{ background: {t['accent_soft']}; color: {t['accent']};
+                               font-size: 10px; font-weight: 700; padding: 4px 10px;
+                               border-radius: 9px; }}
 
             #ttFooter {{ background: {t['surface']};
                          border-top: 1px solid {t['line']}; }}
-            #ttFooterNote {{ color: {t['muted']}; font-size: 11.5px; }}
-            #ttPrimary {{ background: {t['accent']}; color: #ffffff; font-size: 12.5px;
+            #ttFooterNote {{ color: {t['muted']}; font-size: 12px; }}
+            #ttPrimary {{ background: {t['accent']}; color: #ffffff; font-size: 13px;
                           font-weight: 600; padding: 10px 22px; border: none;
                           border-radius: 9px; }}
             #ttPrimary:hover {{ background: {t['accent_hover']}; }}
@@ -1393,7 +1408,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             #ttAuthor {{ color: #b9d5c7; font-size: 11px; font-weight: 600; }}
 
             QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox, QTextEdit {{
-                border: 1px solid {t['line']}; border-radius: 8px;
+                border: 1px solid {t['line']}; border-radius: 8px; font-size: 13px;
                 padding: 7px 9px; background: {t['surface_alt']}; color: {t['ink']};
                 selection-background-color: {t['accent']};
             }}
@@ -1411,7 +1426,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             QPushButton:hover {{ border-color: {t['accent']}; color: {t['accent']}; }}
             #ttBrowse {{ padding: 7px 0; font-size: 15px; color: {t['muted']}; }}
 
-            QCheckBox {{ spacing: 10px; color: {t['ink']}; font-size: 12.5px; }}
+            QCheckBox {{ spacing: 10px; color: {t['ink']}; font-size: 13px; }}
             QCheckBox::indicator {{ width: 17px; height: 17px;
                                     border: 1px solid {t['line_strong']};
                                     border-radius: 5px; background: {t['surface_alt']}; }}
@@ -1431,7 +1446,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
             QToolTip {{ background: {'#0b1310' if dark else t['ink']}; color: #ffffff;
                         border: 1px solid {t['line']}; padding: 9px 11px;
-                        border-radius: 7px; font-size: 11.5px; }}
+                        border-radius: 7px; font-size: 12px; }}
             QScrollArea {{ background: {t['canvas']}; }}
             QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
             QScrollBar::handle:vertical {{ background: {t['line_strong']};
