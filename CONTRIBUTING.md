@@ -104,9 +104,20 @@ checklist.
 
 ## Getting help
 
-Open an issue with the question template, or write to the maintainer through the
-address in [`CITATION.cff`](CITATION.cff). There is no separate support channel;
+Open an issue with the question template, or write to the project address,
+herpetomantiqueira@gmail.com. There is no separate support channel;
 issues are the record.
+
+## Using AI assistance in a contribution
+
+Using a language model to help write a patch is fine, and it does not need to be
+hidden. State it in the pull request description, in one line, and say what you
+verified yourself.
+
+Do not add a model as `Co-Authored-By`. Authorship means accountability for the
+work, and a tool cannot answer for it. If a change alters numerical results,
+the reasoning in the pull request has to be yours — a model's confidence is not
+evidence, and neither is mine.
 
 ## Code of conduct
 

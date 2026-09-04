@@ -1,0 +1,9 @@
+# Unifica as grafias de autor usadas ao longo do historico, sem reescrever
+# commit nenhum. `git shortlog`, `git log --use-mailmap` e a interface do GitHub
+# passam a mostrar uma pessoa so.
+#
+# Forma canonica: nome civil completo. A forma de citacao (MACIEL, L. S. C.)
+# fica em CITATION.cff e em metadata.txt, que e onde ela significa alguma coisa.
+Luan da Silva Cortes Maciel <luancortesbio@gmail.com> <LuanCortesM@users.noreply.github.com>
+Luan da Silva Cortes Maciel <luancortesbio@gmail.com> Luan Cortes Maciel <LuanCortesM@users.noreply.github.com>
+Luan da Silva Cortes Maciel <luancortesbio@gmail.com> MACIEL, L. S. C. <luancortesbio@gmail.com>

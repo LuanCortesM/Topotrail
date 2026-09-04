@@ -478,7 +478,7 @@ commit only a `.env.example` with placeholder values.
 
 ## Credits
 
-**Developer:** Luan da Silva Cortes Maciel (MACIEL, L. S.)
+**Developer:** Luan da Silva Cortes Maciel — cited as MACIEL, L. S. C.
 
 **Advisor:** Leandro Freitas
 
@@ -487,6 +487,28 @@ Biodiversity in Protected Areas, associated with the Escola Nacional de Botânic
 Tropical and the Instituto de Pesquisas Jardim Botânico do Rio de Janeiro.
 
 **Associated project:** Herpeto Mantiqueira.
+
+**Contact:** herpetomantiqueira@gmail.com — the project address rather than a
+personal one, so it outlives changes of institution.
+
+## Use of AI assistance
+
+Parts of this software were written with assistance from a large language model
+(Claude, Anthropic), used as a programming tool: drafting and refactoring code,
+writing documentation, and running the verification described throughout this
+README. Every change was reviewed, tested and accepted by the author, who is
+responsible for the methodological decisions and for the correctness of the
+result.
+
+No language model is listed as an author. Authorship carries accountability —
+answering for the work, responding to review, being contactable — and a tool
+cannot hold it. This is also the position of JOSS, the ICMJE and COPE.
+
+No AI component runs inside the plugin. Nothing in the analysis pipeline calls a
+model, requires a network connection, or behaves non-deterministically: the same
+inputs and parameters produce the same outputs, which is why every run writes a
+diagnostic log recording the plugin version, the versions of its dependencies,
+and every parameter used.
 
 ## Changelog
 

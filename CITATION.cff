@@ -1,13 +1,17 @@
 # TODO before submitting to JOSS:
-#   1. Replace the ORCID placeholders below with real identifiers
-#      (register free at https://orcid.org). JOSS expects an ORCID for
-#      the corresponding author.
+#   1. Replace the ORCID placeholder below with the real identifier
+#      (register free at https://orcid.org). JOSS expects an ORCID for the
+#      corresponding author, and the dissertation will need one anyway.
 #   2. After the first Zenodo deposit, add the DOI to `doi:` and to
 #      `identifiers:`, and update `date-released` and `version`.
-#   3. Confirm with Leandro Freitas whether he should be listed as an
-#      author of the software or only in the acknowledgements. JOSS
-#      authorship requires substantial contribution to the software
-#      itself; supervision alone is usually acknowledged instead.
+#   3. Confirm with Leandro Freitas whether he should be listed as an author of
+#      the software or only in the acknowledgements. JOSS authorship requires
+#      substantial contribution to the software itself; supervision alone is
+#      usually acknowledged instead.
+#
+# Citation form used by the author in the literature: MACIEL, L. S. C.
+# Contact address is the project's, not a personal one, so it survives changes
+# of institution and can be answered by whoever maintains the tool.
 
 cff-version: 1.2.0
 title: "TopoTrail: a QGIS plugin for DEM-based topographic suitability and least-cost route planning"
@@ -16,19 +20,25 @@ type: software
 authors:
   - given-names: "Luan da Silva Cortes"
     family-names: "Maciel"
-    email: "LuanCortesM@users.noreply.github.com"
+    alias: "MACIEL, L. S. C."
+    email: "herpetomantiqueira@gmail.com"
     # orcid: "https://orcid.org/0000-0000-0000-0000"
     affiliation: "Escola Nacional de Botânica Tropical, Instituto de Pesquisas Jardim Botânico do Rio de Janeiro, Brazil"
+contact:
+  - given-names: "Luan da Silva Cortes"
+    family-names: "Maciel"
+    email: "herpetomantiqueira@gmail.com"
 repository-code: "https://github.com/LuanCortesM/Topotrail"
 url: "https://plugins.qgis.org/plugins/TopoTrail/"
 abstract: >-
   TopoTrail is a QGIS plugin that supports preliminary planning of trails,
-  access routes and field corridors in natural and protected areas. It models
-  topographic suitability from a Digital Elevation Model, slope and horizontal
-  and vertical curvature using weighted multicriteria analysis, and derives a
-  relative topographic risk surface, potential access zones, a least-cost route
-  between an origin and a destination, and a metric corridor around that route.
-  Results are intended as decision-support evidence and require field
+  access routes and field corridors in natural and protected areas. From a
+  single Digital Elevation Model it derives slope and curvature, models
+  topographic suitability by weighted multicriteria analysis, and produces a
+  relative topographic risk surface, potential access zones, a least-cost or
+  walking-time route between an origin and a destination, and a metric corridor
+  around that route. Watercourses can be extracted from the same DEM and used
+  as a constraint. Results are decision-support evidence and require field
   validation.
 keywords:
   - QGIS
@@ -36,6 +46,7 @@ keywords:
   - digital elevation model
   - multicriteria analysis
   - least-cost path
+  - Tobler hiking function
   - trail planning
   - protected areas
   - geomorphometry
