@@ -52,7 +52,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.12.1"
+PLUGIN_VERSION = "0.12.2"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -718,43 +718,68 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
     O buffer e a razao de a reprojecao vir antes: em CRS geografico um buffer de
     30 unidades seriam 30 graus.
     """
-    gdf = gpd.read_file(layer_source)
-    if gdf.empty:
-        if feedback:
-            feedback.pushWarning("A camada de restricao esta vazia; foi ignorada.")
-        return None
-
-    if gdf.crs is None:
+    # Lido com OGR, e nao com geopandas: o QGIS garante GDAL/OGR, NumPy e SciPy
+    # como dependencias, mas nao o geopandas. Com o import de geopandas no topo
+    # deste modulo, o plugin nao carregava em instalacao padrao de QGIS -- e o
+    # OGR ja traz o GEOS, que e o que faz uniao e buffer.
+    datasource_in = ogr.Open(str(layer_source))
+    if datasource_in is None:
+        raise Exception(f"Nao foi possivel abrir a camada de restricao: {layer_source}")
+    layer_in = datasource_in.GetLayer(0)
+    source_srs = layer_in.GetSpatialRef()
+    if source_srs is None:
         raise Exception(
             "A camada de restricao nao possui CRS definido. Defina o CRS na origem "
             "do dado antes de usa-la como restricao."
         )
-    try:
-        gdf = gdf.to_crs(proj)
-    except Exception as exc:
-        raise Exception(
-            f"Nao foi possivel reprojetar a camada de restricao para o CRS de trabalho: {exc}"
-        )
 
-    geometries = [g for g in gdf.geometry.values if g is not None and not g.is_empty]
-    if not geometries:
+    target_srs = osr.SpatialReference()
+    if proj:
+        target_srs.ImportFromWkt(proj)
+    else:
+        target_srs.ImportFromEPSG(4326)
+    source_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    target_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    reproject = None
+    if not source_srs.IsSame(target_srs):
+        try:
+            reproject = osr.CoordinateTransformation(source_srs, target_srs)
+        except Exception as exc:
+            raise Exception(
+                f"Nao foi possivel reprojetar a camada de restricao para o CRS de trabalho: {exc}"
+            )
+
+    # Uniao acumulada: o equivalente ao unary_union, feito pelo GEOS via OGR.
+    merged = None
+    feature_count = 0
+    for feature_in in layer_in:
+        geometry = feature_in.GetGeometryRef()
+        if geometry is None or geometry.IsEmpty():
+            continue
+        geometry = geometry.Clone()
+        if reproject is not None:
+            if geometry.Transform(reproject) != 0:
+                continue
+        feature_count += 1
+        merged = geometry if merged is None else merged.Union(geometry)
+    datasource_in = None
+
+    if merged is None:
         if feedback:
-            feedback.pushWarning("A camada de restricao nao possui geometrias validas.")
+            feedback.pushWarning(
+                "A camada de restricao esta vazia ou sem geometrias validas; foi ignorada.")
         return None
 
-    merged = unary_union(geometries)
     if buffer_m > 0:
-        merged = merged.buffer(float(buffer_m))
+        merged = merged.Buffer(float(buffer_m))
 
     rows, cols = shape
     driver = ogr.GetDriverByName("Memory")
     datasource = driver.CreateDataSource("restricoes")
-    srs = osr.SpatialReference()
-    if proj:
-        srs.ImportFromWkt(proj)
-    layer = datasource.CreateLayer("restricoes", srs=srs, geom_type=ogr.wkbMultiPolygon)
+    layer = datasource.CreateLayer("restricoes", srs=target_srs,
+                                   geom_type=ogr.wkbMultiPolygon)
     feature = ogr.Feature(layer.GetLayerDefn())
-    feature.SetGeometry(ogr.CreateGeometryFromWkb(merged.wkb))
+    feature.SetGeometry(merged)
     layer.CreateFeature(feature)
     feature = None
 
@@ -769,7 +794,7 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
 
     append_diagnostic_log(
         log_path, "camada_restricao",
-        origem=str(layer_source), feicoes=int(len(gdf)),
+        origem=str(layer_source), feicoes=int(feature_count),
         buffer_m=float(buffer_m), celulas_restritas=int(mask.sum()),
         proporcao=float(mask.sum() / mask.size),
     )
@@ -777,7 +802,7 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
         feedback.pushInfo(
             "Camada de restricao: {} feicoes, buffer de {:.0f} m, "
             "{:,} celulas atingidas ({:.2f}% da grade).".format(
-                len(gdf), buffer_m, int(mask.sum()), 100.0 * mask.sum() / mask.size)
+                feature_count, buffer_m, int(mask.sum()), 100.0 * mask.sum() / mask.size)
         )
     return mask
 

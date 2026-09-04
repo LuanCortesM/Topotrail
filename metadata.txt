@@ -3,7 +3,7 @@ name=TopoTrail
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
 description=Topographic suitability, access zones and least-cost routes for preliminary trail and field planning, from a single DEM.
-version=0.12.1
+version=0.12.2
 author=MACIEL, L. S. C.
 email=herpetomantiqueira@gmail.com
 homepage=https://github.com/LuanCortesM/Topotrail#readme
@@ -17,7 +17,8 @@ license=MIT
 experimental=False
 deprecated=False
 hasProcessingProvider=True
-changelog=0.12.1 - The window is now actually built and exercised under Qt6 -- the toolkit QGIS 4 uses -- in all six languages, and that found a break the static check had missed: QPainter.Antialiasing is also a scoped enum in Qt6. The harness runs in continuous integration from now on, so QGIS 4 support stops being an assumption.
+changelog=0.12.2 - Publication-readiness audit, and the start of its most serious finding: the plugin imported geopandas at module level, which QGIS does not ship on any platform, so it failed to load on a clean QGIS install before showing a single window. The constraint layer now goes through OGR, which QGIS does guarantee; the remaining call sites follow. Also removed a 902-line module no import ever reached.
+    0.12.1 - The window is now actually built and exercised under Qt6 -- the toolkit QGIS 4 uses -- in all six languages, and that found a break the static check had missed: QPainter.Antialiasing is also a scoped enum in Qt6. The harness runs in continuous integration from now on, so QGIS 4 support stops being an assumption.
     0.12.0 - QGIS 4 compatibility, verified rather than assumed. The plugin already declared support for QGIS 4, but Qt6 removed unscoped enum access -- Qt.PointingHandCursor no longer exists -- and 33 such accesses would have raised as soon as a user clicked. All of them now go through the version-agnostic helpers the project already had, and a test resolves every enum name against a real PyQt6 install, which catches a mistyped group that Qt5 would silently tolerate. The footer now credits the author alongside the institutional logos, in all six languages.
     0.11.2 - Layout fixes found by measuring every label in all six languages: no text is clipped any more. The clipping was in the Latin languages, not the Asian ones -- "Destination" needed 98 px in a slot fixed at 64, and the active step tab reserved its width in the normal font weight while rendering in semibold, so it cut the step the user was actually on. A test now checks all six languages at the minimum window size, because this defect is silent.
     0.11.1 - Audit fixes. The transitability class labels are now translated as well: they are written into the output raster's legend, so a Japanese user was opening the map in QGIS and reading a Portuguese legend -- and the file kept it when passed on. Also removed an interface file the rewritten window no longer loads, an unused widget class, and a stray run log, all of which were shipping inside the plugin package.
