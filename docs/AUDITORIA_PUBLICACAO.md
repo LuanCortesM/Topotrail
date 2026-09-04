@@ -4,18 +4,22 @@ Avaliação contra os critérios de revisão do JOSS e os requisitos do reposit�
 oficial de plugins do QGIS. Auditoria adversarial: o objetivo foi encontrar o
 que falta, não recapitular o que existe.
 
-**Versão auditada:** 0.12.1 · 32 commits · 5.895 linhas de código, 1.888 de
+**Versão auditada:** 0.12.1 · 32 commits · **atualizado após a 0.13.1** · 5.895 linhas de código, 1.888 de
 teste, 1.577 de documentação · 6 idiomas
 
 ---
 
 ## Veredito
 
-**Ainda não. Faltam quatro bloqueadores, e um deles é técnico e sério.**
+**Atualização (0.13.1): o bloqueador técnico foi removido. Restam os três
+bloqueadores administrativos — `paper.md`, ORCID e Zenodo — nenhum de código.**
+
+*(Veredito original, 0.12.1: ainda não; quatro bloqueadores, um deles técnico e
+sério.)*
 
 A ciência está sólida e validada contra dado de campo real — essa é a parte
-difícil, e está feita. O que falta é infraestrutura de publicação e uma
-dependência que impede o plugin de carregar na maioria das instalações de QGIS.
+difícil, e está feita. O plugin agora carrega e roda numa instalação limpa de
+QGIS, sem nada a instalar. O que falta é infraestrutura de publicação.
 
 Nenhum bloqueador exige pesquisa nova. Todos são trabalho conhecido.
 
@@ -51,9 +55,19 @@ invisível para quem desenvolve numa máquina que tem tudo instalado.
 arquivo e traz o GEOS para união e buffer. São 12 pontos restantes, em três
 funções.
 
-**Estado:** parcialmente feito. A camada de restrição já foi migrada e verificada
-(2 feições, buffer de 60 m, 2.025 células — resultado idêntico ao anterior).
-Faltam a vetorização das zonas, a gravação do vetor de saída e a rota/corredor.
+**Estado: RESOLVIDO na 0.13.0.** Os doze pontos restantes foram migrados para
+uma colecção mínima sobre `ogr.Geometry` (`FeatureSet`: reprojeção pelo OSR,
+medida e buffer pelo GEOS, escrita em GPKG/SHP/KML). Verificado ponta a ponta
+num QGIS headless com geopandas, shapely, pandas, fiona e pyproj **bloqueados
+no import**: GeoPackage, Shapefile e KML; MDE projetado e geográfico; pontos de
+passagem com ordem otimizada; camada de restrição. O ZIP de instalação foi
+carregado num QGIS limpo pelo `classFactory` com os mesmos módulos bloqueados,
+e a janela abriu. Um teste novo (`test_shipped_code_imports_only_what_qgis_guarantees`)
+proíbe qualquer import de módulo que o QGIS não garanta, para não regredir.
+
+Efeito colateral encontrado e corrigido: o driver clássico "KML" do OGR descarta
+todos os atributos além dos dois primeiros (vão para Name/Description). A saída
+KML usa agora o LIBKML, que grava todos com tipo.
 
 ### 2. `paper.md` não existe
 
@@ -86,9 +100,10 @@ seção pelo nome. Renomear e enxugar resolve.
 
 ### `requirements.txt` e `metadata.txt` declaram o que não se usa
 
-Ambos listam **pandas**, que o código nunca importa diretamente. Depois da
-migração para OGR, geopandas e shapely também saem. Uma lista de dependências
-que não corresponde ao código é o tipo de coisa que um revisor testa e reporta.
+Ambos listavam **pandas**, que o código nunca importava diretamente.
+**Resolvido na 0.13.0:** `requirements.txt`, `metadata.txt`, README,
+CONTRIBUTING e o guia do usuário declaram agora apenas NumPy, SciPy e GDAL/OGR
+— o que o QGIS já traz.
 
 ### Código morto removido nesta auditoria
 
@@ -140,14 +155,24 @@ Vale registrar, porque é o que sustenta a submissão:
 
 ## Plano, em ordem
 
-1. **Terminar a migração para OGR** — remove o bloqueador crítico. É o único
-   item que exige código.
+1. ~~**Terminar a migração para OGR**~~ — **feito (0.13.0).**
 2. **Escrever `paper.md` e `paper.bib`** — material já existe, falta a forma.
 3. **Registrar ORCID** — cinco minutos, é seu.
 4. **Assinar os commits** (`assinar.sh`), publicar release, ligar ao Zenodo,
    pegar o DOI.
-5. **Ajustar README, `requirements.txt` e `metadata.txt`** às dependências reais.
-6. **Teste de fumaça num QGIS 4 real** antes de anunciar suporte à versão 4.
+5. ~~**Ajustar README, `requirements.txt` e `metadata.txt`**~~ — **feito (0.13.0).**
+6. **Teste de fumaça num QGIS 4 real** antes de anunciar suporte à versão 4
+   (aqui a janela foi construída sob PyQt6 6.11 nos seis idiomas, sem problemas;
+   falta só a confirmação num QGIS 4 instalado).
 
-Os itens 1, 2 e 5 são trabalho de código e redação. Os itens 3, 4 e 6 dependem
-de você e de contas suas.
+O item 2 é redação. Os itens 3, 4 e 6 dependem de você e de contas suas.
+
+### Interface (0.13.1)
+
+Achado da passagem visual: o Qt ignora em silêncio `font-size` com meio pixel
+(`12.5px`), e dezessete regras da janela usavam isso — quase todo o texto saía
+no tamanho padrão do QGIS, não no desenhado. Corrigido (pixel inteiro, base de
+13 px) e protegido por teste. Também corrigidos: cinco textos que ficavam em
+português depois de trocar o idioma (o harness Qt6 agora verifica isso), o
+cabeçalho uma linha mais baixo, e os produtos "incluídos" que pareciam
+desligados.
