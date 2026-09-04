@@ -30,6 +30,7 @@ from qgis.core import (
 )
 import qgis.processing as processing
 
+from . import icons
 from .support import (
     TopotrailSupportMixin, append_gui_diagnostic_log, qt_enum,
     serialize_processing_params, size_policy,
@@ -77,7 +78,7 @@ TEXTS = {
         "s1_title": "De que dados você dispõe?",
         "s1_sub": "Só o modelo digital de elevação é obrigatório. Declividade e "
                   "curvaturas são calculadas a partir dele.",
-        "dem": "Modelo digital de elevação (MDE)",
+        "dem": "Arquivo do MDE",
         "dem_help": "Um raster de altitude em GeoTIFF. Serve qualquer fonte: "
                     "Copernicus, SRTM, ALOS, carta topográfica nacional.",
         "vunit": "Unidade vertical do MDE",
@@ -93,56 +94,57 @@ TEXTS = {
 
         "s2_title": "O que você quer que o plugin produza?",
         "s2_sub": "Marque o que for útil. Os dois primeiros saem sempre.",
-        "always": "Sempre gerados",
+        "always": "SEMPRE GERADOS",
+        "optional_group": "OPCIONAIS — MARQUE O QUE PRECISAR",
+        "o_transit_tip": "Os rótulos descrevem inclinação, não um veredito sobre "
+                         "quem passa: em trilhas reais percorridas a pé, equipes "
+                         "de campo cruzam rotineiramente as classes 4 e 5.\n\n"
+                         "A distribuição das classes depende fortemente da "
+                         "resolução do MDE — informe o tamanho da célula ao lado "
+                         "de qualquer número tirado deste mapa.",
+        "o_streams_tip": "Não precisa de camada de hidrografia. Cuidado em "
+                         "paisagem sazonalmente seca: o leito seco costuma ser a "
+                         "melhor superfície de caminhada, e em levantamento "
+                         "biológico a drenagem é alvo de amostragem — evitá-la "
+                         "pode afastar a rota do que você quer visitar.",
+        "o_route_tip": "Use os destinos intermediários para encadear objetivos: "
+                       "subir um cume, depois outro, passar por um ponto de "
+                       "coleta, então descer.",
+        "dem_card": "Modelo digital de elevação",
+        "own_card": "Rasters próprios",
+        "out_box": "Destino do resultado",
         "o_score": "Mapa de adequabilidade topográfica",
         "o_score_help": "Nota de 0 a 1 por célula, combinando os critérios "
                         "escolhidos no passo 3.",
         "o_risk": "Mapa de risco topográfico relativo",
-        "o_risk_help": "O complemento da adequabilidade, para leitura direta de "
-                       "onde o terreno é mais desfavorável.",
+        "o_risk_help": "O complemento da adequabilidade, para ler direto onde "
+                       "o terreno é mais desfavorável.",
         "o_zones": "Zonas de acesso potencial (vetor)",
-        "o_zones_help": "Converte as melhores áreas em polígonos, para recorte e "
+        "o_zones_help": "As melhores áreas como polígonos, para recorte e "
                         "medida de área.",
         "o_transit": "Mapa de transitabilidade — “onde dá para andar”",
-        "o_transit_help": "Cinco classes de declividade com legenda gravada no "
-                          "arquivo. Abre já colorido no QGIS. Os rótulos "
-                          "descrevem inclinação, não veredito sobre quem passa: "
-                          "equipes de campo percorrem rotineiramente as classes "
-                          "4 e 5.",
+        "o_transit_help": "Cinco classes de declividade, com a legenda gravada no arquivo.",
         "o_streams": "Levar cursos d'água em conta, extraídos do próprio MDE",
-        "o_streams_help": "Deriva a rede de drenagem do relevo e a usa como "
-                          "restrição da rota — não precisa de camada de "
-                          "hidrografia. Cuidado em paisagem sazonalmente seca: "
-                          "o leito seco costuma ser a melhor superfície de "
-                          "caminhada, e em levantamento biológico a drenagem é "
-                          "alvo de amostragem — evitá-la pode afastar a rota "
-                          "justamente do que você quer visitar.",
+        "o_streams_help": "Deriva a drenagem do relevo e a usa como restrição da rota.",
         "o_route": "Rota entre pontos e corredor de acesso",
         "o_route_help": "Caminho de menor custo entre a origem e o destino, "
-                        "podendo passar por destinos intermediários.",
+                        "passando por onde você quiser.",
         "route_box": "Rota",
         "start": "Origem", "end": "Destino",
         "via": "Destinos intermediários, na ordem de visita (opcional)",
-        "via_help": "Uma camada de pontos. A ordem das feições é a ordem da "
-                    "travessia: o primeiro ponto desenhado é a primeira parada. "
-                    "Use para encadear objetivos — subir um cume, depois outro, "
-                    "passar por um ponto de coleta, e então descer. Sem isso o "
-                    "algoritmo contorna os pontos altos, e com razão: o cume é "
-                    "justamente o lugar caro. Declarar cada objetivo é o que faz "
-                    "a rota passar por ele.",
+        "via_help": "Uma camada de pontos: a ordem das feições é a ordem da "
+                    "travessia. Sem ela o algoritmo contorna os pontos altos — "
+                    "e com razão, o cume é o lugar caro.",
         "optimise": "Deixar o plugin escolher a melhor ordem de visita",
-        "optimise_help": "Resolve a ordem de menor custo exatamente, até oito "
-                         "pontos intermediários. Ignora a ordem da camada.",
+        "optimise_help": "Ordem exata de menor custo, até oito pontos.",
         "pick": "Marcar no mapa", "file": "Arquivo…",
         "cost": "Como medir o custo do caminho",
-        "cost_help": "“Tempo de caminhada” usa a função de Tobler: subir custa "
-                     "mais que descer, e o custo sai em horas. É o modelo "
-                     "validado contra GPS de campo e o recomendado.",
+        "cost_help": "Tobler: subir custa mais que descer e o custo sai em "
+                     "horas. É o modelo validado contra GPS de campo.",
         "corridor": "Largura do corredor (m)",
         "margin": "Margem lateral de busca (m)",
-        "margin_help": "Quanto o algoritmo pode se afastar da linha reta entre "
-                       "os pontos. Margem pequena demais força a rota a ser reta; "
-                       "grande demais deixa o cálculo lento.",
+        "margin_help": "Quanto a rota pode se afastar da linha reta. Pequena "
+                       "demais força uma reta; grande demais deixa lento.",
 
         "s3_title": "Ajustes",
         "s3_sub": "Os valores padrão foram calibrados contra trilhas reais. "
@@ -191,6 +193,7 @@ TEXTS = {
         "crs_help": "Em branco, usa o CRS do projeto.",
         "summary": "Resumo do que será gerado",
         "log": "Andamento",
+        "log_empty": "As mensagens do cálculo aparecem aqui durante a execução.",
 
         "err_title": "Falta um dado",
         "err_dem": "Escolha o modelo digital de elevação para continuar.",
@@ -241,7 +244,7 @@ TEXTS = {
         "s1_title": "What data do you have?",
         "s1_sub": "Only the digital elevation model is required. Slope and "
                   "curvatures are derived from it.",
-        "dem": "Digital elevation model (DEM)",
+        "dem": "DEM file",
         "dem_help": "An elevation raster in GeoTIFF. Any source works: "
                     "Copernicus, SRTM, ALOS, a national topographic sheet.",
         "vunit": "DEM vertical unit",
@@ -256,55 +259,54 @@ TEXTS = {
 
         "s2_title": "What should the plugin produce?",
         "s2_sub": "Tick whatever is useful. The first two are always produced.",
-        "always": "Always produced",
+        "always": "ALWAYS PRODUCED",
+        "optional_group": "OPTIONAL — TICK WHAT YOU NEED",
+        "o_transit_tip": "The labels describe steepness, not a verdict on the "
+                         "walker: on real walked trails, field teams routinely "
+                         "cross classes 4 and 5.\n\nThe class distribution "
+                         "depends strongly on DEM resolution — quote the cell "
+                         "size beside any number taken from this map.",
+        "o_streams_tip": "No hydrography layer needed. Careful in seasonally dry "
+                         "landscapes: a dry bed is often the best walking "
+                         "surface, and in biological survey work drainage is a "
+                         "sampling target — avoiding it can push the route away "
+                         "from what you want to visit.",
+        "o_route_tip": "Use intermediate destinations to chain objectives: climb "
+                       "one summit, then another, call at a sampling point, then "
+                       "descend.",
+        "dem_card": "Digital elevation model",
+        "own_card": "Your own rasters",
+        "out_box": "Where the result goes",
         "o_score": "Topographic suitability map",
-        "o_score_help": "A 0-to-1 score per cell, combining the criteria chosen "
-                        "in step 3.",
+        "o_score_help": "A 0-to-1 score per cell, combining the criteria from step 3.",
         "o_risk": "Relative topographic risk map",
         "o_risk_help": "The complement of suitability, to read directly where "
                        "the terrain is least favourable.",
         "o_zones": "Potential access zones (vector)",
-        "o_zones_help": "Turns the best areas into polygons, for clipping and "
-                        "area measurement.",
+        "o_zones_help": "The best areas as polygons, for clipping and area measurement.",
         "o_transit": "Transitability map — “where can I walk”",
-        "o_transit_help": "Five slope classes with the legend written into the "
-                          "file, so it opens already coloured in QGIS. The "
-                          "labels describe steepness, not a verdict on the "
-                          "walker: field teams routinely cross classes 4 and 5.",
+        "o_transit_help": "Five slope classes, with the legend written into the file.",
         "o_streams": "Take watercourses into account, extracted from the DEM",
-        "o_streams_help": "Derives the drainage network from the relief and uses "
-                          "it as a route constraint — no hydrography layer "
-                          "needed. Careful in seasonally dry landscapes: a dry "
-                          "bed is often the best walking surface, and in "
-                          "biological survey work drainage is a sampling target "
-                          "— avoiding it can push the route away from the very "
-                          "thing you want to visit.",
+        "o_streams_help": "Derives drainage from the relief and uses it as a route constraint.",
         "o_route": "Route between points, and access corridor",
-        "o_route_help": "Least-cost path from origin to destination, optionally "
-                        "through intermediate destinations.",
+        "o_route_help": "Least-cost path from origin to destination, calling "
+                        "wherever you want on the way.",
         "route_box": "Route",
         "start": "Origin", "end": "Destination",
         "via": "Intermediate destinations, in visiting order (optional)",
-        "via_help": "A point layer. Feature order is the order of the traverse: "
-                    "the first point drawn is the first stop. Use it to chain "
-                    "objectives — climb one summit, then another, call at a "
-                    "sampling point, then descend. Without it the algorithm "
-                    "skirts the high ground, and rightly so: a summit is exactly "
-                    "the expensive place. Declaring each objective is what makes "
-                    "the route go there.",
+        "via_help": "A point layer: feature order is the order of the traverse. "
+                    "Without it the algorithm skirts the high ground — rightly, "
+                    "since a summit is the expensive place.",
         "optimise": "Let the plugin choose the best visiting order",
-        "optimise_help": "Solves the cheapest order exactly, up to eight "
-                         "intermediate points. Ignores the layer order.",
+        "optimise_help": "Exact cheapest order, up to eight points.",
         "pick": "Pick on map", "file": "File…",
         "cost": "How to measure the cost of the path",
-        "cost_help": "“Walking time” uses Tobler's function: uphill costs more "
-                     "than downhill, and the cost comes out in hours. It is the "
-                     "model validated against field GPS, and the recommended one.",
+        "cost_help": "Tobler: uphill costs more than downhill and the cost "
+                     "comes out in hours. Validated against field GPS.",
         "corridor": "Corridor width (m)",
         "margin": "Lateral search margin (m)",
-        "margin_help": "How far the algorithm may stray from the straight line "
-                       "between the points. Too small forces a straight route; "
-                       "too large makes the computation slow.",
+        "margin_help": "How far the route may stray from the straight line. "
+                       "Too small forces a straight route; too large is slow.",
 
         "s3_title": "Tuning",
         "s3_sub": "The defaults were calibrated against real trails. Changing "
@@ -352,6 +354,7 @@ TEXTS = {
         "crs_help": "Left blank, the project CRS is used.",
         "summary": "Summary of what will be produced",
         "log": "Progress",
+        "log_empty": "Messages from the computation appear here while it runs.",
 
         "err_title": "Something is missing",
         "err_dem": "Choose the digital elevation model to continue.",
@@ -411,16 +414,132 @@ def _heading(text, size=15, bold=True):
     return label
 
 
-def _card(title=None):
+def _icon(name, size=22, color=INK, width=1.9):
+    label = QLabel()
+    label.setPixmap(icons.pixmap(name, size, color, width))
+    label.setFixedSize(size, size)
+    return label
+
+
+class OptionCard(QFrame):
+    """Uma saída do plugin, apresentada como cartão e não como caixa numa lista.
+
+    A diferença não é decorativa. Numa lista de caixas de marcação com um
+    parágrafo embaixo de cada uma, tudo tem o mesmo peso e a tela vira um muro
+    de texto -- foi o que a primeira versão do assistente produziu. Como cartão,
+    cada saída ganha ícone, título e descrição em três níveis tipográficos
+    distintos, a área clicável é o cartão inteiro, e o estado selecionado é
+    visível de longe pela borda e pelo fundo.
+    """
+
+    def __init__(self, glyph, enabled=True, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ttOption")
+        self.glyph = glyph
+        self._enabled = enabled
+        self.setProperty("checked", "false")
+        self.setProperty("locked", "false" if enabled else "true")
+        if enabled:
+            self.setCursor(Qt.PointingHandCursor)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(15, 13, 15, 13)
+        layout.setSpacing(13)
+
+        self.icon_label = _icon(glyph, 24, MUTED, 1.85)
+        layout.addWidget(self.icon_label, 0, qt_enum("AlignmentFlag", "AlignTop"))
+
+        column = QVBoxLayout()
+        column.setSpacing(3)
+        self.title = QLabel()
+        self.title.setObjectName("ttOptionTitle")
+        self.title.setWordWrap(True)
+        self.description = QLabel()
+        self.description.setObjectName("ttHelp")
+        self.description.setWordWrap(True)
+        column.addWidget(self.title)
+        column.addWidget(self.description)
+        layout.addLayout(column, 1)
+
+        self.tick = QLabel()
+        self.tick.setObjectName("ttTick")
+        self.tick.setFixedSize(22, 22)
+        layout.addWidget(self.tick, 0, qt_enum("AlignmentFlag", "AlignTop"))
+
+        self.body = QWidget()
+        self.body.setVisible(False)
+        body_layout = QVBoxLayout(self.body)
+        body_layout.setContentsMargins(0, 10, 0, 0)
+        body_layout.setSpacing(7)
+        column.addWidget(self.body)
+        self.body_layout = body_layout
+
+        self._checked = False
+        self._callbacks = []
+
+    # -- estado -------------------------------------------------------------
+    def isChecked(self):
+        return self._checked
+
+    def setChecked(self, value):
+        value = bool(value)
+        if value == self._checked:
+            return
+        self._checked = value
+        self.setProperty("checked", "true" if value else "false")
+        self.icon_label.setPixmap(icons.pixmap(
+            self.glyph, 24, ACCENT if value else MUTED, 1.85))
+        self.tick.setPixmap(icons.pixmap("check", 22, ACCENT, 1.9)
+                            if value else QPixmap())
+        self.style().unpolish(self); self.style().polish(self)
+        for callback in self._callbacks:
+            callback(value)
+
+    def toggled(self, callback):
+        self._callbacks.append(callback)
+
+    def lock_checked(self):
+        """Saída obrigatória: marcada, sem interação, e visivelmente assim."""
+        self._checked = True
+        self._enabled = False
+        self.setProperty("checked", "false")
+        self.setProperty("locked", "true")
+        self.icon_label.setPixmap(icons.pixmap(self.glyph, 24, "#9ab0a6", 1.85))
+        self.tick.setPixmap(icons.pixmap("check", 22, "#9ac7b3", 1.9))
+
+    def mousePressEvent(self, event):
+        if self._enabled:
+            self.setChecked(not self._checked)
+
+
+def _card(title=None, glyph=None):
     """Um bloco visual. Agrupar reduz a impressao de painel de controle."""
     frame = QFrame()
     frame.setObjectName("ttCard")
     layout = QVBoxLayout(frame)
-    layout.setContentsMargins(16, 14, 16, 14)
-    layout.setSpacing(8)
-    if title:
-        layout.addWidget(_heading(title, size=12))
+    layout.setContentsMargins(18, 16, 18, 16)
+    layout.setSpacing(9)
+    if title or glyph:
+        head = QHBoxLayout()
+        head.setSpacing(10)
+        if glyph:
+            head.addWidget(_icon(glyph, 19, ACCENT, 1.9))
+        label = QLabel(title or "")
+        label.setObjectName("ttCardTitle")
+        head.addWidget(label, 1)
+        holder = QWidget()
+        holder.setLayout(head)
+        head.setContentsMargins(0, 0, 0, 2)
+        layout.addWidget(holder)
+        frame._title_label = label
     return frame, layout
+
+
+def _divider():
+    line = QFrame()
+    line.setObjectName("ttDivider")
+    line.setFixedHeight(1)
+    return line
 
 
 def _spin(minimum, maximum, value, decimals=2, step=1.0, suffix=""):
@@ -710,13 +829,35 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         QMessageBox.about(self, self.t("about"),
                           self.t("about_text").format(version=version))
 
+    def _page_head(self, layout, glyph, title_key, subtitle_key):
+        row = QHBoxLayout()
+        row.setSpacing(13)
+        row.addWidget(_icon(glyph, 27, ACCENT, 2.0), 0,
+                      qt_enum("AlignmentFlag", "AlignTop"))
+        column = QVBoxLayout()
+        column.setSpacing(4)
+        title = QLabel()
+        title.setObjectName("ttPageTitle")
+        title.setWordWrap(True)
+        self._bind(title, title_key)
+        subtitle = QLabel()
+        subtitle.setObjectName("ttPageSub")
+        subtitle.setWordWrap(True)
+        self._bind(subtitle, subtitle_key)
+        column.addWidget(title)
+        column.addWidget(subtitle)
+        row.addLayout(column, 1)
+        holder = QWidget()
+        holder.setLayout(row)
+        row.setContentsMargins(0, 0, 0, 6)
+        layout.addWidget(holder)
+
     # -- passo 1: dados -----------------------------------------------------
     def _step_data(self, layout):
-        layout.addWidget(self._bind(_heading(""), "s1_title"))
-        layout.addWidget(self._help_label("s1_sub"))
+        self._page_head(layout, "mountain", "s1_title", "s1_sub")
 
-        card, inner = _card()
-        inner.addWidget(self._label("dem"))
+        card, inner = _card(self.t("dem_card"), "mountain")
+        self._bind(card._title_label, "dem_card")
         self.dem_file = _FileRow("GeoTIFF (*.tif *.tiff);;Todos (*)", "MDE")
         inner.addWidget(self.dem_file)
         inner.addWidget(self._help_label("dem_help"))
@@ -730,9 +871,11 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         inner.addWidget(self._help_label("vunit_help"))
         layout.addWidget(card)
 
+        card, inner = _card(self.t("own_card"), "plus-layer")
+        self._bind(card._title_label, "own_card")
         self.own_rasters = self._check("own_rasters")
-        layout.addWidget(self.own_rasters)
-        layout.addWidget(self._help_label("own_help"))
+        inner.addWidget(self.own_rasters)
+        inner.addWidget(self._help_label("own_help"))
 
         self.own_section = _Section()
         self.slope_file = _FileRow("GeoTIFF (*.tif *.tiff)", "Declividade")
@@ -746,45 +889,53 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             (self.t("curvv"), self.curvv_file),
         ])
         self.own_rasters.toggled.connect(self.own_section.setVisible)
-        layout.addWidget(self.own_section)
+        inner.addWidget(self.own_section)
+        layout.addWidget(card)
 
     # -- passo 2: saidas ----------------------------------------------------
+    def _option(self, glyph, title_key, help_key, checked=False, locked=False):
+        card = OptionCard(glyph, enabled=not locked)
+        self._bind(card.title, title_key)
+        self._bind(card.description, help_key)
+        if locked:
+            card.lock_checked()
+        elif checked:
+            card.setChecked(True)
+        return card
+
     def _step_outputs(self, layout):
-        layout.addWidget(self._bind(_heading(""), "s2_title"))
-        layout.addWidget(self._help_label("s2_sub"))
+        self._page_head(layout, "layers", "s2_title", "s2_sub")
 
-        card, inner = _card()
-        inner.addWidget(self._bind(_heading(""), "always"))
-        for key, help_key in (("o_score", "o_score_help"), ("o_risk", "o_risk_help")):
-            check = self._check(key)
-            check.setChecked(True)
-            check.setEnabled(False)
-            inner.addWidget(check)
-            inner.addWidget(self._help_label(help_key))
-        layout.addWidget(card)
+        band = QLabel()
+        band.setObjectName("ttGroupLabel")
+        self._bind(band, "always")
+        layout.addWidget(band)
+        layout.addWidget(self._option("grid", "o_score", "o_score_help", locked=True))
+        layout.addWidget(self._option("alert", "o_risk", "o_risk_help", locked=True))
 
-        card, inner = _card()
-        self.want_zones = self._check("o_zones")
-        self.want_zones.setChecked(True)
-        inner.addWidget(self.want_zones)
-        inner.addWidget(self._help_label("o_zones_help"))
+        band = QLabel()
+        band.setObjectName("ttGroupLabel")
+        self._bind(band, "optional_group")
+        layout.addSpacing(4)
+        layout.addWidget(band)
 
-        self.want_transit = self._check("o_transit")
-        self.want_transit.setChecked(True)
-        inner.addWidget(self.want_transit)
-        inner.addWidget(self._help_label("o_transit_help"))
+        self.want_zones = self._option("polygon", "o_zones", "o_zones_help", checked=True)
+        self.want_transit = self._option("boot", "o_transit", "o_transit_help", checked=True)
+        self.want_streams = self._option("drop", "o_streams", "o_streams_help")
+        for card in (self.want_zones, self.want_transit, self.want_streams):
+            layout.addWidget(card)
 
-        self.want_streams = self._check("o_streams")
-        inner.addWidget(self.want_streams)
-        inner.addWidget(self._help_label("o_streams_help"))
-        layout.addWidget(card)
+        self.want_route = self._option("route", "o_route", "o_route_help")
+        layout.addWidget(self.want_route)
+        for card, tip in ((self.want_transit, "o_transit_tip"),
+                          (self.want_streams, "o_streams_tip"),
+                          (self.want_route, "o_route_tip")):
+            self._labels.append((card, tip, "setToolTip"))
 
-        card, inner = _card()
-        self.want_route = self._check("o_route")
-        inner.addWidget(self.want_route)
-        inner.addWidget(self._help_label("o_route_help"))
-
-        self.route_section = _Section()
+        # Os campos da rota moram dentro do proprio cartao: aparecem no lugar
+        # onde a pessoa acabou de dizer que quer rota, e nao num bloco solto
+        # mais abaixo.
+        body = self.want_route.body_layout
         self.start_file = _FileRow("Vetores (*.gpkg *.shp *.kml *.geojson)", "Origem")
         self.end_file = _FileRow("Vetores (*.gpkg *.shp *.kml *.geojson)", "Destino")
         self.via_file = _FileRow("Vetores (*.gpkg *.shp *.kml *.geojson)", "Waypoints")
@@ -794,46 +945,54 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self._bind(self.pick_start, "pick"); self._bind(self.pick_end, "pick")
         self.pick_start.clicked.connect(lambda: self.start_map_pick("start"))
         self.pick_end.clicked.connect(lambda: self.start_map_pick("end"))
+        for button in (self.pick_start, self.pick_end):
+            button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
 
-        def point_row(file_row, coord, button):
-            holder = QWidget(); box = QHBoxLayout(holder)
-            box.setContentsMargins(0, 0, 0, 0); box.setSpacing(6)
-            box.addWidget(file_row, 2); box.addWidget(coord, 1); box.addWidget(button, 0)
+        def point_row(key, file_row, coord, button):
+            holder = QWidget()
+            box = QHBoxLayout(holder)
+            box.setContentsMargins(0, 0, 0, 0)
+            box.setSpacing(7)
+            label = self._label(key)
+            label.setFixedWidth(64)
+            box.addWidget(label)
+            box.addWidget(file_row, 3)
+            box.addWidget(coord, 2)
+            box.addWidget(button, 0)
             return holder
 
-        self.route_section.add_form([
-            (self.t("start"), point_row(self.start_file, self.start_coord, self.pick_start)),
-            (self.t("end"), point_row(self.end_file, self.end_coord, self.pick_end)),
-        ])
-        self.route_section.add(self._label("via"))
-        self.route_section.add(self.via_file)
-        self.route_section.add(self._help_label("via_help"))
-        self.optimise_order = self._check("optimise")
-        self.route_section.add(self.optimise_order)
-        self.route_section.add(self._help_label("optimise_help"))
-
+        body.addWidget(point_row("start", self.start_file, self.start_coord, self.pick_start))
+        body.addWidget(point_row("end", self.end_file, self.end_coord, self.pick_end))
+        body.addWidget(_divider())
+        body.addWidget(self._label("via"))
+        body.addWidget(self.via_file)
+        body.addWidget(self._help_label("via_help"))
+        self.optimise_order = QCheckBox()
+        self._bind(self.optimise_order, "optimise")
+        body.addWidget(self.optimise_order)
+        body.addWidget(self._help_label("optimise_help"))
+        body.addWidget(_divider())
         self.cost_model = QComboBox()
+        body.addWidget(self._label("cost"))
+        body.addWidget(self.cost_model)
+        body.addWidget(self._help_label("cost_help"))
         self.corridor_m = _spin(1, 100000, 100.0, 0, 10, " m")
         self.margin_m = _spin(1, 200000, 5000.0, 0, 100, " m")
-        self.route_section.add(self._label("cost"))
-        self.route_section.add(self.cost_model)
-        self.route_section.add(self._help_label("cost_help"))
-        self.route_section.add_form([
-            (self.t("corridor"), self.corridor_m),
-            (self.t("margin"), self.margin_m),
-        ])
-        self.route_section.add(self._help_label("margin_help"))
-        self.want_route.toggled.connect(self.route_section.setVisible)
-        inner.addWidget(self.route_section)
-        layout.addWidget(card)
+        for key, widget in (("corridor", self.corridor_m), ("margin", self.margin_m)):
+            line = QHBoxLayout()
+            line.addWidget(self._label(key)); line.addStretch(1); line.addWidget(widget)
+            holder = QWidget(); holder.setLayout(line)
+            line.setContentsMargins(0, 0, 0, 0)
+            body.addWidget(holder)
+        body.addWidget(self._help_label("margin_help"))
+        self.want_route.toggled(self.want_route.body.setVisible)
 
     # -- passo 3: ajustes ---------------------------------------------------
     def _step_tuning(self, layout):
-        layout.addWidget(self._bind(_heading(""), "s3_title"))
-        layout.addWidget(self._help_label("s3_sub"))
+        self._page_head(layout, "sliders", "s3_title", "s3_sub")
 
-        card, inner = _card()
-        inner.addWidget(self._bind(_heading(""), "w_box"))
+        card, inner = _card(self.t("w_box"), "scale")
+        self._bind(card._title_label, "w_box")
         inner.addWidget(self._help_label("w_help"))
         self.w_alt = _spin(0, 100, 0.0)
         self.w_slope = _spin(0, 100, 1.0)
@@ -853,8 +1012,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         inner.addWidget(holder)
         layout.addWidget(card)
 
-        card, inner = _card()
-        inner.addWidget(self._bind(_heading(""), "lim_box"))
+        card, inner = _card(self.t("lim_box"), "ruler")
+        self._bind(card._title_label, "lim_box")
         self.slope_max = _spin(0.1, 10000, 55.0, 1, 1, " %")
         self.slope_score_max = _spin(0.1, 10000, 50.0, 1, 1, " %")
         self.alt_min = _spin(-500, 9000, 0.0, 0, 10, " m")
@@ -872,8 +1031,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         inner.addLayout(row)
         layout.addWidget(card)
 
-        card, inner = _card()
-        inner.addWidget(self._bind(_heading(""), "zone_box"))
+        card, inner = _card(self.t("zone_box"), "crop")
+        self._bind(card._title_label, "zone_box")
         self.percentile = _spin(0.1, 99.9, 75.0, 1, 1)
         self.min_area = _spin(0, 1e6, 50.0, 1, 5, " ha")
         self.altitude_band = self._check("band"); self.altitude_band.setChecked(True)
@@ -888,8 +1047,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         inner.addWidget(self._help_label("breaks_help"))
         layout.addWidget(card)
 
-        card, inner = _card()
-        inner.addWidget(self._bind(_heading(""), "extra_box"))
+        card, inner = _card(self.t("extra_box"), "plus-layer")
+        self._bind(card._title_label, "extra_box")
         inner.addWidget(self._help_label("extra_help"))
         self.extra_file = _FileRow("GeoTIFF (*.tif *.tiff)", "Criterio adicional")
         self.extra_weight = _spin(0, 100, 0.0)
@@ -902,8 +1061,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         inner.addLayout(row)
         layout.addWidget(card)
 
-        card, inner = _card()
-        inner.addWidget(self._bind(_heading(""), "cons_box"))
+        card, inner = _card(self.t("cons_box"), "shield")
+        self._bind(card._title_label, "cons_box")
         inner.addWidget(self._help_label("cons_help"))
         self.constraint_file = _FileRow("Vetores (*.gpkg *.shp *.kml *.geojson)", "Restricao")
         self.constraint_buffer = _spin(0, 100000, 30.0, 0, 5, " m")
@@ -918,14 +1077,17 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
     # -- passo 4: executar --------------------------------------------------
     def _step_run(self, layout):
-        layout.addWidget(self._bind(_heading(""), "s4_title"))
-        layout.addWidget(self._help_label("s4_sub"))
+        self._page_head(layout, "play", "s4_title", "s4_sub")
 
-        card, inner = _card()
+        card, inner = _card(self.t("out_box"), "save")
+        self._bind(card._title_label, "out_box")
         inner.addWidget(self._label("out"))
         row = QHBoxLayout()
         self.output_edit = QLineEdit()
-        button = QPushButton("…"); button.setFixedWidth(38)
+        button = QPushButton("…")
+        button.setObjectName("ttBrowse")
+        button.setFixedWidth(52)
+        button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
         button.clicked.connect(self._browse_output)
         row.addWidget(self.output_edit, 1); row.addWidget(button, 0)
         inner.addLayout(row)
@@ -938,8 +1100,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         inner.addWidget(self._help_label("crs_help"))
         layout.addWidget(card)
 
-        card, inner = _card()
-        inner.addWidget(self._bind(_heading(""), "summary"))
+        card, inner = _card(self.t("summary"), "check")
+        self._bind(card._title_label, "summary")
         self.summary_label = _help("")
         # Sem altura fixa: o resumo cresce conforme o numero de saidas marcadas,
         # e com altura fixa a ultima linha ficava cortada.
@@ -948,14 +1110,16 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         inner.addWidget(self.summary_label)
         layout.addWidget(card)
 
-        card, inner = _card()
-        inner.addWidget(self._bind(_heading(""), "log"))
+        card, inner = _card(self.t("log"), "pulse")
+        self._bind(card._title_label, "log")
         self.progress = QProgressBar()
         self.progress.setValue(0)
         inner.addWidget(self.progress)
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setMinimumHeight(150)
+        self.log_view.setObjectName("ttLog")
+        self._bind(self.log_view, "log_empty", "setPlaceholderText")
         inner.addWidget(self.log_view)
         layout.addWidget(card)
 
@@ -1025,6 +1189,24 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             #ttLink:hover {{ color: #ffffff; }}
 
             #ttPage {{ background: {CANVAS}; }}
+            #ttPageTitle {{ font-size: 20px; font-weight: 600; color: {INK};
+                            letter-spacing: -0.2px; }}
+            #ttPageSub {{ font-size: 12.5px; color: {MUTED}; }}
+            #ttCardTitle {{ font-size: 14px; font-weight: 600; color: {INK}; }}
+            #ttGroupLabel {{ font-size: 10.5px; font-weight: 700; color: #93a29b;
+                             letter-spacing: 1.1px; padding: 6px 2px 2px 2px; }}
+            #ttDivider {{ background: {LINE}; border: none; }}
+
+            /* Cartao de saida: estado visivel de longe, area clicavel inteira. */
+            #ttOption {{ background: #ffffff; border: 1px solid {LINE};
+                         border-radius: 12px; }}
+            #ttOption:hover {{ border-color: #b9cfc4; }}
+            #ttOption[checked="true"] {{ border: 1.6px solid {ACCENT};
+                                         background: #eef7f2; }}
+            #ttOption[locked="true"] {{ background: #fbfcfb; border-style: dashed; }}
+            #ttOption[locked="true"]:hover {{ border-color: {LINE}; }}
+            #ttOptionTitle {{ font-size: 13.5px; font-weight: 600; color: {INK}; }}
+            #ttOption[locked="true"] #ttOptionTitle {{ color: #7f8d87; }}
             #ttCard {{ background: #ffffff; border: 1px solid {LINE};
                        border-radius: 12px; }}
             #ttFooter {{ background: #ffffff; border-top: 1px solid {LINE}; }}
@@ -1083,10 +1265,15 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
                                                        border-color: #c9ded4; }}
             QCheckBox:disabled {{ color: #7f8d87; }}
 
-            QProgressBar {{ border: 1px solid {LINE}; border-radius: 7px;
-                            height: 9px; text-align: center; background: {CANVAS}; }}
-            QProgressBar::chunk {{ background: {ACCENT}; border-radius: 6px; }}
+            QProgressBar {{ border: none; border-radius: 5px; height: 8px;
+                            text-align: center; color: transparent;
+                            background: #e6ebe8; }}
+            QProgressBar::chunk {{ background: {ACCENT}; border-radius: 5px; }}
+            #ttLog {{ background: #fbfcfb; font-family: "DejaVu Sans Mono",
+                      Consolas, monospace; font-size: 11px; color: #46534c; }}
 
+            QToolTip {{ background: {INK}; color: #ffffff; border: none;
+                        padding: 9px 11px; border-radius: 7px; font-size: 11.5px; }}
             QScrollArea {{ background: {CANVAS}; }}
             QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
             QScrollBar::handle:vertical {{ background: #ccd6d1; border-radius: 5px;

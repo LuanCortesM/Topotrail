@@ -168,3 +168,45 @@ def test_the_credits_name_author_supervisor_project_and_institution():
     for fragment in ("Luan da Silva Cortes Maciel", "Leandro Freitas",
                      "Herpeto Mantiqueira", "Botânica Tropical"):
         assert fragment in DIALOG, f"credito ausente: {fragment}"
+
+
+# --------------------------------------------------------------------------
+# Sistema visual
+# --------------------------------------------------------------------------
+
+def test_every_icon_name_used_by_the_interface_exists():
+    """Um nome de glifo errado nao levanta excecao: pixmap() devolve um quadrado
+    transparente e o icone simplesmente some da tela, sem aviso nenhum."""
+    import ast
+    icons_source = (ROOT / "ui" / "icons.py").read_text(encoding="utf-8")
+    tree = ast.parse(icons_source)
+    glyphs = next(node for node in tree.body
+                  if isinstance(node, ast.Assign)
+                  and getattr(node.targets[0], "id", None) == "GLYPHS")
+    available = {key.value for key in glyphs.value.keys}
+
+    used = set(re.findall(r'_icon\(\s*"([a-z-]+)"', DIALOG))
+    used |= set(re.findall(r'_card\([^,]+,\s*"([a-z-]+)"\)', DIALOG))
+    used |= set(re.findall(r'_page_head\(layout,\s*"([a-z-]+)"', DIALOG))
+    used |= set(re.findall(r'self\._option\(\s*"([a-z-]+)"', DIALOG))
+    used |= set(re.findall(r'icons\.pixmap\(\s*"([a-z-]+)"', DIALOG))
+    missing = used - available
+    assert not missing, f"glifos usados que nao existem em icons.py: {sorted(missing)}"
+    assert used, "nenhum icone detectado: a extracao do teste deve ter quebrado"
+
+
+def test_icons_render_without_a_display():
+    """Os glifos sao tracados com QPainter, entao um erro de geometria so
+    aparece ao desenhar. Sem QGIS instalado o teste e pulado."""
+    pytest.importorskip("qgis.PyQt.QtGui")
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from qgis.PyQt.QtWidgets import QApplication
+    from ui import icons
+
+    application = QApplication.instance() or QApplication([])
+    assert application is not None
+    for name in icons.GLYPHS:
+        for size in (18, 24, 44):
+            image = icons.pixmap(name, size, "#0d452c")
+            assert not image.isNull(), f"o glifo {name} nao desenhou em {size} px"
