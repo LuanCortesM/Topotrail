@@ -82,6 +82,14 @@ CONSTRAINT_AVOID = 0        # exclusao dura
 CONSTRAINT_PENALISE = 1     # encarece sem proibir
 CONSTRAINT_PENALTY_FACTOR = 8.0
 
+# Diagnostico de discriminacao do modelo. Em terreno muito ingreme os limites
+# absolutos de declividade saturam: acima de SLOPE_SCORE_MAX toda celula recebe
+# nota zero no criterio de declividade, e ele deixa de distinguir qualquer coisa.
+# Medido no Everest com os valores de fabrica, a adequabilidade ficou constante
+# em 1,000 do P05 ao P95 -- o resultado parecia valido e nao continha informacao.
+SATURATION_WARNING_FRACTION = 0.40
+MIN_SCORE_AMPLITUDE = 0.05
+
 
 def diagnostic_log_path(output_path):
     base_path, _ = os.path.splitext(output_path)
@@ -691,6 +699,76 @@ def build_route_cost(score_array, cost_model, contrast, penalty_mask=None, feedb
                     float(usable.max() / max(usable.min(), 1e-9)))
             )
     return cost
+
+
+
+def report_model_discrimination(slope_data, zone_score, valid_mask, slope_score_max,
+                                max_slope, feedback=None, log_path=None):
+    """Verifica se o modelo esta realmente distinguindo terreno, e avisa se nao.
+
+    Duas maneiras de o resultado sair vazio de informacao sem sair com erro:
+
+    * **Saturacao.** `normalize_cost` corta a nota da declividade em zero acima
+      de `slope_score_max`. Onde a maior parte da cena passa desse limite, o
+      criterio de declividade deixa de discriminar e sobram apenas as
+      curvaturas. Com o padrao de 50%, que equivale a 26,6 graus, isso atinge
+      88% de uma cena do Everest e 92% de uma do K2.
+
+    * **Amplitude nula.** Se a adequabilidade sai praticamente constante entre o
+      P05 e o P95, o corte por percentil ainda produz zonas e o mapa parece
+      normal, mas nao ha diferenca real entre o que foi selecionado e o que foi
+      descartado. Medido no Everest: P05 = P95 = 1,000.
+
+    Os limites continuam absolutos de proposito -- calibra-los pela propria cena
+    tornaria os resultados incomparaveis entre areas de estudo, e testado em
+    terreno suave o efeito e pior: nos Paises Baixos o P90 da declividade e zero
+    e em Lofoten a area viavel cairia de 99% para 52%. Entao aqui o plugin nao
+    corrige nada: ele mede, avisa e sugere o valor.
+    """
+    valid_slope = slope_data[valid_mask & np.isfinite(slope_data)]
+    if valid_slope.size == 0:
+        return None
+
+    saturated = float(np.mean(valid_slope >= slope_score_max))
+    scores = zone_score[np.isfinite(zone_score)]
+    amplitude = (float(np.percentile(scores, 95) - np.percentile(scores, 5))
+                 if scores.size else 0.0)
+    suggested_score_max = float(np.percentile(valid_slope, 90))
+    suggested_max = float(np.percentile(valid_slope, 99))
+
+    append_diagnostic_log(
+        log_path, "discriminacao_do_modelo",
+        fracao_declividade_saturada=saturated,
+        amplitude_score_p05_p95=amplitude,
+        declividade_p50=float(np.percentile(valid_slope, 50)),
+        declividade_p90=suggested_score_max,
+        declividade_p99=suggested_max,
+        limite_custo_configurado=float(slope_score_max),
+        limite_absoluto_configurado=float(max_slope),
+    )
+
+    if not feedback:
+        return saturated, amplitude
+
+    if saturated >= SATURATION_WARNING_FRACTION:
+        feedback.pushWarning(
+            "{:.0f}% do terreno esta acima da declividade de custo maximo ({:.0f}%), "
+            "entao o criterio de declividade recebe nota zero na maior parte da area "
+            "e deixa de distinguir uma encosta da outra. Nesta cena a declividade tem "
+            "mediana {:.0f}% e P90 {:.0f}%. Para o relevo daqui, considere declividade "
+            "de custo maximo perto de {:.0f}% e limite absoluto perto de {:.0f}%.".format(
+                100.0 * saturated, slope_score_max,
+                float(np.percentile(valid_slope, 50)), suggested_score_max,
+                suggested_score_max, suggested_max)
+        )
+    if amplitude < MIN_SCORE_AMPLITUDE:
+        feedback.pushWarning(
+            "A adequabilidade varia apenas {:.3f} entre o P05 e o P95: o modelo nao "
+            "esta distinguindo terreno nesta cena, e as zonas resultantes nao "
+            "significam nada. Reveja os limites de altitude e de declividade antes "
+            "de usar este resultado.".format(amplitude)
+        )
+    return saturated, amplitude
 
 
 def normalize_linear(array, min_val, max_val, feedback=None, name="Critério"):
@@ -2323,6 +2401,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         route_score = np.where(route_constraint_mask, raw_score, np.nan).astype(np.float32)
         output_score = zone_score if generate_zones else route_score
         risk_score = compute_topographic_risk(slope_data, curvh_data, curvv_data, valid_mask, max_slope, feedback)
+
+        report_model_discrimination(
+            slope_data, zone_score, valid_mask, slope_score_max, max_slope,
+            feedback, debug_log_path)
 
         zone_valid_scores = zone_score[~np.isnan(zone_score)]
         route_valid_scores = route_score[~np.isnan(route_score)]

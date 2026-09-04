@@ -236,6 +236,41 @@ or flipping their sign, gives an identical result, because each is normalised
 by a percentile of its own distribution and scored by distance from zero. Any
 curvature provider will do.
 
+## Very high mountains
+
+The plugin runs at Everest-class relief, but the factory parameters do not, and
+until 0.6.0 it did not say so. Two thresholds are absolute, and both are
+calibrated for the Serra da Mantiqueira:
+
+* the elevation range, which discards everything above 2600 m;
+* the maximum-cost slope, which zeroes the slope score above 50% (26.6 degrees).
+
+On a synthetic Everest scene with median slope near 50 degrees, 83% of the
+terrain sat above the maximum-cost slope, so the slope criterion returned zero
+almost everywhere and stopped distinguishing one hillside from another. The
+suitability raster came out **constant at 1.000 from the 5th to the 95th
+percentile** and the run still produced zones, a map and a GeoPackage. It looked
+like a result and contained no information.
+
+The plugin now measures both failure modes on every run — the fraction of
+terrain saturating the slope criterion, and the amplitude of the suitability
+distribution — logs them, and warns with the values this particular scene would
+need. On the Everest test it reports 83% saturation, an amplitude of 0.000, and
+suggests a maximum-cost slope near 180% and an absolute limit near 280%. With
+those, the model recovers: 71% of the area becomes viable and the suitability
+spread returns to 0.26.
+
+The thresholds stay absolute on purpose. Calibrating them from the scene's own
+percentiles was tested and rejected: it fixes the Himalaya but breaks gentle
+terrain, where the 90th percentile of slope is near zero — in a Netherlands
+test it produced an invalid parameter, and in Lofoten it would have cut the
+viable area from 99% to 52%. Absolute thresholds also keep results comparable
+between study areas, which scene-relative ones cannot.
+
+Above 84 degrees of latitude UTM is formally undefined; the plugin still picks a
+UTM zone there and PROJ still transforms. Polar work should be checked against a
+polar stereographic CRS.
+
 ## Watercourses
 
 A route that is excellent on slope and curvature can still be unusable because
