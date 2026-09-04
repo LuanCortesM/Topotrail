@@ -23,6 +23,19 @@ ALGORITHM = (ROOT / "processing" / "algorithm.py").read_text(encoding="utf-8")
 DIALOG = (ROOT / "ui" / "topotrail_dialog.py").read_text(encoding="utf-8")
 
 
+def _language(code):
+    import json
+    return json.loads((ROOT / "i18n" / f"{code}.json").read_text(encoding="utf-8"))
+
+
+def _all_text(code):
+    """Todo o texto visível de um idioma, num só bloco."""
+    parts = []
+    for value in _language(code).values():
+        parts.extend(value if isinstance(value, list) else [value])
+    return " ".join(parts)
+
+
 def _declared_parameters():
     """Nomes que o algoritmo aceita.
 
@@ -72,15 +85,24 @@ def test_every_output_the_interface_loads_is_produced_by_the_algorithm():
 
 
 def test_the_output_format_options_are_in_the_same_order_in_both():
-    """Enum do QGIS viaja como indice, nao como texto. Com as listas em ordens
-    diferentes, escolher GeoPackage gravava um Shapefile sem aviso nenhum."""
+    """Enum do QGIS viaja como índice, não como texto. Com as listas em ordens
+    diferentes, escolher GeoPackage gravava um Shapefile sem aviso nenhum.
+
+    Agora a janela monta a lista a partir de chaves de tradução, então o que se
+    compara são as chaves -- e a comparação vale para os seis idiomas de uma vez,
+    porque todos usam as mesmas chaves.
+    """
     algorithm_options = re.search(
         r"self\.OUTPUT_FORMAT,.*?options=\[([^\]]+)\]", ALGORITHM, re.S)
-    dialog_options = re.search(
-        r"fill\(self\.output_format, \[([^\]]+)\]", DIALOG, re.S)
-    assert algorithm_options and dialog_options
+    dialog_keys = re.search(
+        r'fill\(self\.output_format, \[([^\]]+)\]', DIALOG, re.S)
+    assert algorithm_options and dialog_keys
     clean = lambda text: [part.strip().strip('"\'') for part in text.split(",")]
-    assert clean(algorithm_options.group(1)) == clean(dialog_options.group(1))
+    esperado = clean(algorithm_options.group(1))
+    chaves = clean(dialog_keys.group(1))
+    assert len(esperado) == len(chaves), "quantidade de formatos diferente"
+    ingles = _language("en")
+    assert [ingles[k] for k in chaves] == esperado
 
 
 @pytest.mark.parametrize("parameter", [
@@ -104,20 +126,15 @@ def test_the_transitability_map_reaches_the_project():
     assert "OUTPUT_TRANSITABILITY" in _load_body()
 
 
-def test_both_languages_define_the_same_keys():
-    """Uma chave presente so em portugues aparece em ingles como o proprio nome
-    da chave -- 'o_transit_help' no meio da tela."""
-    import ast
-    tree = ast.parse(DIALOG)
-    texts = next(node for node in tree.body
-                 if isinstance(node, ast.Assign)
-                 and getattr(node.targets[0], "id", None) == "TEXTS")
-    languages = {key.value: {k.value for k in value.keys}
-                 for key, value in zip(texts.value.keys, texts.value.values)}
-    assert languages["pt"] == languages["en"], (
-        "faltando em ingles: {}; faltando em portugues: {}".format(
-            sorted(languages["pt"] - languages["en"]),
-            sorted(languages["en"] - languages["pt"])))
+def test_the_texts_live_in_data_files_not_in_the_module():
+    """Os textos saíram de um dicionário dentro do Python para i18n/*.json.
+
+    O motivo é prático: uma tradução errada precisa poder ser corrigida por quem
+    fala a língua, e essa pessoa não é necessariamente programadora.
+    """
+    assert "TEXTS = {" not in DIALOG, "o dicionário embutido não deve voltar"
+    assert "i18n.text(" in DIALOG
+
 
 
 # --------------------------------------------------------------------------
@@ -131,26 +148,19 @@ REGIONAL_EXAMPLES = [
 
 
 def test_the_interface_texts_name_no_particular_place():
-    """Os textos de ajuda nao podem usar exemplo de um lugar so.
+    """Nenhum idioma pode ilustrar um recurso com o topônimo de um lugar só.
 
-    A primeira versao do assistente explicava os destinos intermediarios com
+    A primeira versão do assistente explicava os destinos intermediários com
     "desenhe Marins, Marinzinho e Itaguaré nessa sequência". Funciona para quem
-    conhece a Serra da Mantiqueira e nao diz nada para o resto do mundo -- e o
-    TopoTrail e publicado no repositorio oficial do QGIS, para qualquer regiao.
-    A explicacao tem de valer em qualquer lugar: "um cume, depois outro".
+    conhece a Serra da Mantiqueira e não diz nada para o resto do mundo -- e o
+    TopoTrail está no repositório oficial do QGIS, hoje em seis idiomas.
     """
-    import ast
-    tree = ast.parse(DIALOG)
-    texts = next(node for node in tree.body
-                 if isinstance(node, ast.Assign)
-                 and getattr(node.targets[0], "id", None) == "TEXTS")
-    strings = [node.value.lower() for node in ast.walk(texts)
-               if isinstance(node, ast.Constant) and isinstance(node.value, str)]
-    # os creditos podem nomear o projeto e a instituicao; a ajuda dos controles nao
-    body = " ".join(value for value in strings if "herpeto mantiqueira" not in value)
-    offenders = [name for name in REGIONAL_EXAMPLES if name in body]
-    assert not offenders, (
-        f"exemplo preso a uma regiao no texto da interface: {offenders}")
+    for code in ("pt", "en", "es", "fr", "zh", "ja"):
+        texto = _all_text(code).lower()
+        # os créditos podem nomear o projeto; a ajuda dos controles não
+        texto = texto.replace("herpeto mantiqueira", "")
+        offenders = [name for name in REGIONAL_EXAMPLES if name in texto]
+        assert not offenders, f"{code}: exemplo preso a uma região: {offenders}"
 
 
 def test_the_institutional_logos_are_shipped_and_displayed():
@@ -165,9 +175,12 @@ def test_the_institutional_logos_are_shipped_and_displayed():
 
 
 def test_the_credits_name_author_supervisor_project_and_institution():
-    for fragment in ("Luan da Silva Cortes Maciel", "Leandro Freitas",
-                     "Herpeto Mantiqueira", "Botânica Tropical"):
-        assert fragment in DIALOG, f"credito ausente: {fragment}"
+    """O crédito precisa sobreviver em todos os idiomas, não só no original."""
+    for code in ("pt", "en", "es", "fr", "zh", "ja"):
+        texto = _all_text(code)
+        for fragmento in ("Luan da Silva Cortes Maciel", "Leandro Freitas",
+                          "Herpeto Mantiqueira"):
+            assert fragmento in texto, f"{code}: crédito ausente — {fragmento}"
 
 
 # --------------------------------------------------------------------------

@@ -21,7 +21,6 @@ from osgeo import gdal, ogr, osr  # noqa: E402
 from scipy import ndimage  # noqa: E402
 from shapely.geometry import LineString  # noqa: E402
 from shapely.ops import unary_union  # noqa: E402
-from qgis.PyQt.QtCore import QCoreApplication  # noqa: E402
 from .hydrology import analyse_hydrology  # noqa: E402
 from .terrain import derive_terrain, vector_ruggedness  # noqa: E402
 from .transitability import (  # noqa: E402
@@ -53,7 +52,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.10.0"
+PLUGIN_VERSION = "0.11.0"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -2101,6 +2100,24 @@ def save_access_route(
     return route_path, corridor_path
 
 
+def _algorithm_language():
+    """Idioma dos rotulos do Processing.
+
+    Respeita primeiro a escolha feita na janela do plugin -- alguem que trocou
+    para espanhol ali nao espera ver o Processing em ingles -- e so entao o
+    idioma do proprio QGIS.
+    """
+    try:
+        from ..ui import i18n
+        from qgis.core import QgsSettings
+        escolhido = QgsSettings().value("TopoTrail/language", "")
+        if escolhido in i18n.LANGUAGE_CODES:
+            return escolhido
+        return i18n.detect()
+    except Exception:
+        return "en"
+
+
 class TopotrailAlgorithm(QgsProcessingAlgorithm):
     INPUT_DEM = "INPUT_DEM"
     INPUT_SLOPE = "INPUT_SLOPE"
@@ -2154,8 +2171,22 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
     OUTPUT_CORRIDOR = "OUTPUT_CORRIDOR"
     OUTPUT_DEBUG_LOG = "OUTPUT_DEBUG_LOG"
 
-    def tr(self, string):
-        return QCoreApplication.translate("Processing", string)
+    def tr(self, key):
+        """Traduz um rotulo do Processing pelo mesmo mecanismo da janela.
+
+        Antes usava QCoreApplication.translate, que depende de arquivos .qm
+        compilados com lrelease. Isso obrigava a um passo de build antes de
+        empacotar o plugin e punha um binario nao revisavel no repositorio --
+        e na pratica nenhum .qm chegou a ser gerado, entao a Caixa de
+        Ferramentas ficava em portugues em qualquer idioma. Com o mesmo
+        carregador JSON da janela, as duas superficies falam a mesma lingua e
+        nao ha nada para compilar.
+        """
+        try:
+            from ..ui import i18n
+            return i18n.text(_algorithm_language(), key)
+        except Exception:
+            return key
 
     def createInstance(self):
         return TopotrailAlgorithm()
@@ -2164,10 +2195,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         return "topotrail"
 
     def displayName(self):
-        return self.tr("TopoTrail - Análise Multicritério")
+        return self.tr("alg_name")
 
     def group(self):
-        return self.tr("TopoTrail")
+        return self.tr("alg_group")
 
     def groupId(self):
         return "topotrail"
@@ -2178,19 +2209,19 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         )
 
     def initAlgorithm(self, config=None):
-        self.addParameter(QgsProcessingParameterRasterLayer(self.INPUT_DEM, self.tr("Altitude / MDE")))
+        self.addParameter(QgsProcessingParameterRasterLayer(self.INPUT_DEM, self.tr("alg_dem")))
         self.addParameter(
             QgsProcessingParameterBoolean(
                 self.DERIVE_FROM_DEM,
-                self.tr("Derivar declividade e curvaturas do proprio MDE"),
+                self.tr("alg_derive"),
                 defaultValue=True,
             )
         )
         self.addParameter(
             QgsProcessingParameterEnum(
                 self.VERTICAL_UNIT,
-                self.tr("Unidade vertical do MDE"),
-                options=[self.tr("Metros"), self.tr("Pes")],
+                self.tr("alg_vunit"),
+                options=[self.tr("alg_metres"), self.tr("alg_feet")],
                 defaultValue=VERTICAL_UNIT_METRES,
             )
         )
@@ -2198,16 +2229,16 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         # desmarcado. Fornece-los da ao usuario controle total sobre o metodo de
         # derivacao, ao custo de ter de garantir unidade, convencao e grade.
         self.addParameter(QgsProcessingParameterRasterLayer(
-            self.INPUT_SLOPE, self.tr("Declividade (opcional)"), optional=True))
+            self.INPUT_SLOPE, self.tr("alg_slope"), optional=True))
         self.addParameter(QgsProcessingParameterRasterLayer(
-            self.INPUT_CURVH, self.tr("Curvatura horizontal (opcional)"), optional=True))
+            self.INPUT_CURVH, self.tr("alg_curvh"), optional=True))
         self.addParameter(QgsProcessingParameterRasterLayer(
-            self.INPUT_CURVV, self.tr("Curvatura vertical (opcional)"), optional=True))
+            self.INPUT_CURVV, self.tr("alg_curvv"), optional=True))
 
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.ALT_MIN,
-                self.tr("Altitude mínima para zonas (m)"),
+                self.tr("alg_altmin"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=0.0,
             )
@@ -2215,7 +2246,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.ALT_MAX,
-                self.tr("Altitude máxima para zonas (m)"),
+                self.tr("alg_altmax"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=2600.0,
             )
@@ -2223,15 +2254,15 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterEnum(
                 self.SLOPE_UNIT,
-                self.tr("Unidade do raster de declividade"),
-                options=[self.tr("Porcentagem (%)"), self.tr("Graus")],
+                self.tr("alg_sunit"),
+                options=[self.tr("alg_percent"), self.tr("alg_degrees")],
                 defaultValue=SLOPE_UNIT_PERCENT,
             )
         )
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.SLOPE_MAX,
-                self.tr("Declividade maxima absoluta (%)"),
+                self.tr("alg_slopemax"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=55.0,
             )
@@ -2239,7 +2270,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.SLOPE_SCORE_MAX,
-                self.tr("Declividade de custo maximo (%)"),
+                self.tr("alg_slopescore"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=50.0,
                 minValue=1.0,
@@ -2248,7 +2279,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.THRESHOLD,
-                self.tr("Threshold para binarização (0 = percentil automático)"),
+                self.tr("alg_threshold"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=0.0,
                 minValue=0.0,
@@ -2258,7 +2289,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.AUTO_PERCENTILE,
-                self.tr("Percentil automatico"),
+                self.tr("alg_percentile"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=75.0,
                 minValue=1.0,
@@ -2269,7 +2300,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.MIN_PATCH_AREA_HA,
-                self.tr("Area minima do fragmento (ha)"),
+                self.tr("alg_minarea"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=50.0,
                 minValue=0.0,
@@ -2278,14 +2309,14 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterBoolean(
                 self.ALTITUDE_BAND_THRESHOLD,
-                self.tr("Equilibrar zonas por faixa altimetrica"),
+                self.tr("alg_band"),
                 defaultValue=True,
             )
         )
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.ALTITUDE_BAND_SIZE_M,
-                self.tr("Tamanho da faixa altimetrica (m)"),
+                self.tr("alg_bandsize"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=200.0,
                 minValue=50.0,
@@ -2294,20 +2325,20 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterBoolean(
                 self.WALKABILITY_ZONES,
-                self.tr("Gerar zonas como area caminhavel continua"),
+                self.tr("alg_walkzones"),
                 defaultValue=False,
             )
         )
 
         for key, label, default in [
-            (self.WEIGHT_ALT, "Peso da altitude", 0.0),
-            (self.WEIGHT_SLOPE, "Peso da declividade", 1.0),
-            (self.WEIGHT_CURVH, "Peso da curvatura horizontal", 1.0),
-            (self.WEIGHT_CURVV, "Peso da curvatura vertical", 1.0),
+            (self.WEIGHT_ALT, "alg_w_alt", 0.0),
+            (self.WEIGHT_SLOPE, "alg_w_slope", 1.0),
+            (self.WEIGHT_CURVH, "alg_w_curvh", 1.0),
+            (self.WEIGHT_CURVV, "alg_w_curvv", 1.0),
             # Criterios novos na 0.6.1. Peso zero por padrao: quem ja usa o
             # plugin nao tem os resultados alterados sem pedir.
-            (self.WEIGHT_WETNESS, "Peso da umidade do terreno (TWI)", 0.0),
-            (self.WEIGHT_ROUGHNESS, "Peso da rugosidade do terreno (VRM)", 0.0),
+            (self.WEIGHT_WETNESS, "alg_w_wet", 0.0),
+            (self.WEIGHT_ROUGHNESS, "alg_w_rough", 0.0),
         ]:
             self.addParameter(
                 QgsProcessingParameterNumber(
@@ -2323,7 +2354,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFile(
                 self.START_POINT_FILE,
-                self.tr("Ponto inicial para rota (opcional)"),
+                self.tr("alg_start"),
                 behavior=QgsProcessingParameterFile.File,
                 fileFilter="Vetores (*.gpkg *.shp *.kml *.geojson)",
                 optional=True,
@@ -2332,7 +2363,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFile(
                 self.END_POINT_FILE,
-                self.tr("Ponto final / destino (opcional)"),
+                self.tr("alg_end"),
                 behavior=QgsProcessingParameterFile.File,
                 fileFilter="Vetores (*.gpkg *.shp *.kml *.geojson)",
                 optional=True,
@@ -2341,7 +2372,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFile(
                 self.VIA_POINTS_FILE,
-                self.tr("Destinos intermediarios, na ordem de visita (opcional)"),
+                self.tr("alg_via"),
                 behavior=QgsProcessingParameterFile.File,
                 fileFilter="Vetores (*.gpkg *.shp *.kml *.geojson)",
                 optional=True,
@@ -2350,7 +2381,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterBoolean(
                 self.OPTIMISE_ORDER,
-                self.tr("Escolher a melhor ordem de visita (ignora a ordem da camada)"),
+                self.tr("alg_optimise"),
                 defaultValue=False,
                 optional=True,
             )
@@ -2358,7 +2389,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.ROUTE_BUFFER_M,
-                self.tr("Largura do corredor de acesso (m)"),
+                self.tr("alg_corridor"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=100.0,
                 minValue=1.0,
@@ -2367,7 +2398,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.ROUTE_MARGIN_M,
-                self.tr("Margem lateral de busca da rota (m)"),
+                self.tr("alg_margin"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=5000.0,
                 minValue=100.0,
@@ -2376,14 +2407,14 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterBoolean(
                 self.STREAMS_FROM_DEM,
-                self.tr("Considerar cursos d'agua extraidos do MDE"),
+                self.tr("alg_streams"),
                 defaultValue=False,
             )
         )
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.STREAM_MIN_BASIN_KM2,
-                self.tr("Area de contribuicao minima para considerar canal (km2)"),
+                self.tr("alg_basin"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=1.0,
                 minValue=0.01,
@@ -2392,14 +2423,14 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterVectorLayer(
                 self.CONSTRAINT_LAYER,
-                self.tr("Camada de restricao (hidrografia, estradas, limites...)"),
+                self.tr("alg_conslayer"),
                 optional=True,
             )
         )
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.CONSTRAINT_BUFFER_M,
-                self.tr("Distancia a manter das restricoes (m)"),
+                self.tr("alg_consbuffer"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=30.0,
                 minValue=0.0,
@@ -2408,25 +2439,25 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterEnum(
                 self.CONSTRAINT_MODE,
-                self.tr("Tratamento das restricoes"),
-                options=[self.tr("Evitar (exclusao)"), self.tr("Encarecer (penalidade)")],
+                self.tr("alg_consmode"),
+                options=[self.tr("alg_consavoid"), self.tr("alg_conspen")],
                 defaultValue=CONSTRAINT_AVOID,
             )
         )
         self.addParameter(
             QgsProcessingParameterEnum(
                 self.ROUTE_COST_MODEL,
-                self.tr("Modelo de custo da rota"),
-                options=[self.tr("Inverso da adequabilidade (0.5.x)"),
-                         self.tr("Exponencial - segue mais o relevo"),
-                         self.tr("Tempo de caminhada (Tobler, anisotropico)")],
+                self.tr("alg_costmodel"),
+                options=[self.tr("alg_costinv"),
+                         self.tr("alg_costexp"),
+                         self.tr("alg_costtobler")],
                 defaultValue=ROUTE_COST_INVERSE,
             )
         )
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.ROUTE_CONTRAST,
-                self.tr("Contraste do custo (modelo exponencial)"),
+                self.tr("alg_contrast"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=DEFAULT_ROUTE_CONTRAST,
                 minValue=0.5,
@@ -2436,14 +2467,14 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterRasterLayer(
                 self.EXTRA_CRITERION_LAYER,
-                self.tr("Criterio adicional em raster (pedregosidade, vegetacao, ...)"),
+                self.tr("alg_extralayer"),
                 optional=True,
             )
         )
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.EXTRA_CRITERION_WEIGHT,
-                self.tr("Peso do criterio adicional"),
+                self.tr("alg_extraweight"),
                 QgsProcessingParameterNumber.Double,
                 defaultValue=0.0, minValue=0.0, maxValue=10.0,
             )
@@ -2451,23 +2482,23 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterEnum(
                 self.EXTRA_CRITERION_DIRECTION,
-                self.tr("No criterio adicional, valores altos sao"),
-                options=[self.tr("piores (pedregosidade, custo)"),
-                         self.tr("melhores (sombra, cobertura)")],
+                self.tr("alg_extradir"),
+                options=[self.tr("alg_extralow"),
+                         self.tr("alg_extrahigh")],
                 defaultValue=CRITERION_LOWER_IS_BETTER,
             )
         )
         self.addParameter(
             QgsProcessingParameterString(
                 self.TRANSITABILITY_BREAKS,
-                self.tr("Limites de declividade das classes de transitabilidade (%)"),
+                self.tr("alg_breaks"),
                 defaultValue=", ".join(f"{b:.0f}" for b in DEFAULT_SLOPE_BREAKS),
             )
         )
         self.addParameter(
             QgsProcessingParameterBoolean(
                 self.GENERATE_ZONES,
-                self.tr("Gerar zonas vetoriais"),
+                self.tr("alg_genzones"),
                 defaultValue=True,
             )
         )
@@ -2475,14 +2506,14 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFileDestination(
                 self.OUTPUT_FILE,
-                self.tr("Arquivo de saída"),
+                self.tr("alg_outfile"),
                 "Vetores (*.shp *.gpkg *.kml)",
             )
         )
         self.addParameter(
             QgsProcessingParameterEnum(
                 self.OUTPUT_FORMAT,
-                self.tr("Formato de saída"),
+                self.tr("alg_outfmt"),
                 options=["Shapefile", "GeoPackage", "KML"],
                 defaultValue=1,
             )
@@ -2490,7 +2521,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterCrs(
                 self.OUTPUT_CRS,
-                self.tr("CRS de saída"),
+                self.tr("alg_outcrs"),
                 defaultValue=QgsProject.instance().crs().authid(),
                 # Sem projeto aberto, authid() devolve string vazia. Sem
                 # optional=True o algoritmo recusa o proprio valor padrao
@@ -2498,13 +2529,13 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 optional=True,
             )
         )
-        self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_VECTOR, self.tr("Zonas potenciais")))
-        self.addOutput(QgsProcessingOutputRasterLayer(self.OUTPUT_SCORE_RASTER, self.tr("Adequabilidade continua")))
-        self.addOutput(QgsProcessingOutputRasterLayer(self.OUTPUT_RISK_RASTER, self.tr("Risco topografico relativo")))
-        self.addOutput(QgsProcessingOutputRasterLayer(self.OUTPUT_TRANSITABILITY, self.tr("Classes de transitabilidade")))
-        self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_ROUTE, self.tr("Rota de acesso sugerida")))
-        self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_CORRIDOR, self.tr("Corredor de acesso")))
-        self.addOutput(QgsProcessingOutputFile(self.OUTPUT_DEBUG_LOG, self.tr("Log diagnostico TopoTrail")))
+        self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_VECTOR, self.tr("alg_o_zones")))
+        self.addOutput(QgsProcessingOutputRasterLayer(self.OUTPUT_SCORE_RASTER, self.tr("alg_o_score")))
+        self.addOutput(QgsProcessingOutputRasterLayer(self.OUTPUT_RISK_RASTER, self.tr("alg_o_risk")))
+        self.addOutput(QgsProcessingOutputRasterLayer(self.OUTPUT_TRANSITABILITY, self.tr("alg_o_transit")))
+        self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_ROUTE, self.tr("alg_o_route")))
+        self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_CORRIDOR, self.tr("alg_o_corridor")))
+        self.addOutput(QgsProcessingOutputFile(self.OUTPUT_DEBUG_LOG, self.tr("alg_o_log")))
 
     def processAlgorithm(self, parameters, context, feedback):
         """Executa a analise e garante a limpeza dos diretorios temporarios.

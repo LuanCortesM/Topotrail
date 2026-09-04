@@ -31,6 +31,7 @@ from qgis.core import (
 import qgis.processing as processing
 
 from . import icons
+from . import i18n
 from .support import (
     TopotrailSupportMixin, append_gui_diagnostic_log, qt_enum,
     serialize_processing_params, size_policy,
@@ -59,394 +60,8 @@ def _plugin_version():
 # --------------------------------------------------------------------------
 # Textos
 # --------------------------------------------------------------------------
-# Mantidos num dicionario e nao em .ts porque o plugin precisa alternar idioma
-# em tempo de execucao, com o botao PT-BR | ENG, e nao apenas no idioma do QGIS:
-# equipes de campo brasileiras costumam rodar o QGIS em ingles e querer a
-# ferramenta em portugues.
-
-TEXTS = {
-    "pt": {
-        "window": "TopoTrail — planejamento de trilhas e acessos",
-        "tagline": "Planejamento topográfico",
-        "eyebrow": "ETAPA {n} DE 4",
-        "theme_auto": "Tema: automático",
-        "theme_light": "Tema: claro",
-        "theme_dark": "Tema: escuro",
-        "badge_required": "Obrigatório",
-        "badge_included": "incluído",
-        "credit_line": "ENBT · Jardim Botânico do Rio de Janeiro · Herpeto Mantiqueira",
-        "s1_banner": "Só o MDE é obrigatório. Declividade e curvaturas são "
-                     "calculadas a partir dele, o que elimina problemas de "
-                     "unidade, de convenção de sinal e de alinhamento de grade.",
-        "chip_unreadable": "Não consegui abrir este arquivo como raster",
-        "chip_no_crs": "sem CRS definido",
-        "chip_crs_ok": "CRS definido",
-        "chip_unit": "unidades",
-        "change": "Alterar",
-        "group_always_sub": "Resultados básicos para interpretar o terreno",
-        "group_optional_sub": "{n} de 4 selecionados",
-        "total_chip": "{n} no total",
-        "note_need_dem": "Selecione o MDE para continuar",
-        "note_outputs": "{n} produtos selecionados",
-        "note_tuning": "Padrões calibrados com trilhas reais",
-        "note_review": "Revise os produtos antes de executar",
-        "next_alt": "Continuar",
-        "steps": ["Dados", "Produtos", "Critérios", "Executar"],
-        "about": "Sobre",
-        "status_title": "SELEÇÃO ATUAL",
-        "status_no_dem": "Nenhum MDE escolhido",
-        "status_no_output": "Sem arquivo de saída",
-        "status_outputs_n": "{n} saídas marcadas",
-        "about_text": (
-            "<h3 style='margin-bottom:2px'>TopoTrail</h3>"
-            "<p style='color:#6b7a74;margin-top:0'>Versão {version}</p>"
-            "<p>Ferramenta de apoio ao planejamento de trilhas, acessos e "
-            "deslocamentos de campo em áreas naturais e unidades de "
-            "conservação, integrando altitude, declividade, curvaturas do "
-            "relevo, umidade e rugosidade por análise multicritério em SIG, "
-            "com rota de menor custo e tempo de caminhada.</p>"
-            "<p><b>Desenvolvimento:</b> Luan da Silva Cortes Maciel "
-            "(MACIEL, L. S. C.)<br>"
-            "<b>Orientação:</b> Leandro Freitas<br>"
-            "<b>Projeto associado:</b> Herpeto Mantiqueira</p>"
-            "<p><b>Contexto:</b> desenvolvido como produto da pesquisa de "
-            "mestrado em Biodiversidade em Unidades de Conservação, Escola "
-            "Nacional de Botânica Tropical / Instituto de Pesquisas Jardim "
-            "Botânico do Rio de Janeiro.</p>"
-            "<p style='color:#6b7a74'>Os resultados são evidência de apoio à "
-            "decisão e exigem validação em campo.</p>"
-            "<p>Licença MIT · plugins.qgis.org/plugins/TopoTrail</p>"),
-        "back": "◀ Voltar", "next": "Avançar ▶", "run": "Gerar resultados",
-        "cancel": "Cancelar execução",
-
-        "s1_title": "Dados de entrada",
-        "s1_sub": "Selecione o modelo de elevação. O TopoTrail cuida das camadas "
-                  "derivadas e do alinhamento da grade.",
-        "dem": "Arquivo do MDE",
-        "dem_help": "Um raster de altitude em GeoTIFF. Serve qualquer fonte: "
-                    "Copernicus, SRTM, ALOS, carta topográfica nacional.",
-        "vunit": "Unidade vertical do MDE",
-        "vunit_help": "Metros na quase totalidade dos produtos. Pés aparecem em "
-                      "alguns dados dos Estados Unidos.",
-        "own_rasters": "Já tenho declividade e curvaturas prontas e quero usá-las",
-        "own_help": "Marque apenas se preferir seus próprios rasters. Deixar "
-                    "desmarcado é o caminho recomendado: derivar do MDE elimina "
-                    "problemas de unidade, de convenção de sinal e de "
-                    "alinhamento de grade.",
-        "slope": "Declividade", "curvh": "Curvatura horizontal",
-        "curvv": "Curvatura vertical", "sunit": "Unidade da declividade",
-
-        "s2_title": "Produtos da análise",
-        "s2_sub": "Escolha o que deseja gerar. Os dois mapas essenciais já estão incluídos.",
-        "always": "Incluídos em toda análise",
-        "optional_group": "Produtos opcionais",
-        "o_transit_tip": "Os rótulos descrevem inclinação, não um veredito sobre "
-                         "quem passa: em trilhas reais percorridas a pé, equipes "
-                         "de campo cruzam rotineiramente as classes 4 e 5.\n\n"
-                         "A distribuição das classes depende fortemente da "
-                         "resolução do MDE — informe o tamanho da célula ao lado "
-                         "de qualquer número tirado deste mapa.",
-        "o_streams_tip": "Não precisa de camada de hidrografia. Cuidado em "
-                         "paisagem sazonalmente seca: o leito seco costuma ser a "
-                         "melhor superfície de caminhada, e em levantamento "
-                         "biológico a drenagem é alvo de amostragem — evitá-la "
-                         "pode afastar a rota do que você quer visitar.",
-        "o_route_tip": "Use os destinos intermediários para encadear objetivos: "
-                       "subir um cume, depois outro, passar por um ponto de "
-                       "coleta, então descer.",
-        "dem_card": "Modelo digital de elevação",
-        "own_card": "Rasters próprios",
-        "out_box": "Destino do resultado",
-        "o_score": "Mapa de adequabilidade topográfica",
-        "o_score_help": "Nota de 0 a 1 por célula, combinando os critérios "
-                        "escolhidos no passo 3.",
-        "o_risk": "Mapa de risco topográfico relativo",
-        "o_risk_help": "O complemento da adequabilidade, para ler direto onde "
-                       "o terreno é mais desfavorável.",
-        "o_zones": "Zonas de acesso potencial (vetor)",
-        "o_zones_help": "As melhores áreas como polígonos, para recorte e "
-                        "medida de área.",
-        "o_transit": "Mapa de transitabilidade — “onde dá para andar”",
-        "o_transit_help": "Cinco classes de declividade, com a legenda gravada no arquivo.",
-        "o_streams": "Levar cursos d'água em conta, extraídos do próprio MDE",
-        "o_streams_help": "Deriva a drenagem do relevo e a usa como restrição da rota.",
-        "o_route": "Rota entre pontos e corredor de acesso",
-        "o_route_help": "Caminho de menor custo entre a origem e o destino, "
-                        "passando por onde você quiser.",
-        "route_box": "Rota",
-        "start": "Origem", "end": "Destino",
-        "via": "Destinos intermediários, na ordem de visita (opcional)",
-        "via_help": "Uma camada de pontos: a ordem das feições é a ordem da "
-                    "travessia. Sem ela o algoritmo contorna os pontos altos — "
-                    "e com razão, o cume é o lugar caro.",
-        "optimise": "Deixar o plugin escolher a melhor ordem de visita",
-        "optimise_help": "Ordem exata de menor custo, até oito pontos.",
-        "pick": "Marcar no mapa", "file": "Arquivo…",
-        "cost": "Como medir o custo do caminho",
-        "cost_help": "Tobler: subir custa mais que descer e o custo sai em "
-                     "horas. É o modelo validado contra GPS de campo.",
-        "corridor": "Largura do corredor (m)",
-        "margin": "Margem lateral de busca (m)",
-        "margin_help": "Quanto a rota pode se afastar da linha reta. Pequena "
-                       "demais força uma reta; grande demais deixa lento.",
-
-        "s3_title": "Critérios e limites",
-        "s3_sub": "Os valores padrão foram calibrados contra trilhas reais. "
-                  "Mexer aqui é opcional.",
-        "w_box": "Peso de cada critério",
-        "w_help": "Quanto cada critério pesa na nota final. Zero desliga o "
-                  "critério. Altitude vem em zero de propósito: faixas de "
-                  "altitude descartam terreno bom em regiões montanhosas.",
-        "w_alt": "Altitude", "w_slope": "Declividade",
-        "w_curvh": "Curvatura horizontal", "w_curvv": "Curvatura vertical",
-        "w_wet": "Umidade do terreno", "w_rough": "Rugosidade",
-        "lim_box": "Limites do terreno",
-        "slope_max": "Declividade máxima admitida (%)",
-        "slope_max_help": "Acima disto a célula é considerada inviável. "
-                          "100% equivale a 45 graus.",
-        "slope_score": "Declividade de nota zero (%)",
-        "slope_score_help": "Onde a nota de declividade chega a zero. Se a maior "
-                            "parte da sua área passar deste valor, o critério "
-                            "para de distinguir encostas e o plugin avisa.",
-        "alt_min": "Altitude mínima (m)", "alt_max": "Altitude máxima (m)",
-        "zone_box": "Como recortar as zonas",
-        "percentile": "Percentil de corte",
-        "percentile_help": "75 mantém o quarto melhor da área. Menor, mais "
-                           "permissivo.",
-        "min_area": "Área mínima do fragmento (ha)",
-        "band": "Equilibrar zonas por faixa altimetrica",
-        "band_size": "Tamanho da faixa (m)",
-        "breaks": "Limites das classes de transitabilidade (%)",
-        "breaks_help": "Quatro valores crescentes separando as cinco classes.",
-        "extra_box": "Critério adicional (opcional)",
-        "extra_layer": "Raster extra",
-        "extra_help": "Qualquer raster seu pode entrar no modelo: pedregosidade, "
-                      "cobertura vegetal, uma superfície de custo pronta.",
-        "extra_weight": "Peso", "extra_dir": "Valores altos são",
-        "cons_box": "Restrições (opcional)",
-        "cons_layer": "Camada a evitar",
-        "cons_help": "Vetor de feições a evitar: cerca, área vedada, propriedade "
-                     "privada, zona de exclusão. Vale para qualquer restrição "
-                     "que exista no seu contexto — a camada é sua.",
-        "cons_buffer": "Distância a manter (m)", "cons_mode": "Tratamento",
-
-        "s4_title": "Revisar e executar",
-        "s4_sub": "O cálculo roda em segundo plano; o QGIS continua utilizável.",
-        "out": "Arquivo de saída", "fmt": "Formato do vetor",
-        "crs": "CRS de saída (opcional)",
-        "crs_help": "Em branco, usa o CRS do projeto.",
-        "summary": "Resumo do que será gerado",
-        "log": "Andamento",
-        "log_empty": "As mensagens do cálculo aparecem aqui durante a execução.",
-
-        "err_title": "Falta um dado",
-        "err_dem": "Escolha o modelo digital de elevação para continuar.",
-        "err_dem_invalid": "Não consegui abrir este raster como camada válida:\n{path}",
-        "err_dem_crs": "Este raster não tem CRS definido:\n{path}\n\n"
-                       "Defina o sistema de coordenadas antes de usá-lo.",
-        "err_rasters": "Você marcou que vai usar seus próprios rasters, então "
-                       "declividade e as duas curvaturas são obrigatórias.",
-        "err_points": "Para gerar rota é preciso informar origem e destino.",
-        "err_out": "Escolha onde salvar o resultado.",
-        "err_weights": "Ao menos um peso precisa ser maior que zero.",
-        "err_alt": "A altitude mínima precisa ser menor que a máxima.",
-        "err_breaks": "Os limites de transitabilidade precisam ser quatro "
-                      "números crescentes, separados por vírgula.",
-        "done_title": "Pronto",
-        "done_text": "{count} camada(s) carregada(s) no projeto.",
-        "fail_title": "A execução falhou",
-        "fail_text": "{error}\n\nRegistro técnico: {log_path}",
-        "cancelled": "Execução cancelada.",
-    },
-    "en": {
-        "window": "TopoTrail — trail and access planning",
-        "tagline": "Topographic planning",
-        "eyebrow": "STEP {n} OF 4",
-        "theme_auto": "Theme: automatic",
-        "theme_light": "Theme: light",
-        "theme_dark": "Theme: dark",
-        "badge_required": "Required",
-        "badge_included": "included",
-        "credit_line": "ENBT · Rio de Janeiro Botanical Garden · Herpeto Mantiqueira",
-        "s1_banner": "Only the DEM is required. Slope and curvatures are derived "
-                     "from it, which removes unit, sign-convention and "
-                     "grid-alignment problems in one step.",
-        "chip_unreadable": "I could not open this file as a raster",
-        "chip_no_crs": "no CRS defined",
-        "chip_crs_ok": "CRS defined",
-        "chip_unit": "units",
-        "change": "Change",
-        "group_always_sub": "Baseline results for reading the terrain",
-        "group_optional_sub": "{n} of 4 selected",
-        "total_chip": "{n} in total",
-        "note_need_dem": "Choose the DEM to continue",
-        "note_outputs": "{n} outputs selected",
-        "note_tuning": "Defaults calibrated against real trails",
-        "note_review": "Review the outputs before running",
-        "next_alt": "Continue",
-        "steps": ["Data", "Products", "Criteria", "Run"],
-        "about": "About",
-        "status_title": "CURRENT SELECTION",
-        "status_no_dem": "No DEM chosen",
-        "status_no_output": "No output file",
-        "status_outputs_n": "{n} outputs ticked",
-        "about_text": (
-            "<h3 style='margin-bottom:2px'>TopoTrail</h3>"
-            "<p style='color:#6b7a74;margin-top:0'>Version {version}</p>"
-            "<p>A tool supporting the planning of trails, access routes and "
-            "field movement in natural and protected areas, combining "
-            "elevation, slope, relief curvature, wetness and ruggedness by "
-            "GIS multicriteria analysis, with least-cost routing and walking "
-            "time.</p>"
-            "<p><b>Development:</b> Luan da Silva Cortes Maciel "
-            "(MACIEL, L. S. C.)<br>"
-            "<b>Supervision:</b> Leandro Freitas<br>"
-            "<b>Associated project:</b> Herpeto Mantiqueira</p>"
-            "<p><b>Context:</b> developed as a product of master's research in "
-            "Biodiversity in Protected Areas, Escola Nacional de Botânica "
-            "Tropical / Rio de Janeiro Botanical Garden Research Institute.</p>"
-            "<p style='color:#6b7a74'>Results are decision-support evidence and "
-            "require field validation.</p>"
-            "<p>MIT licence · plugins.qgis.org/plugins/TopoTrail</p>"),
-        "back": "◀ Back", "next": "Next ▶", "run": "Generate results",
-        "cancel": "Cancel run",
-
-        "s1_title": "Input data",
-        "s1_sub": "Choose the elevation model. TopoTrail handles the derived "
-                  "layers and the grid alignment.",
-        "dem": "DEM file",
-        "dem_help": "An elevation raster in GeoTIFF. Any source works: "
-                    "Copernicus, SRTM, ALOS, a national topographic sheet.",
-        "vunit": "DEM vertical unit",
-        "vunit_help": "Metres for nearly every product. Feet appear in some "
-                      "United States datasets.",
-        "own_rasters": "I already have slope and curvature rasters and want to use them",
-        "own_help": "Tick only if you prefer your own rasters. Leaving it "
-                    "unticked is recommended: deriving from the DEM removes "
-                    "unit, sign-convention and grid-alignment problems.",
-        "slope": "Slope", "curvh": "Plan curvature",
-        "curvv": "Profile curvature", "sunit": "Slope unit",
-
-        "s2_title": "Analysis products",
-        "s2_sub": "Choose what to generate. The two essential maps are already included.",
-        "always": "Always included",
-        "optional_group": "Optional products",
-        "o_transit_tip": "The labels describe steepness, not a verdict on the "
-                         "walker: on real walked trails, field teams routinely "
-                         "cross classes 4 and 5.\n\nThe class distribution "
-                         "depends strongly on DEM resolution — quote the cell "
-                         "size beside any number taken from this map.",
-        "o_streams_tip": "No hydrography layer needed. Careful in seasonally dry "
-                         "landscapes: a dry bed is often the best walking "
-                         "surface, and in biological survey work drainage is a "
-                         "sampling target — avoiding it can push the route away "
-                         "from what you want to visit.",
-        "o_route_tip": "Use intermediate destinations to chain objectives: climb "
-                       "one summit, then another, call at a sampling point, then "
-                       "descend.",
-        "dem_card": "Digital elevation model",
-        "own_card": "Your own rasters",
-        "out_box": "Where the result goes",
-        "o_score": "Topographic suitability map",
-        "o_score_help": "A 0-to-1 score per cell, combining the criteria from step 3.",
-        "o_risk": "Relative topographic risk map",
-        "o_risk_help": "The complement of suitability, to read directly where "
-                       "the terrain is least favourable.",
-        "o_zones": "Potential access zones (vector)",
-        "o_zones_help": "The best areas as polygons, for clipping and area measurement.",
-        "o_transit": "Transitability map — “where can I walk”",
-        "o_transit_help": "Five slope classes, with the legend written into the file.",
-        "o_streams": "Take watercourses into account, extracted from the DEM",
-        "o_streams_help": "Derives drainage from the relief and uses it as a route constraint.",
-        "o_route": "Route between points, and access corridor",
-        "o_route_help": "Least-cost path from origin to destination, calling "
-                        "wherever you want on the way.",
-        "route_box": "Route",
-        "start": "Origin", "end": "Destination",
-        "via": "Intermediate destinations, in visiting order (optional)",
-        "via_help": "A point layer: feature order is the order of the traverse. "
-                    "Without it the algorithm skirts the high ground — rightly, "
-                    "since a summit is the expensive place.",
-        "optimise": "Let the plugin choose the best visiting order",
-        "optimise_help": "Exact cheapest order, up to eight points.",
-        "pick": "Pick on map", "file": "File…",
-        "cost": "How to measure the cost of the path",
-        "cost_help": "Tobler: uphill costs more than downhill and the cost "
-                     "comes out in hours. Validated against field GPS.",
-        "corridor": "Corridor width (m)",
-        "margin": "Lateral search margin (m)",
-        "margin_help": "How far the route may stray from the straight line. "
-                       "Too small forces a straight route; too large is slow.",
-
-        "s3_title": "Criteria and limits",
-        "s3_sub": "The defaults were calibrated against real trails. Changing "
-                  "anything here is optional.",
-        "w_box": "Weight of each criterion",
-        "w_help": "How much each criterion counts towards the final score. Zero "
-                  "switches it off. Altitude is zero on purpose: altitude bands "
-                  "discard good terrain in mountainous regions.",
-        "w_alt": "Altitude", "w_slope": "Slope",
-        "w_curvh": "Plan curvature", "w_curvv": "Profile curvature",
-        "w_wet": "Terrain wetness", "w_rough": "Ruggedness",
-        "lim_box": "Terrain limits",
-        "slope_max": "Maximum admissible slope (%)",
-        "slope_max_help": "Above this a cell counts as unusable. 100% is 45 degrees.",
-        "slope_score": "Slope scoring zero (%)",
-        "slope_score_help": "Where the slope score reaches zero. If most of your "
-                            "area exceeds this, the criterion stops telling one "
-                            "hillside from another and the plugin warns you.",
-        "alt_min": "Minimum altitude (m)", "alt_max": "Maximum altitude (m)",
-        "zone_box": "How to cut the zones",
-        "percentile": "Cut percentile",
-        "percentile_help": "75 keeps the best quarter of the area. Lower is more "
-                           "permissive.",
-        "min_area": "Minimum patch area (ha)",
-        "band": "Balance zones by altitude band",
-        "band_size": "Band size (m)",
-        "breaks": "Transitability class breaks (%)",
-        "breaks_help": "Four increasing values separating the five classes.",
-        "extra_box": "Additional criterion (optional)",
-        "extra_layer": "Extra raster",
-        "extra_help": "Any raster of yours can enter the model: stoniness, "
-                      "vegetation cover, a ready-made cost surface.",
-        "extra_weight": "Weight", "extra_dir": "High values are",
-        "cons_box": "Constraints (optional)",
-        "cons_layer": "Layer to avoid",
-        "cons_help": "Features to keep away from: a fence, a closed area, "
-                     "private land, an exclusion zone. Anything that constrains "
-                     "movement where you work — the layer is yours.",
-        "cons_buffer": "Distance to keep (m)", "cons_mode": "Treatment",
-
-        "s4_title": "Review and run",
-        "s4_sub": "The computation runs in the background; QGIS stays usable.",
-        "out": "Output file", "fmt": "Vector format",
-        "crs": "Output CRS (optional)",
-        "crs_help": "Left blank, the project CRS is used.",
-        "summary": "Summary of what will be produced",
-        "log": "Progress",
-        "log_empty": "Messages from the computation appear here while it runs.",
-
-        "err_title": "Something is missing",
-        "err_dem": "Choose the digital elevation model to continue.",
-        "err_dem_invalid": "I could not open this raster as a valid layer:\n{path}",
-        "err_dem_crs": "This raster has no CRS defined:\n{path}\n\n"
-                       "Set its coordinate system before using it.",
-        "err_rasters": "You ticked that you will use your own rasters, so slope "
-                       "and both curvatures are required.",
-        "err_points": "A route needs both an origin and a destination.",
-        "err_out": "Choose where to save the result.",
-        "err_weights": "At least one weight must be greater than zero.",
-        "err_alt": "Minimum altitude must be lower than maximum.",
-        "err_breaks": "Transitability breaks must be four increasing numbers, "
-                      "separated by commas.",
-        "done_title": "Done",
-        "done_text": "{count} layer(s) loaded into the project.",
-        "fail_title": "The run failed",
-        "fail_text": "{error}\n\nTechnical log: {log_path}",
-        "cancelled": "Run cancelled.",
-    },
-}
-
+# Ficavam num dicionario aqui dentro, com dois idiomas. Agora vivem em
+# i18n/<codigo>.json, um arquivo por lingua -- ver ui/i18n.py para o porque.
 
 # --------------------------------------------------------------------------
 # Pequenos construtores, para que cada controle saia com a mesma aparencia
@@ -776,6 +391,7 @@ class _Segmented(QWidget):
     def addItems(self, labels):
         for button in self._buttons:
             button.setParent(None)
+            button.deleteLater()
         self._buttons = []
         for position, text in enumerate(labels):
             button = QPushButton(text)
@@ -972,7 +588,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self.iface = iface
         _adopt_theme()
         self.theme_mode = "auto"
-        self.lang = "pt"
+        self.lang = self._remembered_language() or i18n.detect()
         self._option_cards = []
         self._static_icons = []
         self._temp_point_files = []
@@ -987,7 +603,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
     # -- infraestrutura de idioma ------------------------------------------
     def t(self, key):
-        return TEXTS[self.lang].get(key, TEXTS["pt"].get(key, key))
+        return i18n.text(self.lang, key)
 
     def _bind(self, widget, key, attribute="setText"):
         self._labels.append((widget, key, attribute))
@@ -1011,15 +627,52 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
                 text = text.format(n=getattr(widget, "_step_number", 1))
             getattr(widget, attribute)(text)
         self.theme_button.setText(self.t(f"theme_{self.theme_mode}"))
-        for index, name in enumerate(self.t("steps")):
-            self.step_labels[index].setText(name)
+        if self.lang not in i18n.REVIEWED:
+            self.language_box.setToolTip(self.t("translation_draft"))
+        else:
+            self.language_box.setToolTip("")
+        nomes = self.t("steps")
+        if isinstance(nomes, list):
+            for index, name in enumerate(nomes[:len(self.step_labels)]):
+                self.step_labels[index].setText(name)
+                # Sem recalcular, a pílula mantém a largura do idioma anterior e
+                # corta o rótulo novo -- "データ" virava "デー".
+                self.step_labels[index].adjustSize()
+                self._step_rows[index][0].adjustSize()
         self.back_button.setText(self.t("back"))
         self._update_nav()
         self._fill_enums()
 
-    def _toggle_language(self):
-        self.lang = "en" if self.lang == "pt" else "pt"
-        self._retranslate()
+    def _language_chosen(self, index):
+        code = self.language_box.itemData(index)
+        if code and code != self.lang:
+            self.lang = code
+            self._retranslate()
+            self._remember_language(code)
+
+    def _remember_language(self, code):
+        """Guarda a escolha nas configuracoes do QGIS.
+
+        Sem isto, quem trocou para espanhol reabre o plugin em ingles toda vez,
+        porque a deteccao automatica volta a ler o idioma do QGIS -- que pode
+        nao ser o idioma em que a pessoa quer trabalhar.
+        """
+        try:
+            from qgis.core import QgsSettings
+            QgsSettings().setValue("TopoTrail/language", code)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _remembered_language():
+        try:
+            from qgis.core import QgsSettings
+            code = QgsSettings().value("TopoTrail/language", "")
+            if code in i18n.LANGUAGE_CODES:
+                return code
+        except Exception:
+            pass
+        return None
 
     # -- construcao ---------------------------------------------------------
     def _build(self):
@@ -1092,11 +745,20 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self.theme_button.clicked.connect(self._cycle_theme)
         self._bind(self.theme_button, "theme_auto")
         brand.addWidget(self.theme_button)
-        self.language_button = QPushButton("PT-BR | ENG")
-        self.language_button.setObjectName("ttHeaderAction")
-        self.language_button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
-        self.language_button.clicked.connect(self._toggle_language)
-        brand.addWidget(self.language_button)
+        # Seletor, e nao um botao que alterna: com seis idiomas, alternar
+        # obrigaria a passar por cinco para chegar ao sexto. Cada lingua aparece
+        # escrita nela mesma, porque quem precisa do japones normalmente nao le
+        # a palavra "japones".
+        self.language_box = QComboBox()
+        self.language_box.setObjectName("ttHeaderSelect")
+        self.language_box.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
+        for code, name in i18n.available():
+            self.language_box.addItem(name, code)
+        index = self.language_box.findData(self.lang)
+        if index >= 0:
+            self.language_box.setCurrentIndex(index)
+        self.language_box.currentIndexChanged.connect(self._language_chosen)
+        brand.addWidget(self.language_box)
         column.addLayout(brand)
 
         steps = QHBoxLayout()
@@ -1559,35 +1221,32 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
     # -- enums e tema -------------------------------------------------------
     def _fill_enums(self):
-        pt = self.lang == "pt"
-        def fill(box, options):
+        """Preenche as listas de opções no idioma em vigor.
+
+        Ficavam com o texto escrito direto aqui, em dois idiomas, escolhidos por
+        um `if lang == "pt"`. Com seis línguas isso não escala, e o resultado era
+        uma tela em japonês com "Metres | Feet" no meio dela.
+        """
+        def fill(box, keys):
             current = box.currentIndex()
+            box.blockSignals(True)
             box.clear()
-            box.addItems(options)
+            box.addItems([self.t(key) for key in keys])
             box.setCurrentIndex(max(current, 0))
-        fill(self.vertical_unit, ["Metros", "Pés"] if pt else ["Metres", "Feet"])
-        fill(self.slope_unit, ["Porcentagem (%)", "Graus"] if pt
-             else ["Percent (%)", "Degrees"])
-        fill(self.cost_model,
-             ["Inverso da adequabilidade (legado)",
-              "Exponencial — contraste ajustável",
-              "Tempo de caminhada (Tobler) — recomendado"] if pt else
-             ["Inverse of suitability (legacy)",
-              "Exponential — adjustable contrast",
-              "Walking time (Tobler) — recommended"])
+            box.blockSignals(False)
+
+        fill(self.vertical_unit, ["unit_metres", "unit_feet"])
+        fill(self.slope_unit, ["slope_percent", "slope_degrees"])
+        fill(self.cost_model, ["cost_inverse", "cost_exponential", "cost_tobler"])
         if self.cost_model.currentIndex() == 0:
             self.cost_model.setCurrentIndex(2)
-        fill(self.extra_direction,
-             ["Ruins (menor é melhor)", "Bons (maior é melhor)"] if pt else
-             ["Bad (lower is better)", "Good (higher is better)"])
-        fill(self.constraint_mode,
-             ["Evitar completamente", "Apenas encarecer"] if pt else
-             ["Avoid completely", "Only make expensive"])
-        # A ordem precisa bater exatamente com options= do algoritmo. Quando nao
-        # batia, escolher "GeoPackage" produzia um Shapefile em silencio.
-        fill(self.output_format, ["Shapefile", "GeoPackage", "KML"])
+        fill(self.extra_direction, ["dir_low", "dir_high"])
+        fill(self.constraint_mode, ["cons_avoid", "cons_penalise"])
+        # A ordem tem de bater com options= do algoritmo: enum do QGIS viaja
+        # como índice, não como texto.
+        fill(self.output_format, ["fmt_shp", "fmt_gpkg", "fmt_kml"])
         if not self._format_initialised:
-            self.output_format.setCurrentIndex(1)      # GeoPackage
+            self.output_format.setCurrentIndex(1)
             self._format_initialised = True
 
     def _cycle_theme(self):
@@ -1624,6 +1283,14 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             #ttBrand {{ color: #ffffff; font-size: 13px; font-weight: 700;
                         letter-spacing: 1.4px; }}
             #ttTagline {{ color: #86a89a; font-size: 10.5px; }}
+            #ttHeaderSelect {{ background: rgba(255,255,255,0.08); border: none;
+                               color: #cfe3d8; font-size: 11px; padding: 6px 10px;
+                               border-radius: 8px; }}
+            #ttHeaderSelect::drop-down {{ border: none; width: 18px; }}
+            #ttHeaderSelect QAbstractItemView {{ background: {t['surface']};
+                                                 color: {t['ink']};
+                                                 selection-background-color: {t['accent']};
+                                                 border: 1px solid {t['line']}; }}
             #ttHeaderAction {{ background: rgba(255,255,255,0.08); border: none;
                                color: #cfe3d8; font-size: 11px; padding: 7px 12px;
                                border-radius: 8px; }}

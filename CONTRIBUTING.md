@@ -127,3 +127,43 @@ Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 By contributing you agree that your contribution is licensed under the MIT
 Licence, the same terms as the rest of the project.
+
+## Traduções
+
+O TopoTrail fala seis idiomas: português, inglês, espanhol, francês, chinês e
+japonês. Os textos ficam em `i18n/<código>.json` — um arquivo por idioma, com as
+mesmas chaves em todos.
+
+**Português e inglês foram escritos pelo autor. Espanhol, francês, chinês e
+japonês são traduções de partida e ainda não foram revisadas por falantes
+nativos.** A interface diz isso a quem as usa. Se você fala uma dessas línguas,
+corrigir um termo é provavelmente a contribuição mais fácil e mais útil que dá
+para fazer aqui.
+
+### Corrigir uma tradução
+
+1. Abra `i18n/<código>.json` e edite o valor. Não mexa nas chaves.
+2. Preserve os marcadores entre chaves — `{n}`, `{path}`, `{version}` — e a
+   quantidade deles. `tests/test_i18n.py` reprova se um sumir, porque um
+   marcador perdido só estoura em tempo de execução, no idioma que ninguém da
+   equipe testa.
+3. Rode `python -m pytest tests/test_i18n.py` antes de abrir o pull request.
+
+Terminologia geomorfométrica tem convenções estabelecidas em cada língua, e é
+justamente aí que uma tradução automática erra: em francês usamos MNT e não DEM,
+*courbure planaire* e não *courbure de plan*. Se você discordar de um termo, diga
+o porquê no pull request — a discussão vale mais que a troca.
+
+### Acrescentar um idioma
+
+1. Copie `i18n/en.json` para `i18n/<código>.json` (código ISO 639-1 de duas
+   letras).
+2. Traduza os valores.
+3. Acrescente `("<código>", "<Nome do idioma na própria língua>")` a `LANGUAGES`
+   em `ui/i18n.py`. O nome vai escrito na própria língua de propósito: quem
+   precisa do japonês normalmente não lê a palavra "japonês".
+4. Atualize a lista esperada em `tests/test_i18n.py`.
+
+Não há nada para compilar. O plugin não usa `.ts`/`.qm`: o `.qm` é um binário
+gerado com `lrelease`, o que obrigaria a um passo de build antes de empacotar e
+poria no repositório um arquivo que ninguém consegue revisar num pull request.
