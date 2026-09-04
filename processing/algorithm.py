@@ -53,7 +53,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.8.0"
+PLUGIN_VERSION = "0.9.0"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser

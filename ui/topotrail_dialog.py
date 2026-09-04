@@ -1,1780 +1,1188 @@
-import json
-import os
-import tempfile
-import traceback
-from datetime import datetime
+"""Assistente do TopoTrail: quatro passos, com o minimo obrigatorio em cada um.
 
-from qgis.PyQt import uic
-from qgis.PyQt.QtCore import QSize, Qt
-from qgis.PyQt.QtGui import QColor, QFont, QPalette, QPixmap
+A janela anterior mostrava treze campos numericos de uma vez, exigia quatro
+rasters quando o motor deriva tres deles sozinho desde a versao 0.6, e nao dava
+acesso a nada que foi acrescentado depois -- nem drenagem, nem transitabilidade,
+nem tempo de caminhada de Tobler, nem destinos intermediarios. Dezesseis
+parametros do algoritmo eram inalcancaveis pela interface.
+
+O assistente inverte o padrao: o caminho normal pede so o MDE, e cada opcao
+adicional so aparece quando o usuario diz que quer aquilo. Todo controle tem uma
+frase explicando o que ele muda no resultado -- essa e a diferenca entre uma
+ferramenta que so quem escreveu sabe usar e uma que um pesquisador de campo
+abre e entende.
+"""
+
+import os
+import traceback
+
+from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtGui import QFont, QPixmap
 from qgis.PyQt.QtWidgets import (
-    QDialog,
-    QDoubleSpinBox,
-    QFileDialog,
-    QFormLayout,
-    QFrame,
-    QGridLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QPushButton,
-    QCheckBox,
-    QScrollArea,
-    QSizePolicy,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
-    QApplication,
+    QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QProgressBar, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+    QStackedWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 from qgis.core import (
-    QgsCoordinateReferenceSystem,
-    QgsCoordinateTransform,
-    QgsColorRampShader,
-    QgsFillSymbol,
-    QgsLineSymbol,
-    QgsProcessingFeedback,
-    QgsProject,
-    QgsRasterShader,
-    QgsRasterLayer,
-    QgsRasterTransparency,
-    QgsSingleBandPseudoColorRenderer,
-    QgsVectorLayer,
+    QgsApplication, QgsProcessingContext, QgsProcessingFeedback,
+    QgsProject, QgsRasterLayer, QgsVectorLayer,
 )
-from qgis.gui import QgsMapToolEmitPoint, QgsProjectionSelectionDialog, QgsProjectionSelectionWidget
 import qgis.processing as processing
 
-
-FORM_CLASS, _ = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), "topotrail_dialog.ui"))
-
-
-def qt_enum(enum_group, value):
-    """Return Qt enum values in a way that works with both Qt5 and Qt6."""
-    group = getattr(Qt, enum_group, Qt)
-    return getattr(group, value)
-
-
-def size_policy(value):
-    """Return QSizePolicy values in a way that works with Qt5 and Qt6."""
-    group = getattr(QSizePolicy, "Policy", QSizePolicy)
-    return getattr(group, value)
-
-
-def class_enum(cls, enum_group, value):
-    """Return class-scoped enum values in a way that works with Qt5 and Qt6."""
-    group = getattr(cls, enum_group, cls)
-    return getattr(group, value)
-
-
-ALIGN_RIGHT = qt_enum("AlignmentFlag", "AlignRight")
-ALIGN_LEFT = qt_enum("AlignmentFlag", "AlignLeft")
-ALIGN_TOP = qt_enum("AlignmentFlag", "AlignTop")
-ALIGN_CENTER = qt_enum("AlignmentFlag", "AlignCenter")
-ALIGN_VCENTER = qt_enum("AlignmentFlag", "AlignVCenter")
-KEEP_ASPECT_RATIO = qt_enum("AspectRatioMode", "KeepAspectRatio")
-SMOOTH_TRANSFORMATION = qt_enum("TransformationMode", "SmoothTransformation")
-RICH_TEXT = qt_enum("TextFormat", "RichText")
-SCROLLBAR_ALWAYS_OFF = qt_enum("ScrollBarPolicy", "ScrollBarAlwaysOff")
-SCROLLBAR_AS_NEEDED = qt_enum("ScrollBarPolicy", "ScrollBarAsNeeded")
-ELIDE_RIGHT = qt_enum("TextElideMode", "ElideRight")
-POLICY_FIXED = size_policy("Fixed")
-POLICY_MINIMUM = size_policy("Minimum")
-POLICY_MINIMUM_EXPANDING = size_policy("MinimumExpanding")
-POLICY_EXPANDING = size_policy("Expanding")
-FORM_GROW_ALL_NON_FIXED = class_enum(
-    QFormLayout,
-    "FieldGrowthPolicy",
-    "AllNonFixedFieldsGrow",
+from .support import (
+    TopotrailSupportMixin, append_gui_diagnostic_log, qt_enum,
+    serialize_processing_params, size_policy,
 )
-FRAME_NO_FRAME = class_enum(QFrame, "Shape", "NoFrame")
-FONT_BOLD = class_enum(QFont, "Weight", "Bold")
-PAL_WINDOW = class_enum(QPalette, "ColorRole", "Window")
-PAL_WINDOW_TEXT = class_enum(QPalette, "ColorRole", "WindowText")
-PAL_BASE = class_enum(QPalette, "ColorRole", "Base")
-PAL_TEXT = class_enum(QPalette, "ColorRole", "Text")
-PAL_BUTTON = class_enum(QPalette, "ColorRole", "Button")
-PAL_BUTTON_TEXT = class_enum(QPalette, "ColorRole", "ButtonText")
-PAL_HIGHLIGHT = class_enum(QPalette, "ColorRole", "Highlight")
-PAL_HIGHLIGHTED_TEXT = class_enum(QPalette, "ColorRole", "HighlightedText")
-PAL_MID = class_enum(QPalette, "ColorRole", "Mid")
-PAL_MIDLIGHT = class_enum(QPalette, "ColorRole", "Midlight")
 
-try:
-    MESSAGE_YES = QMessageBox.StandardButton.Yes
-    MESSAGE_NO = QMessageBox.StandardButton.No
-except AttributeError:
-    MESSAGE_YES = getattr(QMessageBox, "Yes")
-    MESSAGE_NO = getattr(QMessageBox, "No")
+PLUGIN_DIR = os.path.dirname(os.path.dirname(__file__))
+
+# --------------------------------------------------------------------------
+# Textos
+# --------------------------------------------------------------------------
+# Mantidos num dicionario e nao em .ts porque o plugin precisa alternar idioma
+# em tempo de execucao, com o botao PT-BR | ENG, e nao apenas no idioma do QGIS:
+# equipes de campo brasileiras costumam rodar o QGIS em ingles e querer a
+# ferramenta em portugues.
+
+TEXTS = {
+    "pt": {
+        "window": "TopoTrail — planejamento de trilhas e acessos",
+        "steps": ["1. Dados", "2. O que você quer", "3. Ajustes", "4. Executar"],
+        "back": "◀ Voltar", "next": "Avançar ▶", "run": "Gerar resultados",
+        "cancel": "Cancelar execução",
+
+        "s1_title": "De que dados você dispõe?",
+        "s1_sub": "Só o modelo digital de elevação é obrigatório. Declividade e "
+                  "curvaturas são calculadas a partir dele.",
+        "dem": "Modelo digital de elevação (MDE)",
+        "dem_help": "Um raster de altitude em GeoTIFF. Serve qualquer fonte: "
+                    "Copernicus, SRTM, ALOS, carta topográfica nacional.",
+        "vunit": "Unidade vertical do MDE",
+        "vunit_help": "Metros na quase totalidade dos produtos. Pés aparecem em "
+                      "alguns dados dos Estados Unidos.",
+        "own_rasters": "Já tenho declividade e curvaturas prontas e quero usá-las",
+        "own_help": "Marque apenas se preferir seus próprios rasters. Deixar "
+                    "desmarcado é o caminho recomendado: derivar do MDE elimina "
+                    "problemas de unidade, de convenção de sinal e de "
+                    "alinhamento de grade.",
+        "slope": "Declividade", "curvh": "Curvatura horizontal",
+        "curvv": "Curvatura vertical", "sunit": "Unidade da declividade",
+
+        "s2_title": "O que você quer que o plugin produza?",
+        "s2_sub": "Marque o que for útil. Os dois primeiros saem sempre.",
+        "always": "Sempre gerados",
+        "o_score": "Mapa de adequabilidade topográfica",
+        "o_score_help": "Nota de 0 a 1 por célula, combinando os critérios "
+                        "escolhidos no passo 3.",
+        "o_risk": "Mapa de risco topográfico relativo",
+        "o_risk_help": "O complemento da adequabilidade, para leitura direta de "
+                       "onde o terreno é mais desfavorável.",
+        "o_zones": "Zonas de acesso potencial (vetor)",
+        "o_zones_help": "Converte as melhores áreas em polígonos, para recorte e "
+                        "medida de área.",
+        "o_transit": "Mapa de transitabilidade — “onde dá para andar”",
+        "o_transit_help": "Cinco classes de declividade com legenda gravada no "
+                          "arquivo. Abre já colorido no QGIS. Os rótulos "
+                          "descrevem inclinação, não veredito sobre quem passa: "
+                          "equipes de campo percorrem rotineiramente as classes "
+                          "4 e 5.",
+        "o_streams": "Levar cursos d'água em conta, extraídos do próprio MDE",
+        "o_streams_help": "Deriva a rede de drenagem do relevo e a usa como "
+                          "restrição da rota — não precisa de camada de "
+                          "hidrografia. Cuidado em paisagem seca: as equipes "
+                          "cruzam drenagem o dobro do acaso, então evitá-la "
+                          "costuma afastar a rota do que se quer visitar.",
+        "o_route": "Rota entre pontos e corredor de acesso",
+        "o_route_help": "Caminho de menor custo entre a origem e o destino, "
+                        "podendo passar por destinos intermediários.",
+        "route_box": "Rota",
+        "start": "Origem", "end": "Destino",
+        "via": "Destinos intermediários, na ordem de visita (opcional)",
+        "via_help": "Uma camada de pontos. A ordem das feições é a ordem da "
+                    "travessia: desenhe Marins, Marinzinho e Itaguaré nessa "
+                    "sequência e a rota sobe os três. Sem isso o algoritmo "
+                    "contorna os cumes — corretamente, porque o cume é caro.",
+        "optimise": "Deixar o plugin escolher a melhor ordem de visita",
+        "optimise_help": "Resolve a ordem de menor custo exatamente, até oito "
+                         "pontos intermediários. Ignora a ordem da camada.",
+        "pick": "Marcar no mapa", "file": "Arquivo…",
+        "cost": "Como medir o custo do caminho",
+        "cost_help": "“Tempo de caminhada” usa a função de Tobler: subir custa "
+                     "mais que descer, e o custo sai em horas. É o modelo "
+                     "validado contra GPS de campo e o recomendado.",
+        "corridor": "Largura do corredor (m)",
+        "margin": "Margem lateral de busca (m)",
+        "margin_help": "Quanto o algoritmo pode se afastar da linha reta entre "
+                       "os pontos. Margem pequena demais força a rota a ser reta; "
+                       "grande demais deixa o cálculo lento.",
+
+        "s3_title": "Ajustes",
+        "s3_sub": "Os valores padrão foram calibrados contra trilhas reais. "
+                  "Mexer aqui é opcional.",
+        "w_box": "Peso de cada critério",
+        "w_help": "Quanto cada critério pesa na nota final. Zero desliga o "
+                  "critério. Altitude vem em zero de propósito: faixas de "
+                  "altitude descartam terreno bom em regiões montanhosas.",
+        "w_alt": "Altitude", "w_slope": "Declividade",
+        "w_curvh": "Curvatura horizontal", "w_curvv": "Curvatura vertical",
+        "w_wet": "Umidade do terreno", "w_rough": "Rugosidade",
+        "lim_box": "Limites do terreno",
+        "slope_max": "Declividade máxima admitida (%)",
+        "slope_max_help": "Acima disto a célula é considerada inviável. "
+                          "100% equivale a 45 graus.",
+        "slope_score": "Declividade de nota zero (%)",
+        "slope_score_help": "Onde a nota de declividade chega a zero. Se a maior "
+                            "parte da sua área passar deste valor, o critério "
+                            "para de distinguir encostas e o plugin avisa.",
+        "alt_min": "Altitude mínima (m)", "alt_max": "Altitude máxima (m)",
+        "zone_box": "Como recortar as zonas",
+        "percentile": "Percentil de corte",
+        "percentile_help": "75 mantém o quarto melhor da área. Menor, mais "
+                           "permissivo.",
+        "min_area": "Área mínima do fragmento (ha)",
+        "band": "Equilibrar zonas por faixa altimetrica",
+        "band_size": "Tamanho da faixa (m)",
+        "breaks": "Limites das classes de transitabilidade (%)",
+        "breaks_help": "Quatro valores crescentes separando as cinco classes.",
+        "extra_box": "Critério adicional (opcional)",
+        "extra_layer": "Raster extra",
+        "extra_help": "Qualquer raster seu pode entrar no modelo: pedregosidade, "
+                      "cobertura vegetal, uma superfície de custo pronta.",
+        "extra_weight": "Peso", "extra_dir": "Valores altos são",
+        "cons_box": "Restrições (opcional)",
+        "cons_layer": "Camada a evitar",
+        "cons_help": "Vetor de feições a evitar: cerca, área vedada, propriedade "
+                     "privada. Atenção com hidrografia: em paisagem seca as "
+                     "equipes cruzam drenagem o dobro do acaso, então penalizá-la "
+                     "costuma afastar a rota do que se quer visitar.",
+        "cons_buffer": "Distância a manter (m)", "cons_mode": "Tratamento",
+
+        "s4_title": "Onde salvar e executar",
+        "s4_sub": "O cálculo roda em segundo plano; o QGIS continua utilizável.",
+        "out": "Arquivo de saída", "fmt": "Formato do vetor",
+        "crs": "CRS de saída (opcional)",
+        "crs_help": "Em branco, usa o CRS do projeto.",
+        "summary": "Resumo do que será gerado",
+        "log": "Andamento",
+
+        "err_title": "Falta um dado",
+        "err_dem": "Escolha o modelo digital de elevação para continuar.",
+        "err_dem_invalid": "Não consegui abrir este raster como camada válida:\n{path}",
+        "err_dem_crs": "Este raster não tem CRS definido:\n{path}\n\n"
+                       "Defina o sistema de coordenadas antes de usá-lo.",
+        "err_rasters": "Você marcou que vai usar seus próprios rasters, então "
+                       "declividade e as duas curvaturas são obrigatórias.",
+        "err_points": "Para gerar rota é preciso informar origem e destino.",
+        "err_out": "Escolha onde salvar o resultado.",
+        "err_weights": "Ao menos um peso precisa ser maior que zero.",
+        "err_alt": "A altitude mínima precisa ser menor que a máxima.",
+        "err_breaks": "Os limites de transitabilidade precisam ser quatro "
+                      "números crescentes, separados por vírgula.",
+        "done_title": "Pronto",
+        "done_text": "{count} camada(s) carregada(s) no projeto.",
+        "fail_title": "A execução falhou",
+        "fail_text": "{error}\n\nRegistro técnico: {log_path}",
+        "cancelled": "Execução cancelada.",
+    },
+    "en": {
+        "window": "TopoTrail — trail and access planning",
+        "steps": ["1. Data", "2. What you want", "3. Tuning", "4. Run"],
+        "back": "◀ Back", "next": "Next ▶", "run": "Generate results",
+        "cancel": "Cancel run",
+
+        "s1_title": "What data do you have?",
+        "s1_sub": "Only the digital elevation model is required. Slope and "
+                  "curvatures are derived from it.",
+        "dem": "Digital elevation model (DEM)",
+        "dem_help": "An elevation raster in GeoTIFF. Any source works: "
+                    "Copernicus, SRTM, ALOS, a national topographic sheet.",
+        "vunit": "DEM vertical unit",
+        "vunit_help": "Metres for nearly every product. Feet appear in some "
+                      "United States datasets.",
+        "own_rasters": "I already have slope and curvature rasters and want to use them",
+        "own_help": "Tick only if you prefer your own rasters. Leaving it "
+                    "unticked is recommended: deriving from the DEM removes "
+                    "unit, sign-convention and grid-alignment problems.",
+        "slope": "Slope", "curvh": "Plan curvature",
+        "curvv": "Profile curvature", "sunit": "Slope unit",
+
+        "s2_title": "What should the plugin produce?",
+        "s2_sub": "Tick whatever is useful. The first two are always produced.",
+        "always": "Always produced",
+        "o_score": "Topographic suitability map",
+        "o_score_help": "A 0-to-1 score per cell, combining the criteria chosen "
+                        "in step 3.",
+        "o_risk": "Relative topographic risk map",
+        "o_risk_help": "The complement of suitability, to read directly where "
+                       "the terrain is least favourable.",
+        "o_zones": "Potential access zones (vector)",
+        "o_zones_help": "Turns the best areas into polygons, for clipping and "
+                        "area measurement.",
+        "o_transit": "Transitability map — “where can I walk”",
+        "o_transit_help": "Five slope classes with the legend written into the "
+                          "file, so it opens already coloured in QGIS. The "
+                          "labels describe steepness, not a verdict on the "
+                          "walker: field teams routinely cross classes 4 and 5.",
+        "o_streams": "Take watercourses into account, extracted from the DEM",
+        "o_streams_help": "Derives the drainage network from the relief and uses "
+                          "it as a route constraint — no hydrography layer "
+                          "needed. Careful in dry landscapes: teams cross "
+                          "drainage at twice the rate of chance, so avoiding it "
+                          "tends to push the route away from what you want to "
+                          "visit.",
+        "o_route": "Route between points, and access corridor",
+        "o_route_help": "Least-cost path from origin to destination, optionally "
+                        "through intermediate destinations.",
+        "route_box": "Route",
+        "start": "Origin", "end": "Destination",
+        "via": "Intermediate destinations, in visiting order (optional)",
+        "via_help": "A point layer. Feature order is the order of the traverse: "
+                    "draw Marins, Marinzinho and Itaguaré in that sequence and "
+                    "the route climbs all three. Without it the algorithm skirts "
+                    "the summits — correctly, because a summit is expensive.",
+        "optimise": "Let the plugin choose the best visiting order",
+        "optimise_help": "Solves the cheapest order exactly, up to eight "
+                         "intermediate points. Ignores the layer order.",
+        "pick": "Pick on map", "file": "File…",
+        "cost": "How to measure the cost of the path",
+        "cost_help": "“Walking time” uses Tobler's function: uphill costs more "
+                     "than downhill, and the cost comes out in hours. It is the "
+                     "model validated against field GPS, and the recommended one.",
+        "corridor": "Corridor width (m)",
+        "margin": "Lateral search margin (m)",
+        "margin_help": "How far the algorithm may stray from the straight line "
+                       "between the points. Too small forces a straight route; "
+                       "too large makes the computation slow.",
+
+        "s3_title": "Tuning",
+        "s3_sub": "The defaults were calibrated against real trails. Changing "
+                  "anything here is optional.",
+        "w_box": "Weight of each criterion",
+        "w_help": "How much each criterion counts towards the final score. Zero "
+                  "switches it off. Altitude is zero on purpose: altitude bands "
+                  "discard good terrain in mountainous regions.",
+        "w_alt": "Altitude", "w_slope": "Slope",
+        "w_curvh": "Plan curvature", "w_curvv": "Profile curvature",
+        "w_wet": "Terrain wetness", "w_rough": "Ruggedness",
+        "lim_box": "Terrain limits",
+        "slope_max": "Maximum admissible slope (%)",
+        "slope_max_help": "Above this a cell counts as unusable. 100% is 45 degrees.",
+        "slope_score": "Slope scoring zero (%)",
+        "slope_score_help": "Where the slope score reaches zero. If most of your "
+                            "area exceeds this, the criterion stops telling one "
+                            "hillside from another and the plugin warns you.",
+        "alt_min": "Minimum altitude (m)", "alt_max": "Maximum altitude (m)",
+        "zone_box": "How to cut the zones",
+        "percentile": "Cut percentile",
+        "percentile_help": "75 keeps the best quarter of the area. Lower is more "
+                           "permissive.",
+        "min_area": "Minimum patch area (ha)",
+        "band": "Balance zones by altitude band",
+        "band_size": "Band size (m)",
+        "breaks": "Transitability class breaks (%)",
+        "breaks_help": "Four increasing values separating the five classes.",
+        "extra_box": "Additional criterion (optional)",
+        "extra_layer": "Extra raster",
+        "extra_help": "Any raster of yours can enter the model: stoniness, "
+                      "vegetation cover, a ready-made cost surface.",
+        "extra_weight": "Weight", "extra_dir": "High values are",
+        "cons_box": "Constraints (optional)",
+        "cons_layer": "Layer to avoid",
+        "cons_help": "Features to keep away from: a fence, a closed area, "
+                     "private land. Careful with hydrography: in dry landscapes "
+                     "teams cross drainage at twice the rate of chance, so "
+                     "penalising it tends to push the route away from what you "
+                     "want to visit.",
+        "cons_buffer": "Distance to keep (m)", "cons_mode": "Treatment",
+
+        "s4_title": "Where to save, and run",
+        "s4_sub": "The computation runs in the background; QGIS stays usable.",
+        "out": "Output file", "fmt": "Vector format",
+        "crs": "Output CRS (optional)",
+        "crs_help": "Left blank, the project CRS is used.",
+        "summary": "Summary of what will be produced",
+        "log": "Progress",
+
+        "err_title": "Something is missing",
+        "err_dem": "Choose the digital elevation model to continue.",
+        "err_dem_invalid": "I could not open this raster as a valid layer:\n{path}",
+        "err_dem_crs": "This raster has no CRS defined:\n{path}\n\n"
+                       "Set its coordinate system before using it.",
+        "err_rasters": "You ticked that you will use your own rasters, so slope "
+                       "and both curvatures are required.",
+        "err_points": "A route needs both an origin and a destination.",
+        "err_out": "Choose where to save the result.",
+        "err_weights": "At least one weight must be greater than zero.",
+        "err_alt": "Minimum altitude must be lower than maximum.",
+        "err_breaks": "Transitability breaks must be four increasing numbers, "
+                      "separated by commas.",
+        "done_title": "Done",
+        "done_text": "{count} layer(s) loaded into the project.",
+        "fail_title": "The run failed",
+        "fail_text": "{error}\n\nTechnical log: {log_path}",
+        "cancelled": "Run cancelled.",
+    },
+}
 
 
-def topotrail_log_path(output_path):
-    base_path, _ = os.path.splitext(output_path or "")
-    if not base_path:
-        logs_dir = os.path.join(tempfile.gettempdir(), "topotrail_logs")
-        os.makedirs(logs_dir, exist_ok=True)
-        base_path = os.path.join(logs_dir, f"topotrail_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-    return f"{base_path}_diagnostico_topotrail.log"
+# --------------------------------------------------------------------------
+# Pequenos construtores, para que cada controle saia com a mesma aparencia
+# --------------------------------------------------------------------------
+
+MUTED = "#5a6472"
+ACCENT = "#1f6feb"
 
 
-def serialize_processing_params(params):
-    if not params:
-        return {}
-    serialized = {}
-    for key, value in params.items():
-        if hasattr(value, "source"):
-            serialized[key] = {
-                "source": value.source(),
-                "name": value.name(),
-                "valid": value.isValid(),
-                "crs": value.crs().authid() if value.crs().isValid() else "",
-            }
-        else:
-            serialized[key] = value
-    return serialized
+def _help(text):
+    """A frase que explica o controle. E o que torna a janela didatica, entao
+    nao e opcional em nenhum campo que nao seja obvio."""
+    label = QLabel(text)
+    label.setWordWrap(True)
+    font = label.font()
+    font.setPointSizeF(max(font.pointSizeF() - 1.0, 7.5))
+    label.setFont(font)
+    label.setStyleSheet(f"color: {MUTED};")
+    label.setSizePolicy(size_policy("Preferred"), size_policy("Minimum"))
+    return label
 
 
-def append_gui_diagnostic_log(output_path, event, **data):
-    log_path = topotrail_log_path(output_path)
-    output_dir = os.path.dirname(log_path)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    payload = {
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "event": event,
-    }
-    payload.update(data)
-    with open(log_path, "a", encoding="utf-8") as log_file:
-        log_file.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
-    return log_path
+def _heading(text, size=15, bold=True):
+    label = QLabel(text)
+    font = label.font()
+    font.setPointSizeF(font.pointSizeF() + (size - 10) * 0.5)
+    font.setBold(bold)
+    label.setFont(font)
+    label.setWordWrap(True)
+    return label
 
 
-class TopotrailDialog(QDialog, FORM_CLASS):
+def _card(title=None):
+    """Um bloco visual. Agrupar reduz a impressao de painel de controle."""
+    frame = QFrame()
+    frame.setObjectName("ttCard")
+    layout = QVBoxLayout(frame)
+    layout.setContentsMargins(16, 14, 16, 14)
+    layout.setSpacing(8)
+    if title:
+        layout.addWidget(_heading(title, size=12))
+    return frame, layout
+
+
+def _spin(minimum, maximum, value, decimals=2, step=1.0, suffix=""):
+    box = QDoubleSpinBox()
+    box.setDecimals(decimals)
+    box.setRange(minimum, maximum)
+    box.setSingleStep(step)
+    box.setValue(value)
+    if suffix:
+        box.setSuffix(suffix)
+    box.setMinimumWidth(110)
+    return box
+
+
+class _FileRow(QWidget):
+    """Campo de arquivo com botao. Usado para raster e para pontos."""
+
+    def __init__(self, file_filter, dialog_title, parent=None):
+        super().__init__(parent)
+        self._filter = file_filter
+        self._title = dialog_title
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        self.edit = QLineEdit()
+        self.button = QPushButton("…")
+        self.button.setFixedWidth(38)
+        self.button.clicked.connect(self._browse)
+        layout.addWidget(self.edit, 1)
+        layout.addWidget(self.button, 0)
+
+    def _browse(self):
+        path, _ = QFileDialog.getOpenFileName(self, self._title, "", self._filter)
+        if path:
+            self.edit.setText(path)
+
+    def text(self):
+        return self.edit.text().strip()
+
+    def setText(self, value):
+        self.edit.setText(value)
+
+
+class _Section(QWidget):
+    """Bloco que so aparece quando a caixa correspondente e marcada.
+
+    E o mecanismo central da janela: nada de rota na tela enquanto o usuario nao
+    disser que quer rota. Sem isso voltamos aos treze campos simultaneos.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setVisible(False)
+        self.layout_ = QVBoxLayout(self)
+        self.layout_.setContentsMargins(22, 4, 0, 8)
+        self.layout_.setSpacing(6)
+
+    def add(self, widget):
+        self.layout_.addWidget(widget)
+        return widget
+
+    def add_form(self, rows):
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(4)
+        for index, (label, widget) in enumerate(rows):
+            text = QLabel(label)
+            text.setWordWrap(True)
+            grid.addWidget(text, index, 0)
+            grid.addWidget(widget, index, 1)
+        grid.setColumnStretch(0, 1)
+        holder = QWidget()
+        holder.setLayout(grid)
+        self.layout_.addWidget(holder)
+        return holder
+
+
+class TopotrailDialog(QDialog, TopotrailSupportMixin):
+    """Assistente de quatro passos."""
+
     def __init__(self, iface=None, parent=None):
-        super(TopotrailDialog, self).__init__(parent)
+        super().__init__(parent)
         self.iface = iface
-        self.language = "pt_BR"
-        self._map_tool = None
-        self._previous_map_tool = None
+        self.lang = "pt"
         self._temp_point_files = []
-        self.setupUi(self)
-        self.add_language_switch()
+        self._task = None
+        self._feedback = None
+        self._labels = []          # (widget, chave) para troca de idioma
+        self._format_initialised = False
+        self.setMinimumSize(940, 720)
+        self._build()
+        self._retranslate()
+        self._apply_theme()
 
-        self.demBrowseButton.clicked.connect(lambda: self.browse_file("demFileEdit", "Raster (*.tif *.tiff)"))
-        self.slopeBrowseButton.clicked.connect(lambda: self.browse_file("slopeFileEdit", "Raster (*.tif *.tiff)"))
-        self.curvHBrowseButton.clicked.connect(lambda: self.browse_file("curvHFileEdit", "Raster (*.tif *.tiff)"))
-        self.curvVBrowseButton.clicked.connect(lambda: self.browse_file("curvVFileEdit", "Raster (*.tif *.tiff)"))
-        self.outputBrowseButton.clicked.connect(self.browse_output)
+    # -- infraestrutura de idioma ------------------------------------------
+    def t(self, key):
+        return TEXTS[self.lang].get(key, TEXTS["pt"].get(key, key))
 
-        self.generateButton.clicked.connect(self.generate_trails)
-        self.generateButton.setText("Gerar resultados TopoTrail")
+    def _bind(self, widget, key, attribute="setText"):
+        self._labels.append((widget, key, attribute))
+        return widget
 
-        self.altMinSpin.setValue(0)
-        self.altMaxSpin.setValue(2600)
-        self.altMinSpin.setToolTip("Limite usado nas zonas potenciais. A rota pode partir de altitudes mais baixas.")
-        self.altMaxSpin.setToolTip("Limite usado nas zonas potenciais. A rota pode chegar a pontos mais altos se o destino estiver no MDE.")
-        self.maxSlopeSpin.setMaximum(200)
-        self.maxSlopeSpin.setValue(55)
-        self.maxSlopeSpin.setToolTip("Limite rígido para áreas caminháveis e rota. 55% exclui encostas muito íngremes; aumente se uma rota de montanha ficar bloqueada.")
-        self.slopeScoreMaxSpin = QDoubleSpinBox()
-        self.slopeScoreMaxSpin.setMinimum(1.0)
-        self.slopeScoreMaxSpin.setMaximum(200.0)
-        self.slopeScoreMaxSpin.setDecimals(1)
-        self.slopeScoreMaxSpin.setSingleStep(5.0)
-        self.slopeScoreMaxSpin.setValue(50.0)
-        self.slopeScoreMaxSpin.setToolTip("Valor usado para reduzir a nota da declividade. Nao exclui a celula; apenas aumenta o custo.")
-        self.paramsGroup.layout().insertRow(3, "Declividade de custo maximo (%):", self.slopeScoreMaxSpin)
-        self.thresholdLabel.setText("Threshold (0 = percentil auto):")
-        self.thresholdSpin.setValue(0.0)
-        self.thresholdSpin.setToolTip("Use 0 para selecionar automaticamente o percentil configurado dos pixels viaveis.")
-        self.autoPercentileSpin = QDoubleSpinBox()
-        self.autoPercentileSpin.setMinimum(1.0)
-        self.autoPercentileSpin.setMaximum(99.0)
-        self.autoPercentileSpin.setDecimals(1)
-        self.autoPercentileSpin.setSingleStep(5.0)
-        self.autoPercentileSpin.setValue(75.0)
-        self.autoPercentileSpin.setToolTip("Percentil usado quando o threshold esta em 0. P75 tende a mapear alta adequabilidade; P90 e mais restritivo.")
-        self.paramsGroup.layout().insertRow(5, "Percentil automatico:", self.autoPercentileSpin)
-        self.altitudeBandThresholdCheck = QCheckBox("Equilibrar zonas por altitude")
-        self.altitudeBandThresholdCheck.setChecked(True)
-        self.altitudeBandThresholdCheck.setToolTip(
-            "Quando o threshold esta em 0, seleciona as melhores celulas dentro de cada faixa altimetrica. "
-            "Isso evita que as zonas fiquem concentradas apenas nas baixas altitudes."
-        )
-        self.altitudeBandSizeSpin = QDoubleSpinBox()
-        self.altitudeBandSizeSpin.setMinimum(50.0)
-        self.altitudeBandSizeSpin.setMaximum(1000.0)
-        self.altitudeBandSizeSpin.setDecimals(0)
-        self.altitudeBandSizeSpin.setSingleStep(50.0)
-        self.altitudeBandSizeSpin.setValue(200.0)
-        self.altitudeBandSizeSpin.setToolTip("Tamanho das faixas usadas para equilibrar as zonas por altitude.")
-        self.paramsGroup.layout().insertRow(6, "", self.altitudeBandThresholdCheck)
-        self.paramsGroup.layout().insertRow(7, "Faixa altimetrica (m):", self.altitudeBandSizeSpin)
-        self.walkabilityZonesCheck = QCheckBox("Zonas = área caminhável contínua")
-        self.walkabilityZonesCheck.setChecked(True)
-        self.walkabilityZonesCheck.setToolTip(
-            "Quando ativo, as zonas mostram tudo que é caminhável segundo altitude e declividade, "
-            "em vez de selecionar apenas as células com maior pontuação."
-        )
-        self.paramsGroup.layout().insertRow(8, "", self.walkabilityZonesCheck)
-        self.minPatchAreaSpin = QDoubleSpinBox()
-        self.minPatchAreaSpin.setMinimum(0.0)
-        self.minPatchAreaSpin.setMaximum(100000.0)
-        self.minPatchAreaSpin.setDecimals(2)
-        self.minPatchAreaSpin.setSingleStep(0.5)
-        self.minPatchAreaSpin.setValue(50.0)
-        self.minPatchAreaSpin.setToolTip("Remove fragmentos menores antes de gerar o vetor final. Valores maiores reduzem áreas picotadas no mapa.")
-        self.paramsGroup.layout().insertRow(9, "Area minima do fragmento (ha):", self.minPatchAreaSpin)
-        self.weightAltSpin.setValue(0.0)
-        self.weightSlopeSpin.setValue(1.0)
-        self.weightCurvHSpin.setValue(1.0)
-        self.weightCurvVSpin.setValue(1.0)
-        self.formatComboBox.setCurrentIndex(1)
+    def _label(self, key):
+        return self._bind(QLabel(), key)
 
-        self.outputCrsSelector = QgsProjectionSelectionWidget()
-        self.outputCrsSelector.setCrs(QgsProject.instance().crs())
-        self.outputGroup.layout().addRow("CRS de saida:", self.outputCrsSelector)
-        self.add_route_section()
-        self.add_about_section()
-        self.make_layout_more_horizontal()
-        self.apply_visual_theme()
+    def _help_label(self, key):
+        return self._bind(_help(""), key)
 
-        self.demCrsButton.clicked.connect(lambda: self.select_crs("demFileEdit", "demCrsLabel"))
-        self.slopeCrsButton.clicked.connect(lambda: self.select_crs("slopeFileEdit", "slopeCrsLabel"))
-        self.curvHCrsButton.clicked.connect(lambda: self.select_crs("curvHFileEdit", "curvHCrsLabel"))
-        self.curvVCrsButton.clicked.connect(lambda: self.select_crs("curvVFileEdit", "curvVCrsLabel"))
+    def _check(self, key):
+        return self._bind(QCheckBox(), key)
 
-        self.demFileEdit.textChanged.connect(lambda: self.update_crs_label("demFileEdit", "demCrsLabel"))
-        self.slopeFileEdit.textChanged.connect(lambda: self.update_crs_label("slopeFileEdit", "slopeCrsLabel"))
-        self.curvHFileEdit.textChanged.connect(lambda: self.update_crs_label("curvHFileEdit", "curvHCrsLabel"))
-        self.curvVFileEdit.textChanged.connect(lambda: self.update_crs_label("curvVFileEdit", "curvVCrsLabel"))
+    def _retranslate(self):
+        self.setWindowTitle(self.t("window"))
+        for widget, key, attribute in self._labels:
+            getattr(widget, attribute)(self.t(key))
+        for index, name in enumerate(self.t("steps")):
+            self.step_labels[index].setText(name)
+        self.back_button.setText(self.t("back"))
+        self._update_nav()
+        self._fill_enums()
 
-        self.update_crs_label("demFileEdit", "demCrsLabel")
-        self.update_crs_label("slopeFileEdit", "slopeCrsLabel")
-        self.update_crs_label("curvHFileEdit", "curvHCrsLabel")
-        self.update_crs_label("curvVFileEdit", "curvVCrsLabel")
-        self.apply_test_defaults()
-        self.apply_language()
+    def _toggle_language(self):
+        self.lang = "en" if self.lang == "pt" else "pt"
+        self._retranslate()
 
-    def add_language_switch(self):
-        self.languageButton = QPushButton("PT-BR | ENG")
-        self.languageButton.setObjectName("languageButton")
-        self.languageButton.setCheckable(True)
-        self.languageButton.setChecked(False)
-        self.languageButton.setSizePolicy(POLICY_MINIMUM, POLICY_FIXED)
-        self.languageButton.setToolTip("Alternar idioma da interface / Switch interface language")
-        self.languageButton.clicked.connect(self.toggle_language)
-        self.horizontalLayout.addStretch(1)
-        self.horizontalLayout.addWidget(self.languageButton, 0, ALIGN_RIGHT | ALIGN_TOP)
+    # -- construcao ---------------------------------------------------------
+    def _build(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(self._build_header())
+        outer.addWidget(self._build_steps_bar())
 
-    def toggle_language(self):
-        self.language = "en" if self.language == "pt_BR" else "pt_BR"
-        self.languageButton.setChecked(self.language == "en")
-        self.apply_language()
+        self.stack = QStackedWidget()
+        for builder in (self._step_data, self._step_outputs,
+                        self._step_tuning, self._step_run):
+            page = QWidget()
+            layout = QVBoxLayout(page)
+            layout.setContentsMargins(24, 18, 24, 12)
+            layout.setSpacing(12)
+            builder(layout)
+            layout.addStretch(1)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setWidget(page)
+            self.stack.addWidget(scroll)
+        self.stack.currentChanged.connect(lambda _index: self._update_nav())
+        outer.addWidget(self.stack, 1)
+        outer.addWidget(self._build_footer())
 
-    def ui_texts(self):
-        return {
-            "pt_BR": {
-                "window_title": "TopoTrail - Planejamento de trilhas e acessos",
-                "title": "TopoTrail\nPlanejamento de trilhas e acessos",
-                "input_group": "Dados de entrada",
-                "params_group": "Parametros",
-                "route_group": "Planejamento de acesso (opcional)",
-                "output_group": "Saida",
-                "about_group": "Sobre o TopoTrail",
-                "dem": "Modelo Digital de Elevacao (MDE):",
-                "slope": "Declividade:",
-                "curvh": "Curvatura horizontal:",
-                "curvv": "Curvatura vertical:",
-                "alt_min": "Altitude minima (m):",
-                "alt_max": "Altitude maxima (m):",
-                "max_slope": "Declividade maxima (%):",
-                "slope_cost": "Declividade de custo maximo (%):",
-                "threshold": "Threshold (0 = percentil auto):",
-                "auto_percentile": "Percentil automatico:",
-                "altitude_band": "Equilibrar zonas por altitude",
-                "altitude_band_size": "Faixa altimetrica (m):",
-                "walkability_zones": "Zonas = area caminhavel continua",
-                "min_patch_area": "Area minima do fragmento (ha):",
-                "weight_alt": "Peso altitude:",
-                "weight_slope": "Peso declividade:",
-                "weight_curvh": "Peso curvatura H:",
-                "weight_curvv": "Peso curvatura V:",
-                "start_file": "Ponto inicial (arquivo):",
-                "end_file": "Ponto final (arquivo):",
-                "start_coord": "Origem (coordenada):",
-                "end_coord": "Destino (coordenada):",
-                "route_buffer": "Corredor (m):",
-                "route_margin": "Margem de busca (m):",
-                "generate_zones": "Gerar zonas vetoriais",
-                "format": "Formato:",
-                "output_file": "Arquivo de saida:",
-                "output_crs": "CRS de saida:",
-                "pick_start": "Marcar origem no mapa",
-                "pick_end": "Marcar destino no mapa",
-                "generate": "Gerar resultados TopoTrail",
-                "start_placeholder": "Camada de ponto da origem",
-                "end_placeholder": "Camada de ponto do destino",
-                "start_coord_placeholder": "X, Y no CRS do projeto",
-                "end_coord_placeholder": "X, Y no CRS do projeto",
-                "output_placeholder": "Escolha onde salvar os resultados",
-                "about_html": (
-                    "<b>TopoTrail</b><br>"
-                    "Ferramenta para apoiar o planejamento de trilhas, acessos e deslocamentos de campo "
-                    "em areas naturais e unidades de conservacao, integrando altitude, declividade e "
-                    "curvaturas do relevo por analise multicriterio em SIG.<br><br>"
-                    "<b>Desenvolvedor:</b> Luan da Silva Cortes Maciel (MACIEL, L. S.)<br>"
-                    "<b>Orientador:</b> Leandro Freitas<br>"
-                    "<b>Contexto:</b> desenvolvido como produto da pesquisa de mestrado em Biodiversidade em "
-                    "Unidades de Conservacao, Escola Nacional de Botanica Tropical / Jardim Botanico "
-                    "do Rio de Janeiro.<br>"
-                    "<b>Projeto associado:</b> Herpeto Mantiqueira."
-                ),
-                "select_file": "Selecionar arquivo",
-                "save_file": "Salvar arquivo",
-                "map_unavailable_title": "Mapa indisponivel",
-                "map_unavailable_text": "A captura no mapa so funciona dentro do QGIS.",
-                "pick_point_title": "Marcar ponto",
-                "pick_point_text": "Clique no mapa para definir a {label}. A coordenada sera registrada no CRS atual do projeto.",
-                "start": "origem",
-                "end": "destino",
-                "required_title": "Campos obrigatorios",
-                "required_text": "Por favor, preencha todos os campos obrigatorios.",
-                "file_not_found_title": "Arquivo nao encontrado",
-                "file_not_found_text": "O arquivo {path} nao existe.",
-                "invalid_format_title": "Formato invalido",
-                "invalid_format_text": "Use rasters GeoTIFF com extensao .tif ou .tiff.",
-                "invalid_weights_title": "Pesos invalidos",
-                "invalid_weights_sum": "Defina pelo menos um peso maior que zero. A soma dos pesos nao pode ser igual a zero.",
-                "invalid_weights_negative": "Os pesos nao podem ser negativos.",
-                "invalid_altitude_title": "Altitude invalida",
-                "invalid_altitude_text": "A altitude minima deve ser menor que a altitude maxima.",
-                "invalid_slope_title": "Declividade invalida",
-                "invalid_slope_text": "Os limites de declividade devem ser maiores que zero.",
-                "invalid_area_title": "Area invalida",
-                "invalid_area_text": "A area minima nao pode ser negativa.",
-                "invalid_percentile_title": "Percentil invalido",
-                "invalid_percentile_text": "O percentil automatico deve estar entre 0 e 100.",
-                "invalid_route_title": "Rota invalida",
-                "invalid_route_text": "A largura do corredor e a margem de busca devem ser maiores que zero.",
-                "incomplete_points_title": "Pontos incompletos",
-                "incomplete_points_text": "Para gerar rota, informe origem e destino. Para nao gerar rota, deixe ambos vazios.",
-                "undefined_crs_title": "CRS indefinido",
-                "undefined_crs_text": "O arquivo {path} esta sem CRS definido!",
-                "load_error_title": "Erro",
-                "load_error_text": "Um ou mais rasters nao puderam ser carregados. Verifique se os arquivos sao validos.",
-                "generate_zones_question_title": "Gerar zonas vetoriais?",
-                "generate_zones_question_text": (
-                    "A geracao de zonas vetoriais pode demorar varios minutos e deixar o QGIS temporariamente sem resposta. "
-                    "Para planejar acesso, normalmente basta gerar raster, rota e corredor. Deseja continuar com as zonas?"
-                ),
-                "large_layer_title": "Camada vetorial grande",
-                "large_layer_text": "As zonas potenciais geraram {count} feicoes. Carregar tudo agora pode deixar o mapa lento. Deseja carregar a camada mesmo assim?",
-                "success_title": "Sucesso",
-                "success_vector_text": "Processamento concluido. {count} camada(s) vetorial(is) carregada(s).",
-                "success_raster_text": "Raster continuo de adequabilidade gerado. Para gerar poligonos de zonas potenciais, marque a opcao 'Gerar zonas vetoriais' antes de processar.",
-                "warning_title": "Aviso",
-                "warning_no_features": "Processamento concluido, mas nenhuma feicao foi gerada.",
-                "error_title": "Erro",
-                "error_text": "Erro ao gerar trilhas: {error}\n\nLog diagnostico salvo em:\n{log_path}",
-                "crs_output_title": "CRS de saida definido",
-                "crs_output_text": "O CRS de saida foi ajustado para {crs}. Os rasters de entrada nao foram alterados.",
-                "coordinate_format_error": "Use o formato X Y, X; Y ou X, Y para coordenadas.",
-                "start_input_conflict": "Escolha arquivo ou coordenada para a origem, nao os dois.",
-                "end_input_conflict": "Escolha arquivo ou coordenada para o destino, nao os dois.",
-                "route_pair_required": "Para gerar rota, informe origem e destino por arquivo ou por coordenada.",
-            },
-            "en": {
-                "window_title": "TopoTrail - Trail and access planning",
-                "title": "TopoTrail\nTrail and access planning",
-                "input_group": "Input data",
-                "params_group": "Parameters",
-                "route_group": "Access planning (optional)",
-                "output_group": "Output",
-                "about_group": "About TopoTrail",
-                "dem": "Digital Elevation Model (DEM):",
-                "slope": "Slope:",
-                "curvh": "Horizontal curvature:",
-                "curvv": "Vertical curvature:",
-                "alt_min": "Minimum altitude (m):",
-                "alt_max": "Maximum altitude (m):",
-                "max_slope": "Maximum slope (%):",
-                "slope_cost": "Maximum cost slope (%):",
-                "threshold": "Threshold (0 = automatic percentile):",
-                "auto_percentile": "Automatic percentile:",
-                "altitude_band": "Balance zones by altitude",
-                "altitude_band_size": "Altitude band (m):",
-                "walkability_zones": "Zones = continuous walkable area",
-                "min_patch_area": "Minimum patch area (ha):",
-                "weight_alt": "Altitude weight:",
-                "weight_slope": "Slope weight:",
-                "weight_curvh": "Horizontal curvature weight:",
-                "weight_curvv": "Vertical curvature weight:",
-                "start_file": "Start point (file):",
-                "end_file": "End point (file):",
-                "start_coord": "Origin (coordinate):",
-                "end_coord": "Destination (coordinate):",
-                "route_buffer": "Corridor (m):",
-                "route_margin": "Search margin (m):",
-                "generate_zones": "Generate vector zones",
-                "format": "Format:",
-                "output_file": "Output file:",
-                "output_crs": "Output CRS:",
-                "pick_start": "Pick origin on map",
-                "pick_end": "Pick destination on map",
-                "generate": "Generate TopoTrail results",
-                "start_placeholder": "Origin point layer",
-                "end_placeholder": "Destination point layer",
-                "start_coord_placeholder": "X, Y in project CRS",
-                "end_coord_placeholder": "X, Y in project CRS",
-                "output_placeholder": "Choose where to save the results",
-                "about_html": (
-                    "<b>TopoTrail</b><br>"
-                    "Tool for preliminary planning of trails, access routes and field movement in natural "
-                    "areas and protected areas, integrating elevation, slope and terrain curvatures through "
-                    "multicriteria GIS analysis.<br><br>"
-                    "<b>Developer:</b> Luan da Silva Cortes Maciel (MACIEL, L. S.)<br>"
-                    "<b>Advisor:</b> Leandro Freitas<br>"
-                    "<b>Context:</b> developed as a product of the author's master's research in Biodiversity "
-                    "in Protected Areas, Escola Nacional de Botanica Tropical / Jardim Botanico do Rio de Janeiro.<br>"
-                    "<b>Associated project:</b> Herpeto Mantiqueira."
-                ),
-                "select_file": "Select file",
-                "save_file": "Save file",
-                "map_unavailable_title": "Map unavailable",
-                "map_unavailable_text": "Map capture only works inside QGIS.",
-                "pick_point_title": "Pick point",
-                "pick_point_text": "Click the map to define the {label}. The coordinate will be registered in the current project CRS.",
-                "start": "origin",
-                "end": "destination",
-                "required_title": "Required fields",
-                "required_text": "Please fill in all required fields.",
-                "file_not_found_title": "File not found",
-                "file_not_found_text": "The file {path} does not exist.",
-                "invalid_format_title": "Invalid format",
-                "invalid_format_text": "Use GeoTIFF rasters with .tif or .tiff extension.",
-                "invalid_weights_title": "Invalid weights",
-                "invalid_weights_sum": "Set at least one weight greater than zero. The weight sum cannot be zero.",
-                "invalid_weights_negative": "Weights cannot be negative.",
-                "invalid_altitude_title": "Invalid altitude",
-                "invalid_altitude_text": "Minimum altitude must be lower than maximum altitude.",
-                "invalid_slope_title": "Invalid slope",
-                "invalid_slope_text": "Slope limits must be greater than zero.",
-                "invalid_area_title": "Invalid area",
-                "invalid_area_text": "Minimum area cannot be negative.",
-                "invalid_percentile_title": "Invalid percentile",
-                "invalid_percentile_text": "Automatic percentile must be between 0 and 100.",
-                "invalid_route_title": "Invalid route",
-                "invalid_route_text": "Corridor width and search margin must be greater than zero.",
-                "incomplete_points_title": "Incomplete points",
-                "incomplete_points_text": "To generate a route, provide both origin and destination. To skip route generation, leave both empty.",
-                "undefined_crs_title": "Undefined CRS",
-                "undefined_crs_text": "The file {path} has no defined CRS!",
-                "load_error_title": "Error",
-                "load_error_text": "One or more rasters could not be loaded. Check whether the files are valid.",
-                "generate_zones_question_title": "Generate vector zones?",
-                "generate_zones_question_text": (
-                    "Vector-zone generation may take several minutes and temporarily make QGIS unresponsive. "
-                    "For access planning, the raster, route and corridor are usually enough. Continue with zones?"
-                ),
-                "large_layer_title": "Large vector layer",
-                "large_layer_text": "Potential zones generated {count} features. Loading them now may slow the map. Load the layer anyway?",
-                "success_title": "Success",
-                "success_vector_text": "Processing completed. {count} vector layer(s) loaded.",
-                "success_raster_text": "Continuous suitability raster generated. To generate potential-zone polygons, enable 'Generate vector zones' before processing.",
-                "warning_title": "Warning",
-                "warning_no_features": "Processing completed, but no features were generated.",
-                "error_title": "Error",
-                "error_text": "Error generating trails: {error}\n\nDiagnostic log saved at:\n{log_path}",
-                "crs_output_title": "Output CRS defined",
-                "crs_output_text": "The output CRS was set to {crs}. Input rasters were not modified.",
-                "coordinate_format_error": "Use X Y, X; Y or X, Y as the coordinate format.",
-                "start_input_conflict": "Choose either a file or a coordinate for the origin, not both.",
-                "end_input_conflict": "Choose either a file or a coordinate for the destination, not both.",
-                "route_pair_required": "To generate a route, provide both origin and destination by file or coordinate.",
-            },
-        }
+    def _build_header(self):
+        header = QFrame()
+        header.setObjectName("ttHeader")
+        layout = QHBoxLayout(header)
+        layout.setContentsMargins(20, 12, 20, 12)
+        logo_path = os.path.join(PLUGIN_DIR, "logo.png")
+        if os.path.exists(logo_path):
+            logo = QLabel()
+            logo.setPixmap(QPixmap(logo_path).scaledToHeight(
+                42, qt_enum("TransformationMode", "SmoothTransformation")))
+            layout.addWidget(logo)
+        title = _heading("TopoTrail", size=17)
+        layout.addWidget(title)
+        layout.addStretch(1)
+        self.language_button = QPushButton("PT-BR | ENG")
+        self.language_button.setMinimumWidth(
+            self.language_button.fontMetrics().horizontalAdvance("PT-BR | ENG") + 34)
+        self.language_button.clicked.connect(self._toggle_language)
+        layout.addWidget(self.language_button)
+        return header
 
-    def text_for(self, key):
-        return self.ui_texts()[self.language][key]
-
-    def set_form_label(self, field, text):
-        for form in self.findChildren(QFormLayout):
-            label = form.labelForField(field)
-            if label:
-                label.setText(text)
-                return
-
-    def apply_language(self):
-        t = self.text_for
-        self.setWindowTitle(t("window_title"))
-        self.titleLabel.setText(t("title"))
-        self.languageButton.setChecked(self.language == "en")
-        self.languageButton.setText("PT-BR | ENG")
-
-        self.inputGroup.setTitle(t("input_group"))
-        self.paramsGroup.setTitle(t("params_group"))
-        self.routeGroup.setTitle(t("route_group"))
-        self.outputGroup.setTitle(t("output_group"))
-        self.aboutGroup.setTitle(t("about_group"))
-
-        for key, label in getattr(self, "inputRowLabels", {}).items():
-            label.setText(t(key))
-
-        self.set_form_label(self.altMinSpin, t("alt_min"))
-        self.set_form_label(self.altMaxSpin, t("alt_max"))
-        self.set_form_label(self.maxSlopeSpin, t("max_slope"))
-        self.set_form_label(self.slopeScoreMaxSpin, t("slope_cost"))
-        self.thresholdLabel.setText(t("threshold"))
-        self.set_form_label(self.thresholdSpin, t("threshold"))
-        self.set_form_label(self.autoPercentileSpin, t("auto_percentile"))
-        self.altitudeBandThresholdCheck.setText(t("altitude_band"))
-        self.set_form_label(self.altitudeBandSizeSpin, t("altitude_band_size"))
-        self.walkabilityZonesCheck.setText(t("walkability_zones"))
-        self.set_form_label(self.minPatchAreaSpin, t("min_patch_area"))
-        self.set_form_label(self.weightAltSpin, t("weight_alt"))
-        self.set_form_label(self.weightSlopeSpin, t("weight_slope"))
-        self.set_form_label(self.weightCurvHSpin, t("weight_curvh"))
-        self.set_form_label(self.weightCurvVSpin, t("weight_curvv"))
-
-        for key, label in getattr(self, "routeRowLabels", {}).items():
-            label.setText(t(key))
-        self.set_form_label(self.routeBufferSpin, t("route_buffer"))
-        self.set_form_label(self.routeMarginSpin, t("route_margin"))
-        self.generateZonesCheck.setText(t("generate_zones"))
-
-        self.set_form_label(self.formatComboBox, t("format"))
-        self.set_form_label(self.outputFileEdit, t("output_file"))
-        self.set_form_label(self.outputCrsSelector, t("output_crs"))
-
-        self.pickStartButton.setText(t("pick_start"))
-        self.pickEndButton.setText(t("pick_end"))
-        self.generateButton.setText(t("generate"))
-        self.startPointEdit.setPlaceholderText(t("start_placeholder"))
-        self.endPointEdit.setPlaceholderText(t("end_placeholder"))
-        self.startCoordEdit.setPlaceholderText(t("start_coord_placeholder"))
-        self.endCoordEdit.setPlaceholderText(t("end_coord_placeholder"))
-        self.outputFileEdit.setPlaceholderText(t("output_placeholder"))
-        self.aboutTextLabel.setText(t("about_html"))
-        if hasattr(self, "_scrollArea"):
-            self._apply_responsive_hud()
-
-    def add_route_section(self):
-        route_group = QGroupBox("Planejamento de acesso (opcional)")
-        self.routeGroup = route_group
-        layout = QFormLayout()
-
-        self.startPointEdit = QLineEdit()
-        self.startPointEdit.setReadOnly(True)
-        self.startPointBrowseButton = QToolButton()
-        self.startPointBrowseButton.setText("...")
-        self.startPointBrowseButton.setToolTip("Selecionar arquivo da origem")
-        self.startPointBrowseButton.setSizePolicy(POLICY_FIXED, POLICY_FIXED)
-        start_row = QHBoxLayout()
-        start_row.setContentsMargins(0, 0, 0, 0)
-        start_row.addWidget(self.startPointEdit)
-        start_row.addWidget(self.startPointBrowseButton)
-
-        self.endPointEdit = QLineEdit()
-        self.endPointEdit.setReadOnly(True)
-        self.endPointBrowseButton = QToolButton()
-        self.endPointBrowseButton.setText("...")
-        self.endPointBrowseButton.setToolTip("Selecionar arquivo do destino")
-        self.endPointBrowseButton.setSizePolicy(POLICY_FIXED, POLICY_FIXED)
-        end_row = QHBoxLayout()
-        end_row.setContentsMargins(0, 0, 0, 0)
-        end_row.addWidget(self.endPointEdit)
-        end_row.addWidget(self.endPointBrowseButton)
-
-        self.routeBufferSpin = QDoubleSpinBox()
-        self.routeBufferSpin.setMinimum(1.0)
-        self.routeBufferSpin.setMaximum(5000.0)
-        self.routeBufferSpin.setDecimals(0)
-        self.routeBufferSpin.setSingleStep(25.0)
-        self.routeBufferSpin.setValue(100.0)
-        self.routeBufferSpin.setToolTip("Largura do corredor lateral ao redor da rota sugerida.")
-
-        self.routeMarginSpin = QDoubleSpinBox()
-        self.routeMarginSpin.setMinimum(100.0)
-        self.routeMarginSpin.setMaximum(50000.0)
-        self.routeMarginSpin.setDecimals(0)
-        self.routeMarginSpin.setSingleStep(500.0)
-        self.routeMarginSpin.setValue(5000.0)
-        self.routeMarginSpin.setToolTip("Quanto o algoritmo pode procurar lateralmente fora do retangulo entre origem e destino.")
-
-        self.startCoordEdit = QLineEdit()
-        self.startCoordEdit.setPlaceholderText("X, Y no CRS do projeto")
-        self.endCoordEdit = QLineEdit()
-        self.endCoordEdit.setPlaceholderText("X, Y no CRS do projeto")
-        self.pickStartButton = QPushButton("Marcar origem no mapa")
-        self.pickEndButton = QPushButton("Marcar destino no mapa")
-        self.pickStartButton.setEnabled(bool(self.iface))
-        self.pickEndButton.setEnabled(bool(self.iface))
-        self.pickStartButton.setSizePolicy(POLICY_MINIMUM, POLICY_FIXED)
-        self.pickEndButton.setSizePolicy(POLICY_MINIMUM, POLICY_FIXED)
-
-        start_coord_row = QHBoxLayout()
-        start_coord_row.setContentsMargins(0, 0, 0, 0)
-        start_coord_row.addWidget(self.startCoordEdit)
-        start_coord_row.addWidget(self.pickStartButton)
-        end_coord_row = QHBoxLayout()
-        end_coord_row.setContentsMargins(0, 0, 0, 0)
-        end_coord_row.addWidget(self.endCoordEdit)
-        end_coord_row.addWidget(self.pickEndButton)
-
-        self.generateZonesCheck = QCheckBox("Gerar zonas vetoriais")
-        self.generateZonesCheck.setChecked(True)
-        self.generateZonesCheck.setToolTip(
-            "Ative apenas quando precisar do poligono de zonas. Essa etapa pode demorar e gerar muitas feicoes."
-        )
-
-        self.routeRowLabels = {
-            "start_file": QLabel("Ponto inicial (arquivo):"),
-            "end_file": QLabel("Ponto final (arquivo):"),
-            "start_coord": QLabel("Origem (coordenada):"),
-            "end_coord": QLabel("Destino (coordenada):"),
-        }
-        layout.addRow(self.routeRowLabels["start_file"], start_row)
-        layout.addRow(self.routeRowLabels["end_file"], end_row)
-        layout.addRow(self.routeRowLabels["start_coord"], start_coord_row)
-        layout.addRow(self.routeRowLabels["end_coord"], end_coord_row)
-        layout.addRow("Corredor (m):", self.routeBufferSpin)
-        layout.addRow("Margem de busca (m):", self.routeMarginSpin)
-        layout.addRow("", self.generateZonesCheck)
-        route_group.setLayout(layout)
-
-        self.startPointBrowseButton.clicked.connect(
-            lambda: self.browse_file("startPointEdit", "Vetores (*.gpkg *.shp *.kml *.geojson)")
-        )
-        self.endPointBrowseButton.clicked.connect(
-            lambda: self.browse_file("endPointEdit", "Vetores (*.gpkg *.shp *.kml *.geojson)")
-        )
-        self.pickStartButton.clicked.connect(lambda: self.start_map_pick("start"))
-        self.pickEndButton.clicked.connect(lambda: self.start_map_pick("end"))
-
-        self.layout().insertWidget(self.layout().count() - 2, route_group)
-
-    def next_test_output_path(self, output_dir):
-        os.makedirs(output_dir, exist_ok=True)
-        index = 1
-        while True:
-            candidate = os.path.join(output_dir, f"topotrail_teste_{index:02d}.gpkg")
-            if not os.path.exists(candidate):
-                return candidate
-            index += 1
-
-    def apply_test_defaults(self):
-        """Keep the release UI free from developer-machine file paths."""
-        return
-
-    def add_about_section(self):
-        about_group = QGroupBox("Sobre o TopoTrail")
-        self.aboutGroup = about_group
-        layout = QVBoxLayout()
-
-        logo_row = QHBoxLayout()
-        logo_row.setAlignment(ALIGN_CENTER)
-        self.aboutLogoLabels = []
-        for filename in [
-            "logo_herpeto_mantiqueira.png",
-            "logo_enbt.jpg",
-            "logo_jbrj.jpg",
-        ]:
+    def _build_steps_bar(self):
+        bar = QFrame()
+        bar.setObjectName("ttSteps")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(20, 8, 20, 8)
+        layout.setSpacing(6)
+        self.step_labels = []
+        for index in range(4):
             label = QLabel()
-            label.setAlignment(ALIGN_CENTER)
-            label.setSizePolicy(POLICY_EXPANDING, POLICY_FIXED)
-            label._topotrail_pixmap = QPixmap(os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", filename))
-            label._topotrail_aspect = 150.0 / 86.0
-            self.aboutLogoLabels.append(label)
-            logo_row.addWidget(label)
-        layout.addLayout(logo_row)
+            label.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
+            label.setObjectName("ttStep")
+            label.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
+            label.mousePressEvent = (
+                lambda event, target=index: self._jump_to(target))
+            self.step_labels.append(label)
+            layout.addWidget(label, 1)
+        return bar
 
-        text = QLabel(
-            "<b>TopoTrail</b><br>"
-            "Ferramenta para apoiar o planejamento de trilhas, acessos e deslocamentos de campo "
-            "em áreas naturais e unidades de conservação, integrando altitude, declividade e "
-            "curvaturas do relevo por análise multicritério em SIG.<br><br>"
-            "<b>Desenvolvedor:</b> Luan da Silva Cortes Maciel (MACIEL, L. S.)<br>"
-            "<b>Orientador:</b> Leandro Freitas<br>"
-            "<b>Contexto:</b> desenvolvido como produto da pesquisa de mestrado em Biodiversidade em "
-            "Unidades de Conservação, Escola Nacional de Botânica Tropical / Jardim Botânico "
-            "do Rio de Janeiro.<br>"
-            "<b>Projeto associado:</b> Herpeto Mantiqueira."
-        )
-        text.setWordWrap(True)
-        text.setTextFormat(RICH_TEXT)
-        text.setSizePolicy(POLICY_EXPANDING, POLICY_MINIMUM)
-        self.aboutTextLabel = text
-        layout.addWidget(text)
+    def _build_footer(self):
+        footer = QFrame()
+        footer.setObjectName("ttFooter")
+        layout = QHBoxLayout(footer)
+        layout.setContentsMargins(20, 10, 20, 12)
+        self.back_button = QPushButton()
+        self.back_button.clicked.connect(lambda: self._go(-1))
+        layout.addWidget(self.back_button)
+        layout.addStretch(1)
+        self.next_button = QPushButton()
+        self.next_button.setObjectName("ttPrimary")
+        self.next_button.setMinimumWidth(220)
+        self.next_button.clicked.connect(self._next_clicked)
+        layout.addWidget(self.next_button)
+        return footer
 
-        about_group.setLayout(layout)
-        self.layout().insertWidget(self.layout().count() - 2, about_group)
+    # -- passo 1: dados -----------------------------------------------------
+    def _step_data(self, layout):
+        layout.addWidget(self._bind(_heading(""), "s1_title"))
+        layout.addWidget(self._help_label("s1_sub"))
 
-    def _dpi_ratio(self):
-        """DPI scaling: derive logical sizes from Qt screen scaling."""
-        window = self.windowHandle()
-        screen = window.screen() if window else QApplication.primaryScreen()
-        if not screen:
-            return 1.0
-        return max(0.85, min(2.25, screen.logicalDotsPerInch() / 96.0))
+        card, inner = _card()
+        inner.addWidget(self._label("dem"))
+        self.dem_file = _FileRow("GeoTIFF (*.tif *.tiff);;Todos (*)", "MDE")
+        inner.addWidget(self.dem_file)
+        inner.addWidget(self._help_label("dem_help"))
 
-    def _scaled(self, value):
-        return max(1, int(round(value * self._dpi_ratio())))
+        row = QHBoxLayout()
+        row.addWidget(self._label("vunit"))
+        self.vertical_unit = QComboBox()
+        row.addWidget(self.vertical_unit)
+        row.addStretch(1)
+        inner.addLayout(row)
+        inner.addWidget(self._help_label("vunit_help"))
+        layout.addWidget(card)
 
-    def _scaled_size(self, width, height):
-        return QSize(self._scaled(width), self._scaled(height))
+        self.own_rasters = self._check("own_rasters")
+        layout.addWidget(self.own_rasters)
+        layout.addWidget(self._help_label("own_help"))
 
-    def _palette_hex(self, role):
-        return self.palette().color(role).name()
+        self.own_section = _Section()
+        self.slope_file = _FileRow("GeoTIFF (*.tif *.tiff)", "Declividade")
+        self.curvh_file = _FileRow("GeoTIFF (*.tif *.tiff)", "Curvatura H")
+        self.curvv_file = _FileRow("GeoTIFF (*.tif *.tiff)", "Curvatura V")
+        self.slope_unit = QComboBox()
+        self.own_section.add_form([
+            (self.t("slope"), self.slope_file),
+            (self.t("sunit"), self.slope_unit),
+            (self.t("curvh"), self.curvh_file),
+            (self.t("curvv"), self.curvv_file),
+        ])
+        self.own_rasters.toggled.connect(self.own_section.setVisible)
+        layout.addWidget(self.own_section)
 
-    def _contrast_text_hex(self, background_hex, preferred_hex):
-        color = QColor(background_hex)
-        preferred = QColor(preferred_hex)
-        if not color.isValid() or not preferred.isValid():
-            return preferred_hex
+    # -- passo 2: saidas ----------------------------------------------------
+    def _step_outputs(self, layout):
+        layout.addWidget(self._bind(_heading(""), "s2_title"))
+        layout.addWidget(self._help_label("s2_sub"))
 
-        def luminance(qcolor):
-            channels = [qcolor.redF(), qcolor.greenF(), qcolor.blueF()]
-            linear = []
-            for channel in channels:
-                linear.append(channel / 12.92 if channel <= 0.03928 else ((channel + 0.055) / 1.055) ** 2.4)
-            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+        card, inner = _card()
+        inner.addWidget(self._bind(_heading(""), "always"))
+        for key, help_key in (("o_score", "o_score_help"), ("o_risk", "o_risk_help")):
+            check = self._check(key)
+            check.setChecked(True)
+            check.setEnabled(False)
+            inner.addWidget(check)
+            inner.addWidget(self._help_label(help_key))
+        layout.addWidget(card)
 
-        bg_lum = luminance(color)
-        fg_lum = luminance(preferred)
-        ratio = (max(bg_lum, fg_lum) + 0.05) / (min(bg_lum, fg_lum) + 0.05)
-        if ratio >= 4.5:
-            return preferred_hex
-        return "#000000" if bg_lum > 0.45 else "#ffffff"
+        card, inner = _card()
+        self.want_zones = self._check("o_zones")
+        self.want_zones.setChecked(True)
+        inner.addWidget(self.want_zones)
+        inner.addWidget(self._help_label("o_zones_help"))
 
-    def _hud_mode(self):
-        """Responsive breakpoints: compact, normal and wide HUD modes."""
-        available_width = max(self.width(), self.minimumSizeHint().width())
-        if available_width < self._scaled(820):
-            return "compact"
-        if available_width >= self._scaled(1320):
-            return "wide"
-        return "normal"
+        self.want_transit = self._check("o_transit")
+        self.want_transit.setChecked(True)
+        inner.addWidget(self.want_transit)
+        inner.addWidget(self._help_label("o_transit_help"))
 
-    def _clear_layout_items(self, layout):
-        while layout.count():
-            layout.takeAt(0)
+        self.want_streams = self._check("o_streams")
+        inner.addWidget(self.want_streams)
+        inner.addWidget(self._help_label("o_streams_help"))
+        layout.addWidget(card)
 
-    def _set_point_button_texts(self, compact):
-        start_text = self.text_for("pick_start")
-        end_text = self.text_for("pick_end")
-        self.pickStartButton.setText("Mapa" if compact else start_text)
-        self.pickEndButton.setText("Mapa" if compact else end_text)
-        self.pickStartButton.setToolTip(start_text)
-        self.pickEndButton.setToolTip(end_text)
+        card, inner = _card()
+        self.want_route = self._check("o_route")
+        inner.addWidget(self.want_route)
+        inner.addWidget(self._help_label("o_route_help"))
 
-    def _update_adaptive_logos(self, mode):
-        logo_size = self._scaled(46 if mode == "compact" else 58 if mode == "normal" else 66)
-        self.logoLabel.setMinimumSize(logo_size, logo_size)
-        self.logoLabel.setMaximumSize(logo_size, logo_size)
+        self.route_section = _Section()
+        self.start_file = _FileRow("Vetores (*.gpkg *.shp *.kml *.geojson)", "Origem")
+        self.end_file = _FileRow("Vetores (*.gpkg *.shp *.kml *.geojson)", "Destino")
+        self.via_file = _FileRow("Vetores (*.gpkg *.shp *.kml *.geojson)", "Waypoints")
+        self.start_coord = QLineEdit(); self.start_coord.setPlaceholderText("X, Y")
+        self.end_coord = QLineEdit(); self.end_coord.setPlaceholderText("X, Y")
+        self.pick_start = QPushButton(); self.pick_end = QPushButton()
+        self._bind(self.pick_start, "pick"); self._bind(self.pick_end, "pick")
+        self.pick_start.clicked.connect(lambda: self.start_map_pick("start"))
+        self.pick_end.clicked.connect(lambda: self.start_map_pick("end"))
 
-        max_logo_height = self._scaled(48 if mode == "compact" else 66 if mode == "normal" else 82)
-        for label in getattr(self, "aboutLogoLabels", []):
-            label.setMinimumSize(0, 0)
-            label.setMaximumHeight(max_logo_height)
-            label.setMinimumHeight(max_logo_height)
-            pixmap = getattr(label, "_topotrail_pixmap", QPixmap())
-            if not pixmap.isNull():
-                width = max(self._scaled(72), int(max_logo_height * getattr(label, "_topotrail_aspect", 1.6)))
-                label.setPixmap(pixmap.scaled(width, max_logo_height, KEEP_ASPECT_RATIO, SMOOTH_TRANSFORMATION))
+        def point_row(file_row, coord, button):
+            holder = QWidget(); box = QHBoxLayout(holder)
+            box.setContentsMargins(0, 0, 0, 0); box.setSpacing(6)
+            box.addWidget(file_row, 2); box.addWidget(coord, 1); box.addWidget(button, 0)
+            return holder
 
-    def _apply_text_overflow_guards(self):
-        for label in list(getattr(self, "inputRowLabels", {}).values()) + list(getattr(self, "routeRowLabels", {}).values()):
-            original = label.text() if not label.text().endswith("...") else (label.toolTip() or label.text())
-            label.setToolTip(original)
-            width = max(label.width(), self._scaled(80))
-            label.setText(label.fontMetrics().elidedText(original, ELIDE_RIGHT, width))
+        self.route_section.add_form([
+            (self.t("start"), point_row(self.start_file, self.start_coord, self.pick_start)),
+            (self.t("end"), point_row(self.end_file, self.end_coord, self.pick_end)),
+        ])
+        self.route_section.add(self._label("via"))
+        self.route_section.add(self.via_file)
+        self.route_section.add(self._help_label("via_help"))
+        self.optimise_order = self._check("optimise")
+        self.route_section.add(self.optimise_order)
+        self.route_section.add(self._help_label("optimise_help"))
 
-        for button in [
-            self.pickStartButton,
-            self.pickEndButton,
-            self.generateButton,
-            self.languageButton,
-        ]:
-            if not button.toolTip():
-                button.setToolTip(button.text())
+        self.cost_model = QComboBox()
+        self.corridor_m = _spin(1, 100000, 100.0, 0, 10, " m")
+        self.margin_m = _spin(1, 200000, 5000.0, 0, 100, " m")
+        self.route_section.add(self._label("cost"))
+        self.route_section.add(self.cost_model)
+        self.route_section.add(self._help_label("cost_help"))
+        self.route_section.add_form([
+            (self.t("corridor"), self.corridor_m),
+            (self.t("margin"), self.margin_m),
+        ])
+        self.route_section.add(self._help_label("margin_help"))
+        self.want_route.toggled.connect(self.route_section.setVisible)
+        inner.addWidget(self.route_section)
+        layout.addWidget(card)
 
-    def _relayout_content_columns(self, mode):
-        layout = getattr(self, "_contentLayout", None)
-        if layout is None:
-            return
+    # -- passo 3: ajustes ---------------------------------------------------
+    def _step_tuning(self, layout):
+        layout.addWidget(self._bind(_heading(""), "s3_title"))
+        layout.addWidget(self._help_label("s3_sub"))
 
-        self._clear_layout_items(layout)
-        if mode == "compact":
-            layout.addLayout(self._leftColumn, 0, 0)
-            layout.addLayout(self._rightColumn, 1, 0)
-            layout.setColumnStretch(0, 1)
-            layout.setColumnStretch(1, 0)
-        else:
-            layout.addLayout(self._leftColumn, 0, 0)
-            layout.addLayout(self._rightColumn, 0, 1)
-            layout.setColumnStretch(0, 3 if mode == "normal" else 4)
-            layout.setColumnStretch(1, 2 if mode == "normal" else 3)
+        card, inner = _card()
+        inner.addWidget(self._bind(_heading(""), "w_box"))
+        inner.addWidget(self._help_label("w_help"))
+        self.w_alt = _spin(0, 100, 0.0)
+        self.w_slope = _spin(0, 100, 1.0)
+        self.w_curvh = _spin(0, 100, 1.0)
+        self.w_curvv = _spin(0, 100, 1.0)
+        self.w_wet = _spin(0, 100, 0.0)
+        self.w_rough = _spin(0, 100, 0.0)
+        grid = QGridLayout()
+        for index, (key, widget) in enumerate((
+                ("w_alt", self.w_alt), ("w_slope", self.w_slope),
+                ("w_curvh", self.w_curvh), ("w_curvv", self.w_curvv),
+                ("w_wet", self.w_wet), ("w_rough", self.w_rough))):
+            grid.addWidget(self._label(key), index // 2, (index % 2) * 2)
+            grid.addWidget(widget, index // 2, (index % 2) * 2 + 1)
+        grid.setColumnStretch(0, 1); grid.setColumnStretch(2, 1)
+        holder = QWidget(); holder.setLayout(grid)
+        inner.addWidget(holder)
+        layout.addWidget(card)
 
-    def _apply_responsive_hud(self):
-        """Central HUD adaptation for monitor size, DPI and QGIS theme."""
-        mode = self._hud_mode()
-        if getattr(self, "_currentHudMode", None) != mode:
-            self._currentHudMode = mode
-            self._relayout_content_columns(mode)
+        card, inner = _card()
+        inner.addWidget(self._bind(_heading(""), "lim_box"))
+        self.slope_max = _spin(0.1, 10000, 55.0, 1, 1, " %")
+        self.slope_score_max = _spin(0.1, 10000, 50.0, 1, 1, " %")
+        self.alt_min = _spin(-500, 9000, 0.0, 0, 10, " m")
+        self.alt_max = _spin(-500, 9000, 2600.0, 0, 10, " m")
+        for key, widget, help_key in (("slope_max", self.slope_max, "slope_max_help"),
+                                      ("slope_score", self.slope_score_max, "slope_score_help")):
+            line = QHBoxLayout()
+            line.addWidget(self._label(key)); line.addWidget(widget); line.addStretch(1)
+            inner.addLayout(line)
+            inner.addWidget(self._help_label(help_key))
+        row = QHBoxLayout()
+        row.addWidget(self._label("alt_min")); row.addWidget(self.alt_min)
+        row.addWidget(self._label("alt_max")); row.addWidget(self.alt_max)
+        row.addStretch(1)
+        inner.addLayout(row)
+        layout.addWidget(card)
 
-        compact = mode == "compact"
-        margin = self._scaled(8 if compact else 12 if mode == "normal" else 16)
-        spacing = self._scaled(6 if compact else 8 if mode == "normal" else 10)
-        self.layout().setContentsMargins(margin, margin, margin, margin)
-        self.layout().setSpacing(spacing)
-        self._set_point_button_texts(compact)
-        self._update_adaptive_logos(mode)
+        card, inner = _card()
+        inner.addWidget(self._bind(_heading(""), "zone_box"))
+        self.percentile = _spin(0.1, 99.9, 75.0, 1, 1)
+        self.min_area = _spin(0, 1e6, 50.0, 1, 5, " ha")
+        self.altitude_band = self._check("band"); self.altitude_band.setChecked(True)
+        self.band_size = _spin(1, 5000, 200.0, 0, 10, " m")
+        inner.addWidget(self._label("percentile")); inner.addWidget(self.percentile)
+        inner.addWidget(self._help_label("percentile_help"))
+        inner.addWidget(self._label("min_area")); inner.addWidget(self.min_area)
+        inner.addWidget(self.altitude_band)
+        inner.addWidget(self.band_size)
+        self.breaks_edit = QLineEdit("20, 35, 60, 100")
+        inner.addWidget(self._label("breaks")); inner.addWidget(self.breaks_edit)
+        inner.addWidget(self._help_label("breaks_help"))
+        layout.addWidget(card)
 
-        base_font = QFont(self.font())
-        base_font.setPointSizeF(max(8.5, min(11.5, 9.5 * self._dpi_ratio())))
-        self.setFont(base_font)
-        self.titleLabel.setFont(QFont(base_font.family(), max(12, int(base_font.pointSizeF() + (4 if compact else 8))), FONT_BOLD))
+        card, inner = _card()
+        inner.addWidget(self._bind(_heading(""), "extra_box"))
+        inner.addWidget(self._help_label("extra_help"))
+        self.extra_file = _FileRow("GeoTIFF (*.tif *.tiff)", "Criterio adicional")
+        self.extra_weight = _spin(0, 100, 0.0)
+        self.extra_direction = QComboBox()
+        inner.addWidget(self._label("extra_layer")); inner.addWidget(self.extra_file)
+        row = QHBoxLayout()
+        row.addWidget(self._label("extra_weight")); row.addWidget(self.extra_weight)
+        row.addWidget(self._label("extra_dir")); row.addWidget(self.extra_direction)
+        row.addStretch(1)
+        inner.addLayout(row)
+        layout.addWidget(card)
 
-        for spin in self.findChildren(QDoubleSpinBox):
-            spin.setMinimumWidth(self._scaled(88 if compact else 104))
-            spin.setSizePolicy(POLICY_MINIMUM_EXPANDING, POLICY_FIXED)
-        for line_edit in self.findChildren(QLineEdit):
-            line_edit.setMinimumWidth(0)
-            line_edit.setSizePolicy(POLICY_EXPANDING, POLICY_FIXED)
-        for group in [self.inputGroup, self.paramsGroup, self.routeGroup, self.outputGroup, self.aboutGroup]:
-            group.layout().setContentsMargins(margin, margin + spacing, margin, margin)
-            group.layout().setSpacing(spacing)
+        card, inner = _card()
+        inner.addWidget(self._bind(_heading(""), "cons_box"))
+        inner.addWidget(self._help_label("cons_help"))
+        self.constraint_file = _FileRow("Vetores (*.gpkg *.shp *.kml *.geojson)", "Restricao")
+        self.constraint_buffer = _spin(0, 100000, 30.0, 0, 5, " m")
+        self.constraint_mode = QComboBox()
+        inner.addWidget(self._label("cons_layer")); inner.addWidget(self.constraint_file)
+        row = QHBoxLayout()
+        row.addWidget(self._label("cons_buffer")); row.addWidget(self.constraint_buffer)
+        row.addWidget(self._label("cons_mode")); row.addWidget(self.constraint_mode)
+        row.addStretch(1)
+        inner.addLayout(row)
+        layout.addWidget(card)
 
-        # Horizontal scrolling: keep a stable content floor so narrow plugin
-        # windows can be dragged sideways instead of clipping fields/buttons.
-        content_width = self._scaled(760 if compact else 980 if mode == "normal" else 1180)
-        self._contentWidget.setMinimumWidth(content_width)
-        self._scrollArea.setHorizontalScrollBarPolicy(SCROLLBAR_AS_NEEDED)
-        self._apply_text_overflow_guards()
+    # -- passo 4: executar --------------------------------------------------
+    def _step_run(self, layout):
+        layout.addWidget(self._bind(_heading(""), "s4_title"))
+        layout.addWidget(self._help_label("s4_sub"))
 
-    def resizeEvent(self, event):
-        super(TopotrailDialog, self).resizeEvent(event)
-        if hasattr(self, "_scrollArea"):
-            self._apply_responsive_hud()
+        card, inner = _card()
+        inner.addWidget(self._label("out"))
+        row = QHBoxLayout()
+        self.output_edit = QLineEdit()
+        button = QPushButton("…"); button.setFixedWidth(38)
+        button.clicked.connect(self._browse_output)
+        row.addWidget(self.output_edit, 1); row.addWidget(button, 0)
+        inner.addLayout(row)
+        row = QHBoxLayout()
+        self.output_format = QComboBox()
+        self.crs_edit = QLineEdit(); self.crs_edit.setPlaceholderText("EPSG:31983")
+        row.addWidget(self._label("fmt")); row.addWidget(self.output_format)
+        row.addWidget(self._label("crs")); row.addWidget(self.crs_edit, 1)
+        inner.addLayout(row)
+        inner.addWidget(self._help_label("crs_help"))
+        layout.addWidget(card)
 
-    def _dialog_exec(self, dialog):
-        exec_method = getattr(dialog, "exec", None) or getattr(dialog, "exec_", None)
-        return exec_method()
+        card, inner = _card()
+        inner.addWidget(self._bind(_heading(""), "summary"))
+        self.summary_label = _help("")
+        self.summary_label.setSizePolicy(size_policy("Preferred"), size_policy("Expanding"))
+        self.summary_label.setMinimumHeight(96)
+        self.summary_label.setAlignment(qt_enum("AlignmentFlag", "AlignTop"))
+        inner.addWidget(self.summary_label)
+        layout.addWidget(card)
 
-    def make_layout_more_horizontal(self):
-        self.setWindowTitle("TopoTrail - Planejamento de trilhas e acessos")
-        # Responsiveness: start from size hints and let Qt/DPI scaling choose
-        # the actual pixel size instead of forcing a rigid desktop dimension.
-        self.setMinimumSize(0, 0)
-        self.resize(self._scaled_size(1040, 680))
-        self.setSizeGripEnabled(True)
+        card, inner = _card()
+        inner.addWidget(self._bind(_heading(""), "log"))
+        self.progress = QProgressBar()
+        self.progress.setValue(0)
+        inner.addWidget(self.progress)
+        self.log_view = QTextEdit()
+        self.log_view.setReadOnly(True)
+        self.log_view.setMinimumHeight(150)
+        inner.addWidget(self.log_view)
+        layout.addWidget(card)
 
-        main_layout = self.layout()
-        margin = self._scaled(12)
-        main_layout.setContentsMargins(margin, margin, margin, margin)
-        main_layout.setSpacing(self._scaled(8))
+    def _browse_output(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, self.t("out"), "", "GeoPackage (*.gpkg);;Shapefile (*.shp)")
+        if path:
+            self.output_edit.setText(path)
 
-        self.logoLabel.setSizePolicy(POLICY_FIXED, POLICY_FIXED)
-        self.titleLabel.setText("TopoTrail\nPlanejamento de trilhas e acessos")
-        self.titleLabel.setWordWrap(True)
-        self.titleLabel.setSizePolicy(POLICY_EXPANDING, POLICY_MINIMUM)
-        self.rebuild_input_group()
+    # -- enums e tema -------------------------------------------------------
+    def _fill_enums(self):
+        pt = self.lang == "pt"
+        def fill(box, options):
+            current = box.currentIndex()
+            box.clear()
+            box.addItems(options)
+            box.setCurrentIndex(max(current, 0))
+        fill(self.vertical_unit, ["Metros", "Pés"] if pt else ["Metres", "Feet"])
+        fill(self.slope_unit, ["Porcentagem (%)", "Graus"] if pt
+             else ["Percent (%)", "Degrees"])
+        fill(self.cost_model,
+             ["Inverso da adequabilidade (legado)",
+              "Exponencial — contraste ajustável",
+              "Tempo de caminhada (Tobler) — recomendado"] if pt else
+             ["Inverse of suitability (legacy)",
+              "Exponential — adjustable contrast",
+              "Walking time (Tobler) — recommended"])
+        if self.cost_model.currentIndex() == 0:
+            self.cost_model.setCurrentIndex(2)
+        fill(self.extra_direction,
+             ["Ruins (menor é melhor)", "Bons (maior é melhor)"] if pt else
+             ["Bad (lower is better)", "Good (higher is better)"])
+        fill(self.constraint_mode,
+             ["Evitar completamente", "Apenas encarecer"] if pt else
+             ["Avoid completely", "Only make expensive"])
+        # A ordem precisa bater exatamente com options= do algoritmo. Quando nao
+        # batia, escolher "GeoPackage" produzia um Shapefile em silencio.
+        fill(self.output_format, ["Shapefile", "GeoPackage", "KML"])
+        if not self._format_initialised:
+            self.output_format.setCurrentIndex(1)      # GeoPackage
+            self._format_initialised = True
 
-        for edit in [
-            self.demFileEdit,
-            self.slopeFileEdit,
-            self.curvHFileEdit,
-            self.curvVFileEdit,
-            self.outputFileEdit,
-        ]:
-            edit.setMinimumWidth(0)
-            edit.setSizePolicy(POLICY_EXPANDING, POLICY_FIXED)
-
-        for button in [
-            self.demBrowseButton,
-            self.slopeBrowseButton,
-            self.curvHBrowseButton,
-            self.curvVBrowseButton,
-            self.outputBrowseButton,
-        ]:
-            button.setSizePolicy(POLICY_FIXED, POLICY_FIXED)
-            button.setToolTip(button.toolTip() or "Selecionar arquivo")
-
-        for button in [
-            self.demCrsButton,
-            self.slopeCrsButton,
-            self.curvHCrsButton,
-            self.curvVCrsButton,
-        ]:
-            button.hide()
-
-        self.paramsGroup = self._split_parameter_panel()
-
-        groups = [
-            getattr(self, "_oldInputGroup", None),
-            self.inputGroup,
-            getattr(self, "_oldParamsGroup", None),
-            self.paramsGroup,
-            self.outputGroup,
-            self.routeGroup,
-            self.aboutGroup,
-        ]
-        for group in groups:
-            if group is not None:
-                self._take_widget(main_layout, group)
-
-        content_widget = QWidget(self)
-        content_layout = QGridLayout(content_widget)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(self._scaled(10))
-
-        left_column = QVBoxLayout()
-        left_column.setSpacing(self._scaled(10))
-        left_column.addWidget(self.inputGroup)
-        left_column.addWidget(self.routeGroup)
-        left_column.addWidget(self.outputGroup)
-        left_column.addStretch(1)
-
-        right_column = QVBoxLayout()
-        right_column.setSpacing(self._scaled(10))
-        right_column.addWidget(self.paramsGroup)
-        right_column.addWidget(self.aboutGroup)
-        right_column.addStretch(1)
-
-        self._contentLayout = content_layout
-        self._contentWidget = content_widget
-        self._leftColumn = left_column
-        self._rightColumn = right_column
-
-        scroll_area = QScrollArea(self)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(FRAME_NO_FRAME)
-        scroll_area.setHorizontalScrollBarPolicy(SCROLLBAR_AS_NEEDED)
-        scroll_area.setWidget(content_widget)
-        scroll_area.setSizePolicy(POLICY_EXPANDING, POLICY_EXPANDING)
-        self._scrollArea = scroll_area
-
-        main_layout.insertWidget(1, scroll_area, 1)
-        self._apply_responsive_hud()
-
-    def rebuild_input_group(self):
-        old_group = self.inputGroup
-        old_layout = old_group.layout()
-        if old_layout is not None:
-            while old_layout.count():
-                old_layout.takeAt(0)
-
-        old_group.hide()
-        self._oldInputGroup = old_group
-        new_group = QGroupBox(old_group.title(), self)
-        layout = QGridLayout()
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 1)
-        layout.setColumnStretch(2, 0)
-        layout.setColumnStretch(3, 0)
-        layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(8)
-
-        rows = [
-            ("dem", "Modelo Digital de Elevacao (MDE):", self.demFileEdit, self.demBrowseButton, self.demCrsLabel),
-            ("slope", "Declividade:", self.slopeFileEdit, self.slopeBrowseButton, self.slopeCrsLabel),
-            ("curvh", "Curvatura Horizontal:", self.curvHFileEdit, self.curvHBrowseButton, self.curvHCrsLabel),
-            ("curvv", "Curvatura Vertical:", self.curvVFileEdit, self.curvVBrowseButton, self.curvVCrsLabel),
-        ]
-
-        self.inputRowLabels = {}
-        for row, (key, label_text, edit, browse_button, crs_label) in enumerate(rows):
-            label = QLabel(label_text)
-            label.setAlignment(ALIGN_RIGHT | ALIGN_VCENTER)
-            self.inputRowLabels[key] = label
-            layout.addWidget(label, row, 0)
-            layout.addWidget(edit, row, 1)
-            layout.addWidget(browse_button, row, 2)
-            crs_label.setMinimumWidth(self._scaled(72))
-            crs_label.setAlignment(ALIGN_LEFT | ALIGN_VCENTER)
-            layout.addWidget(crs_label, row, 3)
-
-        new_group.setLayout(layout)
-        self.inputGroup = new_group
-
-    def apply_visual_theme(self):
-        window = self._palette_hex(PAL_WINDOW)
-        window_text = self._palette_hex(PAL_WINDOW_TEXT)
-        base = self._palette_hex(PAL_BASE)
-        text = self._palette_hex(PAL_TEXT)
-        button = self._palette_hex(PAL_BUTTON)
-        button_text = self._palette_hex(PAL_BUTTON_TEXT)
-        highlight = self._palette_hex(PAL_HIGHLIGHT)
-        highlighted_text = self._contrast_text_hex(highlight, self._palette_hex(PAL_HIGHLIGHTED_TEXT))
-        mid = self._palette_hex(PAL_MID)
-        midlight = self._palette_hex(PAL_MIDLIGHT)
-
-        # Theme contrast: all colors are derived from the active QGIS/Qt
-        # palette, avoiding fixed light-theme assumptions in dark mode.
+    def _apply_theme(self):
         self.setStyleSheet(f"""
-            QDialog {{
-                background-color: {window};
-                color: {window_text};
-                font-family: "Segoe UI", "Arial";
-                font-size: 9.5pt;
-            }}
-            QLabel {{
-                color: {window_text};
-            }}
-            QLabel#titleLabel {{
-                color: {window_text};
-                font-size: 24px;
-                font-weight: bold;
-                padding-left: 6px;
-            }}
-            QLabel#logoLabel {{
-                background-color: {base};
-                border: 1px solid {mid};
-                border-radius: 8px;
-                padding: 4px;
-            }}
-            QGroupBox {{
-                color: {window_text};
-                background-color: {base};
-                border: 1px solid {mid};
-                border-radius: 8px;
-                margin-top: 20px;
-                padding: 16px 12px 12px 12px;
-                font-weight: bold;
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                left: 14px;
-                padding: 0px 8px;
-                color: {window_text};
-                background-color: {base};
-            }}
-            QLineEdit, QDoubleSpinBox, QComboBox {{
-                color: {text};
-                background-color: {base};
-                border: 1px solid {mid};
-                border-radius: 6px;
-                min-height: 28px;
-                padding: 3px 7px;
-            }}
-            QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus {{
-                border: 1px solid {highlight};
-                background-color: {base};
-            }}
-            QPushButton, QToolButton {{
-                color: {button_text};
-                background-color: {button};
-                border: 1px solid {mid};
-                border-radius: 6px;
-                min-height: 28px;
-                padding: 4px 10px;
-                font-weight: 600;
-            }}
-            QPushButton:hover, QToolButton:hover {{
-                border-color: {highlight};
-            }}
-            QPushButton:pressed, QToolButton:pressed {{
-                background-color: {midlight};
-            }}
-            QPushButton#generateButton {{
-                background-color: {highlight};
-                color: {highlighted_text};
-                border: 1px solid {highlight};
-                min-height: 36px;
-                font-size: 10.5pt;
-                font-weight: 700;
-            }}
-            QPushButton#generateButton:hover {{
-                border-color: {text};
-            }}
-            QPushButton#languageButton {{
-                color: {text};
-                background-color: {base};
-                border: 1px solid {mid};
-                font-size: 8.5pt;
-                min-height: 24px;
-                padding: 2px 8px;
-            }}
-            QPushButton#languageButton:checked {{
-                background-color: {highlight};
-                color: {highlighted_text};
-            }}
-            QProgressBar {{
-                color: {text};
-                background-color: {base};
-                border: 1px solid {mid};
-                border-radius: 6px;
-                min-height: 18px;
-                text-align: center;
-            }}
-            QProgressBar::chunk {{
-                background-color: {highlight};
-                border-radius: 5px;
-            }}
-            QScrollArea {{
-                background-color: transparent;
-                border: none;
-            }}
-            QScrollBar:horizontal, QScrollBar:vertical {{
-                background: {base};
-                border: 1px solid {mid};
-            }}
-            QScrollBar::handle:horizontal, QScrollBar::handle:vertical {{
-                background: {midlight};
-                border: 1px solid {mid};
-                min-width: 32px;
-                min-height: 32px;
-            }}
+            QDialog {{ background: palette(window); }}
+            #ttHeader {{ background: palette(base); border-bottom: 1px solid #d4d9e0; }}
+            #ttSteps {{ background: palette(base); border-bottom: 1px solid #d4d9e0; }}
+            #ttFooter {{ background: palette(base); border-top: 1px solid #d4d9e0; }}
+            #ttCard {{ background: palette(base); border: 1px solid #d9dee5;
+                       border-radius: 8px; }}
+            #ttStep {{ padding: 6px 4px; border-radius: 6px; color: {MUTED}; }}
+            #ttStep[active="true"] {{ background: {ACCENT}; color: white;
+                                      font-weight: bold; }}
+            #ttPrimary {{ background: {ACCENT}; color: white; font-weight: bold;
+                          padding: 9px 18px; border: none; border-radius: 6px; }}
+            #ttPrimary:disabled {{ background: #9db6dd; }}
+            QPushButton {{ padding: 6px 12px; }}
         """)
 
-        for group in [
-            self.inputGroup,
-            self.paramsGroup,
-            self.routeGroup,
-            self.outputGroup,
-            self.aboutGroup,
-        ]:
-            group.layout().setContentsMargins(14, 16, 14, 12)
-            group.layout().setSpacing(8)
+    # -- navegacao ----------------------------------------------------------
+    def _go(self, delta):
+        target = self.stack.currentIndex() + delta
+        if 0 <= target < self.stack.count():
+            self.stack.setCurrentIndex(target)
+            self._update_nav()
 
-        for form in self.findChildren(QFormLayout):
-            form.setHorizontalSpacing(10)
-            form.setVerticalSpacing(8)
-            form.setLabelAlignment(ALIGN_RIGHT | ALIGN_VCENTER)
-            form.setFormAlignment(ALIGN_TOP)
-
-        for spin in self.findChildren(QDoubleSpinBox):
-            spin.setMinimumWidth(self._scaled(104))
-
-        for line_edit in self.findChildren(QLineEdit):
-            line_edit.setMinimumWidth(0)
-
-        self.startPointEdit.setPlaceholderText("Camada de ponto da origem")
-        self.endPointEdit.setPlaceholderText("Camada de ponto do destino")
-        self.outputFileEdit.setPlaceholderText("Escolha onde salvar os resultados")
-        self.progressBar.setTextVisible(False)
-
-    def start_map_pick(self, target):
-        if not self.iface:
-            QMessageBox.warning(self, self.text_for("map_unavailable_title"), self.text_for("map_unavailable_text"))
-            return
-
-        canvas = self.iface.mapCanvas()
-        self._previous_map_tool = canvas.mapTool()
-        self._map_tool = QgsMapToolEmitPoint(canvas)
-        self._map_tool.canvasClicked.connect(lambda point, button: self.finish_map_pick(target, point))
-        canvas.setMapTool(self._map_tool)
-        label = self.text_for("start") if target == "start" else self.text_for("end")
-        QMessageBox.information(
-            self,
-            self.text_for("pick_point_title"),
-            self.text_for("pick_point_text").format(label=label),
-        )
-
-    def finish_map_pick(self, target, point):
-        text = f"{point.x():.8f}, {point.y():.8f}"
+    def route_widgets(self, target):
+        """Contrato do TopotrailSupportMixin: quais campos guardam cada ponto."""
         if target == "start":
-            self.startCoordEdit.setText(text)
-            self.startPointEdit.clear()
-        else:
-            self.endCoordEdit.setText(text)
-            self.endPointEdit.clear()
+            return self.start_file, self.start_coord
+        return self.end_file, self.end_coord
 
-        if self.iface and self._previous_map_tool:
-            self.iface.mapCanvas().setMapTool(self._previous_map_tool)
-        self._map_tool = None
+    def _jump_to(self, target):
+        """Voltar clicando no indicador. So para tras: avancar continua
+        passando pela validacao do passo atual, senao daria para chegar ao
+        botao de executar sem MDE nenhum."""
+        if target < self.stack.currentIndex():
+            self.stack.setCurrentIndex(target)
 
-    def parse_coordinate_text(self, text):
-        raw = text.strip()
-        if not raw:
-            return None
-        if ";" in raw:
-            parts = raw.split(";")
-        elif "," in raw and raw.count(",") == 1:
-            parts = raw.split(",")
-        else:
-            parts = raw.split()
-        parts = [part.strip().strip(",") for part in parts if part.strip().strip(",")]
-        if len(parts) != 2:
-            raise ValueError(self.text_for("coordinate_format_error"))
-        return float(parts[0].replace(",", ".")), float(parts[1].replace(",", "."))
-
-    def create_point_file_from_coordinate(self, coordinate, prefix):
-        project_crs = QgsProject.instance().crs()
-        if not project_crs.isValid():
-            project_crs = QgsCoordinateReferenceSystem("EPSG:4326")
-        target_crs = QgsCoordinateReferenceSystem("EPSG:4326")
-
-        if project_crs != target_crs:
-            transform = QgsCoordinateTransform(project_crs, target_crs, QgsProject.instance())
-            transformed_point = transform.transform(coordinate[0], coordinate[1])
-            x, y = transformed_point.x(), transformed_point.y()
-        else:
-            x, y = coordinate
-
-        temp_file = tempfile.NamedTemporaryFile(
-            prefix=f"topotrail_{prefix}_",
-            suffix=".geojson",
-            delete=False,
-            mode="w",
-            encoding="utf-8",
-        )
-        payload = {
-            "type": "FeatureCollection",
-            "features": [
-                {
-                    "type": "Feature",
-                    "properties": {},
-                    "geometry": {"type": "Point", "coordinates": [x, y]},
-                }
-            ],
-        }
-        json.dump(payload, temp_file)
-        temp_file.close()
-        self._temp_point_files.append(temp_file.name)
-        return temp_file.name
-
-    def resolve_route_points(self):
-        start_file = self.startPointEdit.text().strip()
-        end_file = self.endPointEdit.text().strip()
-        start_coord_text = self.startCoordEdit.text().strip()
-        end_coord_text = self.endCoordEdit.text().strip()
-
-        if start_file and start_coord_text:
-            raise ValueError(self.text_for("start_input_conflict"))
-        if end_file and end_coord_text:
-            raise ValueError(self.text_for("end_input_conflict"))
-
-        if start_coord_text:
-            start_file = self.create_point_file_from_coordinate(self.parse_coordinate_text(start_coord_text), "origem")
-        if end_coord_text:
-            end_file = self.create_point_file_from_coordinate(self.parse_coordinate_text(end_coord_text), "destino")
-
-        if bool(start_file) != bool(end_file):
-            raise ValueError(self.text_for("route_pair_required"))
-        return start_file, end_file
-
-    def style_score_layer(self, layer):
-        provider = layer.dataProvider()
-        shader = QgsRasterShader()
-        ramp = QgsColorRampShader()
-        ramp.setColorRampType(QgsColorRampShader.Interpolated)
-        ramp.setColorRampItemList([
-            QgsColorRampShader.ColorRampItem(0.00, QColor(244, 241, 222, 0), "Baixa"),
-            QgsColorRampShader.ColorRampItem(0.62, QColor(255, 245, 210, 0), "Moderada baixa"),
-            QgsColorRampShader.ColorRampItem(0.74, QColor(255, 215, 96, 45), "Moderada"),
-            QgsColorRampShader.ColorRampItem(0.84, QColor(255, 154, 46, 95), "Alta"),
-            QgsColorRampShader.ColorRampItem(0.92, QColor(232, 74, 39, 150), "Muito alta"),
-            QgsColorRampShader.ColorRampItem(1.00, QColor(180, 29, 75, 210), "Maxima"),
-        ])
-        shader.setRasterShaderFunction(ramp)
-        renderer = QgsSingleBandPseudoColorRenderer(provider, 1, shader)
-        transparency = QgsRasterTransparency()
-        transparent_ranges = []
-        for low, high, percent in [
-            (0.00, 0.70, 100.0),
-            (0.70, 0.78, 85.0),
-            (0.78, 0.86, 60.0),
-            (0.86, 0.93, 35.0),
-            (0.93, 1.00, 10.0),
-        ]:
-            pixel = QgsRasterTransparency.TransparentSingleValuePixel()
-            pixel.min = low
-            pixel.max = high
-            pixel.percentTransparent = percent
-            pixel.includeMinimum = True
-            pixel.includeMaximum = True
-            transparent_ranges.append(pixel)
-        transparency.setTransparentSingleValuePixelList(transparent_ranges)
-        renderer.setRasterTransparency(transparency)
-        renderer.setOpacity(0.85)
-        layer.setRenderer(renderer)
-        layer.triggerRepaint()
-
-    def style_risk_layer(self, layer):
-        provider = layer.dataProvider()
-        shader = QgsRasterShader()
-        ramp = QgsColorRampShader()
-        ramp.setColorRampType(QgsColorRampShader.Interpolated)
-        ramp.setColorRampItemList([
-            QgsColorRampShader.ColorRampItem(0.00, QColor(255, 255, 255, 0), "Baixo"),
-            QgsColorRampShader.ColorRampItem(0.35, QColor(255, 250, 220, 0), "Moderado baixo"),
-            QgsColorRampShader.ColorRampItem(0.55, QColor(255, 196, 79, 65), "Moderado"),
-            QgsColorRampShader.ColorRampItem(0.72, QColor(255, 112, 67, 135), "Alto"),
-            QgsColorRampShader.ColorRampItem(0.86, QColor(211, 47, 47, 190), "Muito alto"),
-            QgsColorRampShader.ColorRampItem(1.00, QColor(96, 28, 128, 230), "Critico"),
-        ])
-        shader.setRasterShaderFunction(ramp)
-        renderer = QgsSingleBandPseudoColorRenderer(provider, 1, shader)
-        transparency = QgsRasterTransparency()
-        transparent_ranges = []
-        for low, high, percent in [
-            (0.00, 0.45, 100.0),
-            (0.45, 0.60, 70.0),
-            (0.60, 0.75, 40.0),
-            (0.75, 1.00, 8.0),
-        ]:
-            pixel = QgsRasterTransparency.TransparentSingleValuePixel()
-            pixel.min = low
-            pixel.max = high
-            pixel.percentTransparent = percent
-            pixel.includeMinimum = True
-            pixel.includeMaximum = True
-            transparent_ranges.append(pixel)
-        transparency.setTransparentSingleValuePixelList(transparent_ranges)
-        renderer.setRasterTransparency(transparency)
-        renderer.setOpacity(0.88)
-        layer.setRenderer(renderer)
-        layer.triggerRepaint()
-
-    def style_zone_layer(self, layer):
-        symbol = QgsFillSymbol.createSimple({
-            "color": "255, 176, 46, 70",
-            "outline_color": "120, 45, 18, 240",
-            "outline_width": "0.30",
-        })
-        layer.renderer().setSymbol(symbol)
-        layer.setOpacity(1.0)
-        layer.triggerRepaint()
-
-    def style_route_layer(self, layer):
-        symbol = QgsLineSymbol.createSimple({
-            "color": "236, 28, 132, 255",
-            "width": "1.10",
-            "capstyle": "round",
-            "joinstyle": "round",
-        })
-        layer.renderer().setSymbol(symbol)
-        layer.triggerRepaint()
-
-    def style_corridor_layer(self, layer):
-        symbol = QgsFillSymbol.createSimple({
-            "color": "0, 178, 214, 55",
-            "outline_color": "0, 83, 120, 210",
-            "outline_width": "0.28",
-        })
-        layer.renderer().setSymbol(symbol)
-        layer.setOpacity(0.70)
-        layer.triggerRepaint()
-
-    def cleanup_temp_point_files(self):
-        for path in self._temp_point_files:
-            try:
-                if os.path.exists(path):
-                    os.remove(path)
-            except OSError:
-                pass
-        self._temp_point_files = []
-
-    def _take_widget(self, layout, widget):
-        for index in range(layout.count() - 1, -1, -1):
-            item = layout.itemAt(index)
-            if item and item.widget() is widget:
-                layout.takeAt(index)
-                return
-
-    def _split_parameter_panel(self):
-        old_group = self.paramsGroup
-        old_layout = self.paramsGroup.layout()
-        if old_layout is None:
-            return old_group
-
-        rows = []
-        while old_layout.count():
-            label_item = old_layout.takeAt(0)
-            field_item = old_layout.takeAt(0) if old_layout.count() else None
-            label = label_item.widget() if label_item else None
-            field = field_item.widget() if field_item else None
-            if label and field:
-                rows.append((label, field))
-
-        old_group.hide()
-        self._oldParamsGroup = old_group
-        new_group = QGroupBox(old_group.title(), self)
-        wrapper = QHBoxLayout()
-        wrapper.setSpacing(12)
-
-        terrain_form = QFormLayout()
-        terrain_form.setLabelAlignment(ALIGN_RIGHT)
-        terrain_form.setFieldGrowthPolicy(FORM_GROW_ALL_NON_FIXED)
-
-        weights_form = QFormLayout()
-        weights_form.setLabelAlignment(ALIGN_RIGHT)
-        weights_form.setFieldGrowthPolicy(FORM_GROW_ALL_NON_FIXED)
-
-        weight_names = {
-            "weightAltSpin",
-            "weightSlopeSpin",
-            "weightCurvHSpin",
-            "weightCurvVSpin",
-        }
-        for label, field in rows:
-            target = weights_form if field.objectName() in weight_names else terrain_form
-            target.addRow(label, field)
-
-        wrapper.addLayout(terrain_form, 1)
-        wrapper.addLayout(weights_form, 1)
-        new_group.setLayout(wrapper)
-        return new_group
-
-    def browse_file(self, line_edit_name, file_filter):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            self.text_for("select_file"),
-            "",
-            file_filter
-        )
-        if file_path:
-            getattr(self, line_edit_name).setText(file_path)
-
-    def browse_output(self):
-        format_map = {
-            "Shapefile": "*.shp",
-            "GeoPackage": "*.gpkg",
-            "KML": "*.kml",
-        }
-
-        selected_format = self.formatComboBox.currentText()
-        file_filter = f"{selected_format} ({format_map[selected_format]})"
-
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            self.text_for("save_file"),
-            "",
-            file_filter
-        )
-        if file_path:
-            extension = format_map[selected_format].replace("*", "")
-            if not file_path.lower().endswith(extension):
-                file_path = f"{file_path}{extension}"
-            self.outputFileEdit.setText(file_path)
-
-    def update_crs_label(self, line_edit_name, label_name):
-        path = getattr(self, line_edit_name).text()
-        label = getattr(self, label_name)
-        if not path or not os.path.exists(path):
-            label.setText("CRS: -")
-            label.setToolTip("CRS ainda nao detectado.")
-            label.setStyleSheet("")
-            return
-
-        layer = QgsRasterLayer(path, "tmp")
-        if not layer.isValid() or not layer.crs().isValid():
-            label.setText("CRS: Indefinido!")
-            label.setToolTip("Defina um CRS valido antes de processar.")
-            label.setStyleSheet("")
-        else:
-            label.setText(f"CRS: {layer.crs().authid()}")
-            label.setToolTip(f"CRS detectado: {layer.crs().authid()}")
-            label.setStyleSheet("")
-
-    def select_crs(self, line_edit_name, label_name):
-        dlg = QgsProjectionSelectionDialog()
-        if self._dialog_exec(dlg):
-            crs = dlg.crs()
-            self.outputCrsSelector.setCrs(crs)
-            self.update_crs_label(line_edit_name, label_name)
-            QMessageBox.information(
-                self,
-                self.text_for("crs_output_title"),
-                self.text_for("crs_output_text").format(crs=crs.authid()),
-            )
-
-    def generate_trails(self):
-        params = None
-        feedback = None
-        result = None
-        if not all([
-            self.demFileEdit.text(),
-            self.slopeFileEdit.text(),
-            self.curvHFileEdit.text(),
-            self.curvVFileEdit.text(),
-            self.outputFileEdit.text(),
-        ]):
-            QMessageBox.warning(
-                self,
-                self.text_for("required_title"),
-                self.text_for("required_text"),
-            )
-            return
-
-        required_rasters = [
-            self.demFileEdit.text().strip(),
-            self.slopeFileEdit.text().strip(),
-            self.curvHFileEdit.text().strip(),
-            self.curvVFileEdit.text().strip(),
-        ]
-        for path in required_rasters:
-            if not os.path.exists(path):
-                QMessageBox.critical(
-                    self,
-                    self.text_for("file_not_found_title"),
-                    self.text_for("file_not_found_text").format(path=path),
-                )
-                return
-            if not path.lower().endswith((".tif", ".tiff")):
-                QMessageBox.warning(
-                    self,
-                    self.text_for("invalid_format_title"),
-                    self.text_for("invalid_format_text"),
-                )
-                return
-
-        altitude_weight_is_zero = self.weightAltSpin.value() == 0
-        slope_weight_is_zero = self.weightSlopeSpin.value() == 0
-        curv_h_weight_is_zero = self.weightCurvHSpin.value() == 0
-        curv_v_weight_is_zero = self.weightCurvVSpin.value() == 0
-        terrain_weights_are_zero = altitude_weight_is_zero and slope_weight_is_zero
-        curvature_weights_are_zero = curv_h_weight_is_zero and curv_v_weight_is_zero
-        all_weights_are_zero = terrain_weights_are_zero and curvature_weights_are_zero
-
-        if all_weights_are_zero:
-            QMessageBox.warning(
-                self,
-                self.text_for("invalid_weights_title"),
-                self.text_for("invalid_weights_sum"),
-            )
-            return
-        if any(spin.value() < 0 for spin in [self.weightAltSpin, self.weightSlopeSpin, self.weightCurvHSpin, self.weightCurvVSpin]):
-            QMessageBox.warning(
-                self,
-                self.text_for("invalid_weights_title"),
-                self.text_for("invalid_weights_negative"),
-            )
-            return
-        if self.altMinSpin.value() >= self.altMaxSpin.value():
-            QMessageBox.warning(
-                self,
-                self.text_for("invalid_altitude_title"),
-                self.text_for("invalid_altitude_text"),
-            )
-            return
-        if self.maxSlopeSpin.value() <= 0 or self.slopeScoreMaxSpin.value() <= 0:
-            QMessageBox.warning(
-                self,
-                self.text_for("invalid_slope_title"),
-                self.text_for("invalid_slope_text"),
-            )
-            return
-        if self.minPatchAreaSpin.value() < 0:
-            QMessageBox.warning(self, self.text_for("invalid_area_title"), self.text_for("invalid_area_text"))
-            return
-        if not (0 < self.autoPercentileSpin.value() < 100):
-            QMessageBox.warning(
-                self,
-                self.text_for("invalid_percentile_title"),
-                self.text_for("invalid_percentile_text"),
-            )
-            return
-        if self.routeBufferSpin.value() <= 0 or self.routeMarginSpin.value() <= 0:
-            QMessageBox.warning(self, self.text_for("invalid_route_title"), self.text_for("invalid_route_text"))
-            return
-
-        has_start = bool(self.startPointEdit.text().strip() or self.startCoordEdit.text().strip())
-        has_end = bool(self.endPointEdit.text().strip() or self.endCoordEdit.text().strip())
-        if has_start != has_end:
-            QMessageBox.warning(
-                self,
-                self.text_for("incomplete_points_title"),
-                self.text_for("incomplete_points_text"),
-            )
-            return
-
-        try:
-            for edit in [
-                self.demFileEdit,
-                self.slopeFileEdit,
-                self.curvHFileEdit,
-                self.curvVFileEdit,
-            ]:
-                path = edit.text()
-                layer = QgsRasterLayer(path, "tmp")
-                if not layer.isValid() or not layer.crs().isValid():
-                    QMessageBox.critical(
-                        self,
-                        self.text_for("undefined_crs_title"),
-                        self.text_for("undefined_crs_text").format(path=path),
-                    )
-                    return
-
-            try:
-                start_point_file, end_point_file = self.resolve_route_points()
-            except ValueError as point_error:
-                QMessageBox.warning(
-                    self,
-                    self.text_for("incomplete_points_title"),
-                    str(point_error),
-                )
-                return
-
-            for point_path in [start_point_file, end_point_file]:
-                if point_path and not os.path.exists(point_path):
-                    QMessageBox.critical(
-                        self,
-                        self.text_for("file_not_found_title"),
-                        self.text_for("file_not_found_text").format(path=point_path),
-                    )
-                    return
-
-            if self.generateZonesCheck.isChecked():
-                answer = QMessageBox.question(
-                    self,
-                    self.text_for("generate_zones_question_title"),
-                    self.text_for("generate_zones_question_text"),
-                    MESSAGE_YES | MESSAGE_NO,
-                    MESSAGE_NO,
-                )
-                if answer != MESSAGE_YES:
-                    return
-
-            dem_layer = QgsRasterLayer(self.demFileEdit.text(), "DEM")
-            slope_layer = QgsRasterLayer(self.slopeFileEdit.text(), "Declividade")
-            curvh_layer = QgsRasterLayer(self.curvHFileEdit.text(), "Curvatura horizontal")
-            curvv_layer = QgsRasterLayer(self.curvVFileEdit.text(), "Curvatura vertical")
-
-            if not all([dem_layer.isValid(), slope_layer.isValid(), curvh_layer.isValid(), curvv_layer.isValid()]):
-                QMessageBox.critical(
-                    self,
-                    self.text_for("load_error_title"),
-                    self.text_for("load_error_text"),
-                )
-                return
-
-            params = {
-                "INPUT_DEM": dem_layer,
-                "INPUT_SLOPE": slope_layer,
-                "INPUT_CURVH": curvh_layer,
-                "INPUT_CURVV": curvv_layer,
-                "ALT_MIN": self.altMinSpin.value(),
-                "ALT_MAX": self.altMaxSpin.value(),
-                "SLOPE_MAX": self.maxSlopeSpin.value(),
-                "SLOPE_SCORE_MAX": self.slopeScoreMaxSpin.value(),
-                "THRESHOLD": self.thresholdSpin.value(),
-                "AUTO_PERCENTILE": self.autoPercentileSpin.value(),
-                "ALTITUDE_BAND_THRESHOLD": self.altitudeBandThresholdCheck.isChecked(),
-                "ALTITUDE_BAND_SIZE_M": self.altitudeBandSizeSpin.value(),
-                "WALKABILITY_ZONES": self.walkabilityZonesCheck.isChecked(),
-                "MIN_PATCH_AREA_HA": self.minPatchAreaSpin.value(),
-                "WEIGHT_ALT": self.weightAltSpin.value(),
-                "WEIGHT_SLOPE": self.weightSlopeSpin.value(),
-                "WEIGHT_CURVH": self.weightCurvHSpin.value(),
-                "WEIGHT_CURVV": self.weightCurvVSpin.value(),
-                "START_POINT_FILE": start_point_file,
-                "END_POINT_FILE": end_point_file,
-                "ROUTE_BUFFER_M": self.routeBufferSpin.value(),
-                "ROUTE_MARGIN_M": self.routeMarginSpin.value(),
-                "GENERATE_ZONES": self.generateZonesCheck.isChecked(),
-                "OUTPUT_FILE": self.outputFileEdit.text(),
-                "OUTPUT_FORMAT": self.formatComboBox.currentIndex(),
-                "OUTPUT_CRS": self.outputCrsSelector.crs().authid(),
-            }
-
-            self.generateButton.setEnabled(False)
-            self.progressBar.setRange(0, 0)
-            QApplication.processEvents()
-
-            feedback = QgsProcessingFeedback()
-            append_gui_diagnostic_log(
-                self.outputFileEdit.text(),
-                "interface_processamento_enviado",
-                parametros=serialize_processing_params(params),
-            )
-            result = processing.run("topotrail:topotrail", params, feedback=feedback)
-            append_gui_diagnostic_log(
-                self.outputFileEdit.text(),
-                "interface_processamento_recebido",
-                resultado=result,
-            )
-
-            loaded_layers = []
-            has_vector_output = bool(
-                result.get("OUTPUT_VECTOR") or result.get("OUTPUT_ROUTE") or result.get("OUTPUT_CORRIDOR")
-            )
-            if result.get("OUTPUT_RISK_RASTER"):
-                risk_layer = QgsRasterLayer(result["OUTPUT_RISK_RASTER"], "Risco topografico TopoTrail")
-                if risk_layer.isValid():
-                    self.style_risk_layer(risk_layer)
-                    QgsProject.instance().addMapLayer(risk_layer)
-
-            if result.get("OUTPUT_SCORE_RASTER") and not has_vector_output:
-                score_layer = QgsRasterLayer(result["OUTPUT_SCORE_RASTER"], "Adequabilidade TopoTrail")
-                if score_layer.isValid():
-                    self.style_score_layer(score_layer)
-                    QgsProject.instance().addMapLayer(score_layer)
-
-            if result.get("OUTPUT_VECTOR"):
-                vector_layer = QgsVectorLayer(result["OUTPUT_VECTOR"], "Zonas potenciais TopoTrail", "ogr")
-                if vector_layer.isValid():
-                    self.style_zone_layer(vector_layer)
-                    should_load = True
-                    feature_count = vector_layer.featureCount()
-                    if feature_count > 5000:
-                        answer = QMessageBox.question(
-                            self,
-                            self.text_for("large_layer_title"),
-                            self.text_for("large_layer_text").format(count=feature_count),
-                            MESSAGE_YES | MESSAGE_NO,
-                            MESSAGE_NO,
-                        )
-                        should_load = answer == MESSAGE_YES
-                    if should_load:
-                        QgsProject.instance().addMapLayer(vector_layer)
-                        loaded_layers.append(vector_layer)
-
-            if result.get("OUTPUT_CORRIDOR"):
-                corridor_layer = QgsVectorLayer(result["OUTPUT_CORRIDOR"], "Corredor de acesso TopoTrail", "ogr")
-                if corridor_layer.isValid():
-                    self.style_corridor_layer(corridor_layer)
-                    QgsProject.instance().addMapLayer(corridor_layer)
-                    loaded_layers.append(corridor_layer)
-
-            if result.get("OUTPUT_ROUTE"):
-                route_layer = QgsVectorLayer(result["OUTPUT_ROUTE"], "Rota sugerida TopoTrail", "ogr")
-                if route_layer.isValid():
-                    self.style_route_layer(route_layer)
-                    QgsProject.instance().addMapLayer(route_layer)
-                    loaded_layers.append(route_layer)
-
-            if loaded_layers:
-                if self.iface:
-                    self.iface.mapCanvas().setExtent(loaded_layers[0].extent())
-                QMessageBox.information(
-                    self,
-                    self.text_for("success_title"),
-                    self.text_for("success_vector_text").format(count=len(loaded_layers)),
-                )
-            elif result.get("OUTPUT_SCORE_RASTER"):
-                QMessageBox.information(
-                    self,
-                    self.text_for("success_title"),
-                    self.text_for("success_raster_text"),
-                )
+    def _next_clicked(self):
+        index = self.stack.currentIndex()
+        if index == self.stack.count() - 1:
+            if self._task is not None:
+                self._cancel()
             else:
-                QMessageBox.warning(
-                    self,
-                    self.text_for("warning_title"),
-                    self.text_for("warning_no_features"),
-                )
+                self._run()
+            return
+        error = self._validate(index)
+        if error:
+            QMessageBox.warning(self, self.t("err_title"), error)
+            return
+        self._go(1)
 
-        except Exception as e:
-            log_path = append_gui_diagnostic_log(
-                self.outputFileEdit.text(),
-                "interface_erro",
-                erro=str(e),
-                traceback=traceback.format_exc(),
-                parametros=serialize_processing_params(params),
-                resultado=result,
-            )
-            QMessageBox.critical(
-                self,
-                self.text_for("error_title"),
-                self.text_for("error_text").format(error=str(e), log_path=log_path),
-            )
-        finally:
-            self.progressBar.setRange(0, 100)
-            self.progressBar.setValue(0)
-            self.generateButton.setEnabled(True)
-            self.cleanup_temp_point_files()
+    def _update_nav(self):
+        index = self.stack.currentIndex()
+        self.back_button.setEnabled(index > 0)
+        last = index == self.stack.count() - 1
+        if last and self._task is not None:
+            self.next_button.setText(self.t("cancel"))
+        else:
+            self.next_button.setText(self.t("run") if last else self.t("next"))
+        for position, label in enumerate(self.step_labels):
+            label.setProperty("active", "true" if position == index else "false")
+            label.style().unpolish(label); label.style().polish(label)
+        if last:
+            self._refresh_summary()
+
+    def _refresh_summary(self):
+        pt = self.lang == "pt"
+        items = ["• " + self.t("o_score"), "• " + self.t("o_risk")]
+        if self.want_zones.isChecked():
+            items.append("• " + self.t("o_zones"))
+        if self.want_transit.isChecked():
+            items.append("• " + self.t("o_transit"))
+        if self.want_streams.isChecked():
+            items.append("• " + self.t("o_streams"))
+        if self.want_route.isChecked():
+            route = "• " + self.t("o_route")
+            if self.via_file.text():
+                route += (" (com destinos intermediários)" if pt
+                          else " (with intermediate destinations)")
+            items.append(route)
+        self.summary_label.setText("\n".join(items))
+
+    # -- validacao ----------------------------------------------------------
+    def _validate(self, index):
+        if index == 0:
+            path = self.dem_file.text()
+            if not path:
+                return self.t("err_dem")
+            layer = QgsRasterLayer(path, "dem")
+            if not layer.isValid():
+                return self.t("err_dem_invalid").format(path=path)
+            if not layer.crs().isValid():
+                return self.t("err_dem_crs").format(path=path)
+            if self.own_rasters.isChecked() and not all(
+                    [self.slope_file.text(), self.curvh_file.text(),
+                     self.curvv_file.text()]):
+                return self.t("err_rasters")
+        if index == 1 and self.want_route.isChecked():
+            has_start = bool(self.start_file.text() or self.start_coord.text().strip())
+            has_end = bool(self.end_file.text() or self.end_coord.text().strip())
+            if not (has_start and has_end):
+                return self.t("err_points")
+        if index == 2:
+            weights = [self.w_alt, self.w_slope, self.w_curvh, self.w_curvv,
+                       self.w_wet, self.w_rough]
+            if all(spin.value() == 0 for spin in weights):
+                return self.t("err_weights")
+            if self.alt_min.value() >= self.alt_max.value():
+                return self.t("err_alt")
+            if self._parse_breaks() is None:
+                return self.t("err_breaks")
+        return None
+
+    def _parse_breaks(self):
+        try:
+            values = [float(part) for part in
+                      self.breaks_edit.text().replace(";", ",").split(",")]
+        except ValueError:
+            return None
+        if len(values) != 4 or any(values[i] >= values[i + 1] for i in range(3)):
+            return None
+        return values
+
+    # -- execucao -----------------------------------------------------------
+    def _collect(self):
+        start_path, end_path = self.resolve_route_points() \
+            if self.want_route.isChecked() else (None, None)
+        breaks = self._parse_breaks() or [20.0, 35.0, 60.0, 100.0]
+        params = {
+            "INPUT_DEM": self.dem_file.text(),
+            "DERIVE_FROM_DEM": not self.own_rasters.isChecked(),
+            "VERTICAL_UNIT": self.vertical_unit.currentIndex(),
+            "WEIGHT_ALT": self.w_alt.value(),
+            "WEIGHT_SLOPE": self.w_slope.value(),
+            "WEIGHT_CURVH": self.w_curvh.value(),
+            "WEIGHT_CURVV": self.w_curvv.value(),
+            "WEIGHT_WETNESS": self.w_wet.value(),
+            "WEIGHT_ROUGHNESS": self.w_rough.value(),
+            "ALT_MIN": self.alt_min.value(),
+            "ALT_MAX": self.alt_max.value(),
+            "SLOPE_MAX": self.slope_max.value(),
+            "SLOPE_SCORE_MAX": self.slope_score_max.value(),
+            "THRESHOLD": 0.0,
+            "AUTO_PERCENTILE": self.percentile.value(),
+            "MIN_PATCH_AREA_HA": self.min_area.value(),
+            "ALTITUDE_BAND_THRESHOLD": self.altitude_band.isChecked(),
+            "ALTITUDE_BAND_SIZE_M": self.band_size.value(),
+            "GENERATE_ZONES": self.want_zones.isChecked(),
+            "STREAMS_FROM_DEM": self.want_streams.isChecked(),
+            "STREAM_MIN_BASIN_KM2": 1.0,
+            "TRANSITABILITY_BREAKS": ", ".join(f"{value:g}" for value in breaks),
+            "OUTPUT_FILE": self.output_edit.text(),
+            "OUTPUT_FORMAT": self.output_format.currentIndex(),
+        }
+        if self.own_rasters.isChecked():
+            params.update({
+                "INPUT_SLOPE": self.slope_file.text(),
+                "INPUT_CURVH": self.curvh_file.text(),
+                "INPUT_CURVV": self.curvv_file.text(),
+                "SLOPE_UNIT": self.slope_unit.currentIndex(),
+            })
+        if self.crs_edit.text().strip():
+            params["OUTPUT_CRS"] = self.crs_edit.text().strip()
+        if self.want_route.isChecked():
+            params.update({
+                "START_POINT_FILE": start_path,
+                "END_POINT_FILE": end_path,
+                "VIA_POINTS_FILE": self.via_file.text() or None,
+                "OPTIMISE_ORDER": self.optimise_order.isChecked(),
+                "ROUTE_COST_MODEL": self.cost_model.currentIndex(),
+                "ROUTE_BUFFER_M": self.corridor_m.value(),
+                "ROUTE_MARGIN_M": self.margin_m.value(),
+            })
+        if self.extra_file.text() and self.extra_weight.value() > 0:
+            params.update({
+                "EXTRA_CRITERION_LAYER": self.extra_file.text(),
+                "EXTRA_CRITERION_WEIGHT": self.extra_weight.value(),
+                "EXTRA_CRITERION_DIRECTION": self.extra_direction.currentIndex(),
+            })
+        if self.constraint_file.text():
+            params.update({
+                "CONSTRAINT_LAYER": self.constraint_file.text(),
+                "CONSTRAINT_BUFFER_M": self.constraint_buffer.value(),
+                "CONSTRAINT_MODE": self.constraint_mode.currentIndex(),
+            })
+        return params
+
+    def _run(self):
+        if not self.output_edit.text().strip():
+            QMessageBox.warning(self, self.t("err_title"), self.t("err_out"))
+            return
+        params = self._collect()
+        self.log_view.clear()
+        self.progress.setRange(0, 0)
+
+        feedback = QgsProcessingFeedback()
+        feedback.progressChanged.connect(self._on_progress)
+        try:
+            feedback.pushInfo = self._log_line
+            feedback.pushWarning = lambda text: self._log_line("⚠ " + text)
+        except (AttributeError, TypeError):
+            pass
+        self._feedback = feedback
+
+        alg = QgsApplication.processingRegistry().algorithmById("topotrail:topotrail")
+        if alg is None:
+            self._finish_error(Exception(
+                "O algoritmo topotrail:topotrail nao esta registrado no QGIS."), params)
+            return
+        try:
+            from qgis.core import QgsProcessingAlgRunnerTask
+            context = QgsProcessingContext()
+            context.setProject(QgsProject.instance())
+            self._context = context
+            task = QgsProcessingAlgRunnerTask(alg, params, context, feedback)
+            task.executed.connect(lambda ok, results: self._finish(ok, results, params))
+            self._task = task
+            self._update_nav()
+            QgsApplication.taskManager().addTask(task)
+        except Exception:
+            # Sem gerenciador de tarefas (execucao em script, QGIS antigo):
+            # roda de forma sincrona em vez de falhar.
+            try:
+                results = processing.run("topotrail:topotrail", params,
+                                         feedback=feedback)
+                self._finish(True, results, params)
+            except Exception as error:
+                self._finish_error(error, params)
+
+    def _cancel(self):
+        if self._task is not None:
+            self._task.cancel()
+            self._log_line(self.t("cancelled"))
+            self._task = None
+            self.progress.setRange(0, 100)
+            self.progress.setValue(0)
+            self._update_nav()
+
+    def _on_progress(self, value):
+        self.progress.setRange(0, 100)
+        self.progress.setValue(int(value))
+
+    def _log_line(self, text):
+        self.log_view.append(str(text))
+        self.log_view.ensureCursorVisible()
+        QApplication.processEvents()
+
+    def _finish(self, ok, results, params):
+        self._task = None
+        self.progress.setRange(0, 100)
+        self.progress.setValue(100 if ok else 0)
+        self._update_nav()
+        if not ok:
+            self._finish_error(Exception("\n".join(
+                self.log_view.toPlainText().splitlines()[-8:]) or "?"), params)
+            return
+        loaded = self._load_results(results or {})
+        self.cleanup_temp_point_files()
+        QMessageBox.information(self, self.t("done_title"),
+                                self.t("done_text").format(count=loaded))
+
+    def _finish_error(self, error, params):
+        self._task = None
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self._update_nav()
+        log_path = append_gui_diagnostic_log(
+            self.output_edit.text(), "interface_erro", erro=str(error),
+            traceback=traceback.format_exc(),
+            parametros=serialize_processing_params(params))
+        self.cleanup_temp_point_files()
+        QMessageBox.critical(self, self.t("fail_title"),
+                             self.t("fail_text").format(error=str(error),
+                                                        log_path=log_path))
+
+    def _load_results(self, results):
+        """Carrega tudo o que o algoritmo produziu, ja estilizado.
+
+        Inclui o mapa de transitabilidade, que existia desde a versao 0.6.2 e
+        que a janela anterior simplesmente nunca carregava.
+        """
+        project = QgsProject.instance()
+        rasters = [
+            ("OUTPUT_SCORE_RASTER", "TopoTrail — adequabilidade", self.style_score_layer),
+            ("OUTPUT_RISK_RASTER", "TopoTrail — risco topográfico", self.style_risk_layer),
+            ("OUTPUT_TRANSITABILITY", "TopoTrail — transitabilidade", None),
+        ]
+        vectors = [
+            ("OUTPUT_VECTOR", "TopoTrail — zonas", self.style_zone_layer),
+            ("OUTPUT_ROUTE", "TopoTrail — rota", self.style_route_layer),
+            ("OUTPUT_CORRIDOR", "TopoTrail — corredor", self.style_corridor_layer),
+        ]
+        loaded = []
+        for key, title, styler in rasters:
+            path = results.get(key)
+            if not path or not os.path.exists(str(path)):
+                continue
+            layer = QgsRasterLayer(str(path), title)
+            if not layer.isValid():
+                continue
+            if styler:
+                try:
+                    styler(layer)
+                except Exception:
+                    pass
+            project.addMapLayer(layer)
+            loaded.append(layer)
+        for key, title, styler in vectors:
+            path = results.get(key)
+            if not path or not os.path.exists(str(path)):
+                continue
+            layer = QgsVectorLayer(str(path), title, "ogr")
+            if not layer.isValid() or layer.featureCount() == 0:
+                continue
+            if styler:
+                try:
+                    styler(layer)
+                except Exception:
+                    pass
+            project.addMapLayer(layer)
+            loaded.append(layer)
+        if loaded and self.iface:
+            self.iface.mapCanvas().setExtent(loaded[0].extent())
+            self.iface.mapCanvas().refresh()
+        return len(loaded)

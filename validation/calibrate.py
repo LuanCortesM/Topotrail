@@ -83,7 +83,8 @@ SLOW = [0.0, 0.5, 1.0, 2.0, 4.0]
 DECAY = [1.3, 2.3, 3.5, 5.0]
 grid = {}
 print("Varredura conjunta SLOWDOWN x decay (penalidade desligada):")
-print(f"{'slow\\decay':>12s} " + " ".join(f"{d:>7.1f}" for d in DECAY))
+header = "slow \\ decay"
+print(f"{header:>12s} " + " ".join(f"{d:>7.1f}" for d in DECAY))
 for sd in SLOW:
     row = []
     for dc in DECAY:
