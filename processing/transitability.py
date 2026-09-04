@@ -96,7 +96,7 @@ COARSE_CELL_WARNING_M = 60.0
 
 def classify(slope_percent, valid_mask, roughness=None, wetness=None,
              blocked_mask=None, slope_breaks=DEFAULT_SLOPE_BREAKS, feedback=None,
-             cell_size_m=None):
+             cell_size_m=None, labels=None):
     """Devolve (classes uint8, metricas).
 
     `blocked_mask` marca celulas intransitaveis por restricao -- curso d'agua,
@@ -115,6 +115,11 @@ def classify(slope_percent, valid_mask, roughness=None, wetness=None,
     classes[usable & (slope_percent < breaks[2])] = CLASS_STEEP
     classes[usable & (slope_percent < breaks[1])] = CLASS_MODERATE
     classes[usable & (slope_percent < breaks[0])] = CLASS_EASY
+
+    # Os rotulos entram por parametro em vez de serem importados: este modulo e
+    # NumPy puro e roda em teste sem QGIS nenhum, e nao deve depender do
+    # carregador de idiomas. Sem rotulos, cai no portugues.
+    labels = labels or CLASS_LABELS
 
     metrics = {"limites_declividade_pct": list(breaks)}
     if cell_size_m:
@@ -168,7 +173,7 @@ def classify(slope_percent, valid_mask, roughness=None, wetness=None,
 
     total = int(usable.sum())
     distribution = {}
-    for code, label in CLASS_LABELS.items():
+    for code, label in labels.items():
         count = int((classes == code).sum())
         distribution[label] = {
             "celulas": count,
@@ -179,7 +184,7 @@ def classify(slope_percent, valid_mask, roughness=None, wetness=None,
 
     if feedback and total:
         feedback.pushInfo("Classes de transitabilidade:")
-        for code, label in CLASS_LABELS.items():
+        for code, label in labels.items():
             count = int((classes == code).sum())
             feedback.pushInfo(
                 "  {:34s} {:>12,} celulas  {:5.1f}%".format(

@@ -123,3 +123,24 @@ def test_the_loader_falls_back_instead_of_showing_the_key():
     assert i18n.text("es", "chave_que_nao_existe") == "chave_que_nao_existe"
     assert set(i18n.LANGUAGE_CODES) == set(_codes())
     assert i18n.REVIEWED <= set(_codes())
+
+
+def test_the_transitability_legend_is_translated_too():
+    """Os rótulos das classes não ficam só na tela: vão gravados na legenda do
+    próprio raster de saída, via SetCategoryNames.
+
+    Ficaram de fora quando o resto da interface foi traduzido, e o resultado era
+    um usuário japonês abrindo o mapa no QGIS e vendo a legenda em português --
+    e continuando assim depois de enviar o arquivo a outra pessoa, porque o
+    rótulo viaja dentro dele.
+    """
+    for code in ["pt", "en", "es", "fr", "zh", "ja"]:
+        data = _load(code)
+        for numero in range(1, 6):
+            chave = f"class_{numero}"
+            assert chave in data, f"{code}: falta {chave}"
+            assert str(numero) in data[chave], (
+                f"{code}/{chave} deve começar pelo número da classe")
+    source = (ROOT / "processing" / "algorithm.py").read_text(encoding="utf-8")
+    assert "_class_labels()" in source
+    assert "labels=_class_labels()" in source

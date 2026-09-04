@@ -92,3 +92,25 @@ def test_plugin_entry_point_is_declared():
     tree = ast.parse(source)
     names = [node.name for node in tree.body if isinstance(node, ast.FunctionDef)]
     assert "classFactory" in names, "__init__.py must define classFactory(iface)"
+
+
+def test_no_orphan_interface_file_is_shipped():
+    """A janela foi reescrita em código e parou de carregar o .ui, mas o arquivo
+    continuou no repositório -- 460 linhas viajando dentro do pacote do plugin
+    sem que nada as lesse."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    for ui_file in (root / "ui").glob("*.ui"):
+        referencias = [
+            path for path in root.rglob("*.py")
+            if ui_file.name in path.read_text(encoding="utf-8", errors="ignore")
+        ]
+        assert referencias, f"{ui_file.name} não é carregado por nenhum módulo"
+
+
+def test_no_stray_run_logs_are_committed():
+    """Um .log de execução foi parar no repositório e seguia para o pacote."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    sobras = [p.name for p in root.glob("*.log")]
+    assert not sobras, f"log de execução no repositório: {sobras}"

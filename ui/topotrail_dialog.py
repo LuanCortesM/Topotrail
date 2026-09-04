@@ -361,16 +361,6 @@ class _FileRow(QWidget):
         self.edit.setText(value)
 
 
-class _Toggle(QCheckBox):
-    """Interruptor deslizante. Só a aparência muda; é um QCheckBox por dentro,
-    então tudo que já lia isChecked()/toggled continua valendo."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("ttToggle")
-        self.setCursor(Qt.PointingHandCursor)
-
-
 class _Segmented(QWidget):
     """Escolha entre poucas opções, todas visíveis.
 

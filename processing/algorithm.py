@@ -52,7 +52,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.11.0"
+PLUGIN_VERSION = "0.11.1"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -1266,9 +1266,12 @@ def save_transitability_raster(classes, transform, proj, output_path, feedback=N
         table.SetColorEntry(int(code), tuple(int(c) for c in colour))
     band.SetRasterColorTable(table)
     band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
-    band.SetCategoryNames(
-        [""] + [CLASS_LABELS[code] for code in sorted(CLASS_LABELS)]
-    )
+    # Aviso sobre onde a legenda fica: o GeoTIFF nao tem lugar padrao para
+    # nomes de categoria, entao o GDAL os grava num arquivo irmao .aux.xml. O
+    # QGIS le e mostra corretamente, mas quem enviar apenas o .tif a outra
+    # pessoa perde a legenda -- envie os dois arquivos juntos.
+    rotulos = _class_labels()
+    band.SetCategoryNames([""] + [rotulos[code] for code in sorted(rotulos)])
     band.SetNoDataValue(0)
     band.WriteArray(classes.astype(np.uint8))
     band.FlushCache()
@@ -2098,6 +2101,22 @@ def save_access_route(
     )
 
     return route_path, corridor_path
+
+
+def _class_labels():
+    """Rotulos das classes de transitabilidade no idioma em vigor.
+
+    Eles nao ficam so na tela: vao gravados na legenda do proprio GeoTIFF, via
+    SetCategoryNames. Sem isto, um usuario japones abria o raster no QGIS e via
+    a legenda em portugues -- e o arquivo continuaria assim depois de enviado a
+    outra pessoa, porque o rotulo esta dentro dele.
+    """
+    try:
+        from ..ui import i18n
+        idioma = _algorithm_language()
+        return {code: i18n.text(idioma, f"class_{code}") for code in range(1, 6)}
+    except Exception:
+        return dict(CLASS_LABELS)
 
 
 def _algorithm_language():
@@ -3107,6 +3126,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                           else None),
             slope_breaks=transitability_breaks, feedback=feedback,
             cell_size_m=abs(float(transform[1])),
+            labels=_class_labels(),
         )
         transitability_path = save_transitability_raster(
             transitability_classes, transform, proj, output_path, feedback)
