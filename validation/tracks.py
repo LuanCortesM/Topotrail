@@ -59,12 +59,23 @@ def read_gpx(path):
     return out
 
 
+def _local(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
 def read_kml_linestrings(path):
-    """Geometria apenas, para trilhas sem estampa de tempo."""
+    """Geometria apenas, para trilhas sem estampa de tempo.
+
+    Casa pelo nome local da tag: os arquivos do Wikiloc usam o namespace antigo
+    earth.google.com/kml/2.0 e nao o opengis.net/kml/2.2, e um leitor preso a um
+    unico namespace simplesmente devolve zero feicoes, sem erro.
+    """
     root = ET.parse(path).getroot()
     out = []
-    for ls in root.iter(f"{KML}LineString"):
-        node = ls.find(f"{KML}coordinates")
+    for ls in root.iter():
+        if _local(ls.tag) != "LineString":
+            continue
+        node = next((c for c in ls if _local(c.tag) == "coordinates"), None)
         if node is None or not node.text:
             continue
         pts = [p.split(",") for p in node.text.split()]

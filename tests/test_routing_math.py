@@ -385,3 +385,37 @@ def test_the_route_does_depend_on_the_decay(algorithm):
 
     shared = len(set(path) & set(reference_path)) / len(path)
     assert shared < 0.5, "the decay must be able to change the route"
+
+
+def test_the_terrain_slowdown_moves_the_route(algorithm):
+    """O termo de terreno nao previu velocidade nenhuma em campo (coeficiente
+    ajustado -0,32 +- 0,18, contra os 2,0 do codigo), mas move a rota: entre 0
+    e 2,0 os caminhos compartilham menos da metade das celulas. Ou seja, e uma
+    preferencia de projeto com efeito grande, nao uma quantidade calibrada --
+    e este teste existe para que ninguem a trate como inofensiva."""
+    elevation, _ = _rolling_terrain()
+    rng = np.random.default_rng(4)
+    rows, cols = elevation.shape
+    y, x = np.mgrid[0:rows, 0:cols].astype(float)
+    score = np.clip(0.65 + 0.15*np.sin(x/5)*np.cos(y/6)
+                    + rng.normal(0, 0.05, (rows, cols)), 0, 1)
+
+    original = algorithm.TERRAIN_SLOWDOWN_MAX
+    try:
+        algorithm.TERRAIN_SLOWDOWN_MAX = 0.0
+        flat_cost = algorithm.build_route_cost(score, algorithm.ROUTE_COST_TOBLER, 6.0)
+        assert np.nanmax(flat_cost) == pytest.approx(1.0), \
+            "sem retardo, o custo e Tobler puro"
+        reference, _ = algorithm.least_cost_path(
+            flat_cost, (5, 5), (54, 54), elevation=elevation,
+            pixel_size_m=30.0, anisotropic=True)
+
+        algorithm.TERRAIN_SLOWDOWN_MAX = 2.0
+        cost = algorithm.build_route_cost(score, algorithm.ROUTE_COST_TOBLER, 6.0)
+        path, _ = algorithm.least_cost_path(
+            cost, (5, 5), (54, 54), elevation=elevation,
+            pixel_size_m=30.0, anisotropic=True)
+    finally:
+        algorithm.TERRAIN_SLOWDOWN_MAX = original
+
+    assert len(set(path) & set(reference)) / len(path) < 0.75

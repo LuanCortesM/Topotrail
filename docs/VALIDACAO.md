@@ -151,7 +151,85 @@ mudaram** para descrever declividade em vez de emitir um veredito sobre quem
 consegue passar: "1 – Suave (< 20%)" … "5 – Escarpada (> 100%)". Fixado em
 `test_the_labels_do_not_claim_a_verdict_about_the_walker`.
 
-## 6. Resultado: dependência de resolução
+## 5b. Resultado: a geometria das rotas
+
+A pergunta que faltava: a rota que o plugin desenha passa por onde as pessoas
+passam? Critério de Goodchild & Hunter (1997) — proporção da trilha real que cai
+dentro de um buffer em torno da rota modelada — sempre acompanhado do mesmo
+número para uma **linha reta** entre os mesmos extremos. A linha reta é o modelo
+nulo: se a rota do plugin não vence a linha reta, o modelo de custo não está
+contribuindo nada.
+
+### 5b.1 Deslocamentos de trabalho (caatinga, 7 trajetos, 61,5 km)
+
+| Trajeto | real | reta | plugin | concord. <250 m reta | plugin | desvio mediano reta | plugin |
+|---|---|---|---|---|---|---|---|
+| dia_18_junho_covao | 11,7 km | 2,7 | 3,9 | 15,7% | **86,4%** | 865 m | **140 m** |
+| dia_19_junho | 10,6 | 3,0 | 4,0 | 45,8% | **99,5%** | 364 m | **128 m** |
+| trajeto_1_janeiro | 14,3 | 6,5 | 6,9 | 26,6% | **96,3%** | 349 m | **91 m** |
+| trajeto_2_janeiro | 9,9 | 3,6 | 3,8 | 67,7% | **90,2%** | 167 m | **122 m** |
+| trajeto_3_janeiro | 5,3 | 3,0 | 3,3 | 49,3% | 48,8% | 259 m | 281 m |
+| trajeto_4_janeiro | 3,9 | 1,4 | 1,6 | 59,0% | 67,4% | 176 m | 179 m |
+| trajeto_5_janeiro | 5,9 | 3,5 | 3,9 | 100% | 100% | 31 m | 33 m |
+
+**O plugin vence o modelo nulo com folga em 4 dos 7 trajetos e empata nos
+outros 3.** Nos quatro casos de ganho, o desvio mediano cai de 349–865 m para
+91–140 m, uma redução de 3 a 6 vezes. Nos empates, ou o trajeto é curto e quase
+retilíneo (trajeto_5, sinuosidade 1,67, ambos com 100%), ou o modelo não
+encontrou estrutura para explorar.
+
+Viés sistemático a registrar: a rota modelada acumula muito menos subida que a
+real (por exemplo 478 m contra 1.901 m em dia_18_junho_covao). O modelo prefere
+contornar; as equipes sobem mais do que precisariam. Parte disso é objetivo de
+amostragem, parte é que o modelo não conhece o que há sob os pés.
+
+### 5b.2 O caso em que o plugin perde: travessia Marins–Itaguaré
+
+| | comprimento | sinuosidade | concord. <250 m | desvio mediano | cume | subida acumulada | adequab. média |
+|---|---|---|---|---|---|---|---|
+| Trilha real | 21,66 km | 2,43 | — | — | 2.398 m | 2.180 m | 0,643 |
+| Linha reta (controle) | 8,91 | 1,00 | 25,3% | 643 m | 2.197 m | 1.370 m | 0,659 |
+| Plugin (Tobler) | 11,01 | 1,23 | 2,7% | 1.860 m | 1.679 m | 427 m | 0,746 |
+
+Aqui o plugin é **três vezes pior que a linha reta**. O diagnóstico é claro e
+não é um defeito de implementação: a trilha real sobe a 2.398 m, que é o ponto
+mais alto de toda a cena, e acumula 2.180 m de subida. A rota do plugin sobe
+427 m — cinco vezes menos — sobre terreno de adequabilidade **maior** (0,746
+contra 0,643) e declividade menor (20,1% contra 29,9%).
+
+Ou seja: o modelo achou um caminho genuinamente mais fácil. Quem percorreu a
+travessia não estava minimizando esforço — estava subindo o Marins e o Itaguaré,
+que é o propósito da travessia. **É incompatibilidade de objetivo, não erro de
+modelo**, e só é lícito afirmar isso porque a rota modelada é mensuravelmente
+mais fácil, e não apenas diferente.
+
+**Consequência para o escopo:** o TopoTrail modela deslocamento de acesso, não
+travessia de cumes nem trilha recreativa com objetivo panorâmico. Isso passa a
+ser uma limitação declarada, não uma suposição.
+
+## 6. Resultado: cursos d'água não são evitados
+
+`CONSTRAINT_PENALTY_FACTOR = 8,0` supõe que atravessar drenagem é custoso e que
+as pessoas desviam. Teste de preferência revelada: cruzamentos de canal por km
+na trilha real contra a linha reta entre os mesmos extremos, 7 trajetos, 61,5 km.
+
+| | cruzamentos | por km |
+|---|---|---|
+| Trilhas reais | 84 | **1,37** |
+| Linha reta (controle) | 16 | 0,68 |
+
+As equipes cruzaram **o dobro** da drenagem que o acaso geométrico produziria.
+Não há evitação a calibrar — há o contrário. Em paisagem semiárida o leito seco
+é frequentemente a melhor superfície de caminhada, e num levantamento
+herpetológico a drenagem é alvo de amostragem, não obstáculo.
+
+**Decisão:** o fator não é calibrável com estes dados e passa a ser documentado
+como intensidade declarada pelo usuário, não como constante medida. A restrição
+de cursos d'água permanece **opcional e desligada por padrão**, com aviso
+explícito no código de que penalizá-la por padrão afastaria a rota justamente do
+que este tipo de usuário quer visitar.
+
+## 6b. Resultado: dependência de resolução
 
 Mesmo terreno da Mantiqueira, variando apenas o tamanho da célula:
 
@@ -172,15 +250,51 @@ e a emitir aviso acima de 60 m. **Nenhum número tirado deste mapa é
 interpretável sem o tamanho da célula ao lado**, e isso vale para qualquer
 seção de métodos que os cite.
 
+## 6c. Resultado: o retardo por terreno não prevê ritmo
+
+O modelo afirma que o tempo é `tobler(gradiente) × (1 + 2,0 × (1 − S))`, com S a
+adequabilidade. Em logaritmo isso é linear e o coeficiente é estimável. Ajuste
+conjunto sobre 270 janelas da caatinga:
+
+| Parâmetro | No código | Ajustado |
+|---|---|---|
+| vmax | 6,0 | 2,22 ± 0,16 |
+| decay | 3,5 | 1,17 ± 0,40 |
+| **SLOWDOWN** | **2,0** | **−0,32 ± 0,18** |
+
+O coeficiente sai indistinguível de zero e com o sinal trocado. A correlação
+entre adequabilidade e log da velocidade é −0,064. Acrescentar o termo eleva o
+R² de 0,024 para 0,034. **Como previsão de tempo, a constante não tem apoio
+empírico nenhum.**
+
+Duas ressalvas contra sobreinterpretar: a adequabilidade vem do mesmo MDE de
+90 m e é quase colinear com a declividade que Tobler já usa, e ela não contém
+vegetação — que é provavelmente o que de fato governa o ritmo na caatinga. O
+resultado diz que *este proxy* não prevê ritmo, não que o terreno seja
+irrelevante.
+
+**Decisão: a constante fica, com o papel redefinido.** Ela não foi removida
+porque sua função na rota não é prever tempo, e sim exprimir preferência —
+caminhar por terreno mais suave é preferível por risco, esforço e erosão, mesmo
+que o cronômetro não registre diferença. Mas isso é escolha de projeto, não
+quantidade medida, e o nome "slowdown" prometia a segunda coisa. O efeito sobre
+a geometria é grande: entre 0 e 2,0 as rotas compartilham 45% das células.
+**É a maior alavanca ainda não calibrada do modelo**, e quem publicar números do
+plugin deve declarar o valor usado.
+
 ## 7. O que continua sem validação
 
 Honestidade sobre o que este trabalho *não* resolveu:
 
-- `CONSTRAINT_PENALTY_FACTOR = 8,0` e `TERRAIN_SLOWDOWN_MAX = 2,0` continuam
-  empíricos e sem contraparte medida. Nenhum dado disponível os testa.
-- A **geometria** das rotas ainda não foi comparada com as trilhas reais
-  (concordância por buffer de Goodchild–Hunter contra um controle em linha
-  reta). A travessia Marins–Itaguaré permite fazê‑lo e é o próximo passo.
+- `TERRAIN_SLOWDOWN_MAX = 2,0` foi medido e **não confirmado** (§6c): governa a
+  geometria e não tem valor empírico que o sustente.
+- `CONSTRAINT_PENALTY_FACTOR = 8,0` não é calibrável com estes dados, porque o
+  comportamento que ele modela (evitar drenagem) não ocorre (§6).
+- Não há, neste conjunto, nenhuma trilha cujo objetivo declarado seja
+  deslocamento eficiente ponto a ponto. Os trajetos de trabalho se aproximam
+  disso e é por isso que a concordância é boa, mas são transectos de
+  amostragem. A validação definitiva exige rota de acesso planejada para ser
+  eficiente, percorrida e registrada.
 - A amostra da Mantiqueira com estampa de tempo é pequena (17 janelas úteis) e
   não sustenta calibração própria; toda a calibração de Tobler vem da caatinga.
 - Os trajetos são de uma única equipe, com um perfil de carga e de comportamento

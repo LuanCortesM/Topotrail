@@ -136,12 +136,41 @@ FIELD_SURVEY_SPEED_KMH = 2.4
 
 # Quanto o terreno ruim retarda a caminhada, alem da inclinacao. Adequabilidade
 # 1 nao retarda nada (Tobler puro); adequabilidade 0 multiplica o tempo por
-# 1 + este valor. E uma constante empirica, como as demais deste bloco.
+# 1 + este valor.
+#
+# MEDIDO E NAO CONFIRMADO. Ajustando o coeficiente contra 270 janelas de campo
+# na caatinga, o valor sai em -0,32 +- 0,18 -- indistinguivel de zero e de sinal
+# trocado -- e a correlacao entre adequabilidade e log da velocidade e -0,064.
+# Acrescentar o termo eleva o R2 de 0,024 para 0,034. Como *previsao de tempo*,
+# esta constante nao tem apoio empirico nenhum: a adequabilidade derivada do MDE
+# nao antecipa o ritmo de ninguem.
+#
+# Ela nao foi removida porque o papel dela na rota nao e prever tempo, e exprimir
+# preferencia: caminhar por terreno mais suave e preferivel por risco, por
+# esforco e por erosao, mesmo que o cronometro nao registre diferenca. Mas isso
+# e uma escolha de projeto, nao uma quantidade medida, e o nome "slowdown"
+# prometia a segunda coisa. O efeito sobre a geometria e grande -- entre 0 e 2,0
+# as rotas compartilham 45% das celulas -- entao esta e a maior alavanca ainda
+# nao calibrada do modelo, e quem publicar numeros do plugin deve declarar o
+# valor usado. Ver docs/VALIDACAO.md, secao 7.
 TERRAIN_SLOWDOWN_MAX = 2.0
 
+# ATENCAO ao usar cursos d'agua como restricao em paisagem sazonalmente seca.
+# Nos trajetos de campo da caatinga, as trilhas reais cruzaram 1,37 canais por
+# km contra 0,68 da linha reta entre os mesmos extremos: as equipes cruzaram
+# DUAS VEZES MAIS drenagem do que o acaso geometrico, e nao menos. Nao ha
+# evitacao revelada a calibrar. Em terreno semiarido o leito seco costuma ser a
+# melhor superficie de caminhada, e num levantamento herpetologico a drenagem e
+# alvo de amostragem, nao obstaculo. Penalizar drenagem por padrao afastaria a
+# rota justamente do que o usuario quer visitar. Por isso a restricao e opcional
+# e permanece desligada por padrao. Ver docs/VALIDACAO.md, secao 6.
+#
 # O que fazer com celulas restritas (cursos d'agua, camada vetorial do usuario).
 CONSTRAINT_AVOID = 0        # exclusao dura
 CONSTRAINT_PENALISE = 1     # encarece sem proibir
+# Nao calibrado: nao existe, nos dados disponiveis, comportamento de evitacao a
+# partir do qual estimar este fator. Fica como intensidade declarada pelo
+# usuario, nao como constante medida.
 CONSTRAINT_PENALTY_FACTOR = 8.0
 
 # Sentido de um criterio raster fornecido pelo usuario: valores altos podem ser
