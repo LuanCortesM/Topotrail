@@ -22,8 +22,8 @@ from scipy import ndimage  # noqa: E402
 from shapely.geometry import LineString  # noqa: E402
 from shapely.ops import unary_union  # noqa: E402
 from qgis.PyQt.QtCore import QCoreApplication  # noqa: E402
-from .hydrology import stream_network  # noqa: E402
-from .terrain import derive_terrain  # noqa: E402
+from .hydrology import analyse_hydrology  # noqa: E402
+from .terrain import derive_terrain, roughness_index  # noqa: E402
 from qgis.core import (  # noqa: E402
     QgsProcessingAlgorithm,
     QgsProcessingParameterRasterLayer,
@@ -44,8 +44,13 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.6.0"
+PLUGIN_VERSION = "0.6.1"
 STRICT_CRS_MODE = True
+
+# Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
+# um valor que nenhum MDE real assume: -9999 m fica muito abaixo do ponto mais
+# profundo do planeta.
+DEM_FILL_NODATA = -9999.0
 
 # Empirical modelling constants. They preserve the current published behavior,
 # but are named so the methodological choices are visible and auditable.
@@ -75,7 +80,21 @@ FEET_TO_METRES = 0.3048
 # Como a adequabilidade vira custo de deslocamento.
 ROUTE_COST_INVERSE = 0      # 1/(S + eps), comportamento das versoes 0.5.x
 ROUTE_COST_EXPONENTIAL = 1  # exp(k(1 - S)), contraste controlado pelo usuario
+ROUTE_COST_TOBLER = 2       # tempo de caminhada anisotropico
 DEFAULT_ROUTE_CONTRAST = 6.0
+
+# Funcao de caminhada de Tobler (1993), em km/h, para declive S = dz/dx com
+# sinal: W = 6 * exp(-3.5 * |S + 0.05|). O maximo de 6 km/h ocorre em S = -0.05,
+# uma descida suave, e nao no plano -- e essa assimetria e justamente o que o
+# modelo isotropico nao representa.
+TOBLER_MAX_SPEED_KMH = 6.0
+TOBLER_DECAY = 3.5
+TOBLER_OPTIMUM_SLOPE = 0.05
+
+# Quanto o terreno ruim retarda a caminhada, alem da inclinacao. Adequabilidade
+# 1 nao retarda nada (Tobler puro); adequabilidade 0 multiplica o tempo por
+# 1 + este valor. E uma constante empirica, como as demais deste bloco.
+TERRAIN_SLOWDOWN_MAX = 2.0
 
 # O que fazer com celulas restritas (cursos d'agua, camada vetorial do usuario).
 CONSTRAINT_AVOID = 0        # exclusao dura
@@ -357,11 +376,22 @@ def ensure_projected_working_crs(
         working_crs = automatic_utm_crs_for_geographic_raster(original_metadata)
         prepared_path = os.path.join(temp_dir, "dem_trabalho_metrico.tif")
         reason = "CRS geografico reprojetado para UTM automatica"
+        # dstNodata e obrigatorio aqui. A reprojecao de uma grade geografica
+        # para UTM gira o retangulo, e o preenchimento das quinas sai como zero.
+        # Ate a 0.5.x isso passava despercebido porque os rasters derivados,
+        # alinhados com nodata -9999, excluiam essas celulas de tabela. Quando a
+        # declividade e a curvatura passaram a ser derivadas do proprio MDE essa
+        # protecao indireta sumiu, e as 211.423 celulas de quina de uma cena de
+        # teste entraram na analise como terreno valido ao nivel do mar --
+        # visivel na rugosidade, que acusou 1047 m de desnivel entre vizinhos a
+        # 30 m de distancia, na fronteira entre o terreno real e o zero.
         warp_options = gdal.WarpOptions(
             dstSRS=working_crs,
             resampleAlg=gdal.GRA_Bilinear,
             format="GTiff",
             creationOptions=["COMPRESS=LZW"],
+            srcNodata=original_metadata.get("nodata"),
+            dstNodata=DEM_FILL_NODATA,
         )
         warp_raster_checked(source_path, prepared_path, warp_options, "reprojecao do DEM para CRS metrico")
         reprojected = True
@@ -673,6 +703,11 @@ def build_route_cost(score_array, cost_model, contrast, penalty_mask=None, feedb
     Plano demais para desviar a rota: a rota resultante teve sinuosidade 1,04,
     ou seja, praticamente a linha reta entre origem e destino.
 
+    O modelo de Tobler e diferente em natureza: o custo passa a ser tempo, em
+    horas, e depende da direcao do passo -- subir 100 m custa muito mais que
+    descer os mesmos 100 m. Nesse modo este array nao e um custo, e um fator de
+    retardo que multiplica o tempo calculado passo a passo dentro do A*.
+
     O modelo exponencial, `exp(k(1 - S))`, mantem o contraste independentemente
     de quao comprimida esteja a distribuicao de S, e `k` passa a ser o controle
     explicito de quanto vale a pena desviar para achar terreno melhor. Na mesma
@@ -680,6 +715,20 @@ def build_route_cost(score_array, cost_model, contrast, penalty_mask=None, feedb
     da rota de 0,810 para 0,848, ao custo de 14% de comprimento.
     """
     finite = np.isfinite(score_array)
+    if cost_model == ROUTE_COST_TOBLER:
+        # Aqui o array nao e custo: e um fator de retardo adimensional, aplicado
+        # sobre o tempo que a funcao de Tobler calcula para cada passo.
+        cost = np.where(finite, 1.0 + TERRAIN_SLOWDOWN_MAX * (1.0 - score_array), np.inf)
+        if penalty_mask is not None:
+            cost = np.where(penalty_mask & finite, cost * CONSTRAINT_PENALTY_FACTOR, cost)
+        if feedback:
+            usable = cost[np.isfinite(cost)]
+            if usable.size:
+                feedback.pushInfo(
+                    "Retardo por terreno (Tobler): min={:.2f}x, mediana={:.2f}x, max={:.2f}x".format(
+                        float(usable.min()), float(np.median(usable)), float(usable.max()))
+                )
+        return cost
     if cost_model == ROUTE_COST_EXPONENTIAL:
         cost = np.where(finite, np.exp(float(contrast) * (1.0 - score_array)), np.inf)
     else:
@@ -1383,7 +1432,29 @@ def nearest_valid_cell(valid_mask, row, col, radius=NEAREST_VALID_CELL_RADIUS):
     return best
 
 
-def least_cost_path(cost_array, start_rc, end_rc):
+def tobler_hours(delta_z, horizontal_m):
+    """Tempo de caminhada de um passo, em horas, pela funcao de Tobler.
+
+    Tobler, W. (1993) Three presentations on geographical analysis and modeling.
+    NCGIA Technical Report 93-1.
+
+    `delta_z` e a variacao de altitude do passo, com sinal, e `horizontal_m` o
+    seu comprimento horizontal. A velocidade maxima nao esta no plano e sim numa
+    descida suave; subidas e descidas fortes sao ambas lentas, mas nao pelo
+    mesmo tanto. Nenhum modelo isotropico consegue representar isso.
+    """
+    if horizontal_m <= 0:
+        return 0.0
+    slope = delta_z / horizontal_m
+    speed_kmh = TOBLER_MAX_SPEED_KMH * np.exp(
+        -TOBLER_DECAY * abs(slope + TOBLER_OPTIMUM_SLOPE))
+    if speed_kmh <= 1e-6:
+        return np.inf
+    return (horizontal_m / 1000.0) / speed_kmh
+
+
+def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
+                    pixel_size_m=None, anisotropic=False):
     rows, cols = cost_array.shape
     start_index = start_rc[0] * cols + start_rc[1]
     end_index = end_rc[0] * cols + end_rc[1]
@@ -1397,8 +1468,20 @@ def least_cost_path(cost_array, start_rc, end_rc):
         raise Exception("A area de busca da rota nao contem celulas viaveis.")
     min_step_cost = float(np.nanmin(finite_costs))
 
+    if anisotropic:
+        if elevation is None or pixel_size_m is None:
+            raise ValueError(
+                "O modelo anisotropico precisa da altitude e do tamanho do pixel.")
+        # A heuristica precisa continuar admissivel: o tempo por metro nunca fica
+        # abaixo do de Tobler na sua velocidade maxima, e o retardo por terreno
+        # nunca fica abaixo do seu minimo na cena.
+        min_hours_per_m = 1.0 / (TOBLER_MAX_SPEED_KMH * 1000.0)
+        heuristic_unit = min_hours_per_m * min_step_cost * float(pixel_size_m)
+    else:
+        heuristic_unit = min_step_cost
+
     def heuristic(row, col):
-        return np.hypot(row - end_rc[0], col - end_rc[1]) * min_step_cost
+        return np.hypot(row - end_rc[0], col - end_rc[1]) * heuristic_unit
 
     heap = [(heuristic(start_rc[0], start_rc[1]), 0.0, start_index)]
 
@@ -1434,7 +1517,17 @@ def least_cost_path(cost_array, start_rc, end_rc):
             next_index = next_row * cols + next_col
             if visited[next_index]:
                 continue
-            move_cost = ((current_cost + next_cost) / 2.0) * step_length
+            if anisotropic:
+                delta_z = float(elevation[next_row, next_col] - elevation[row, col])
+                if not np.isfinite(delta_z):
+                    continue
+                horizontal_m = step_length * float(pixel_size_m)
+                move_cost = tobler_hours(delta_z, horizontal_m) * (
+                    (current_cost + next_cost) / 2.0)
+                if not np.isfinite(move_cost):
+                    continue
+            else:
+                move_cost = ((current_cost + next_cost) / 2.0) * step_length
             candidate_dist = current_dist + move_cost
             if candidate_dist < dist[next_index]:
                 dist[next_index] = candidate_dist
@@ -1543,7 +1636,21 @@ def save_access_route(
             f"margem {margin_m:.0f} m"
         )
 
-    path_cells, accumulated_cost = least_cost_path(cost_crop, local_start, local_end)
+    anisotropic = cost_model == ROUTE_COST_TOBLER
+    elevation_crop = None
+    pixel_size_m = None
+    if anisotropic:
+        if elevation_array is None:
+            raise Exception(
+                "O modelo de tempo de caminhada precisa do MDE, que nao foi repassado."
+            )
+        elevation_crop = elevation_array[row_min:row_max, col_min:col_max]
+        pixel_size_m = float(np.sqrt(max(estimate_pixel_area_m2(
+            transform, score_array.shape, proj), 1e-9)))
+
+    path_cells, accumulated_cost = least_cost_path(
+        cost_crop, local_start, local_end,
+        elevation=elevation_crop, pixel_size_m=pixel_size_m, anisotropic=anisotropic)
     if len(path_cells) < 2:
         raise Exception(
             "O ponto inicial e o ponto final caem na mesma celula do raster. "
@@ -1556,6 +1663,13 @@ def save_access_route(
         "custo": [accumulated_cost],
         "vertices": [len(coordinates)],
     }
+    if anisotropic:
+        # No modelo de Tobler o custo acumulado tem unidade: horas.
+        route_attributes["tempo_h"] = [float(accumulated_cost)]
+        route_attributes["tempo_hms"] = [
+            "{:d}h{:02d}".format(int(accumulated_cost),
+                                 int(round((accumulated_cost % 1.0) * 60)))
+        ]
     if elevation_array is not None:
         route_altitudes = [
             float(elevation_array[row + row_min, col + col_min])
@@ -1642,6 +1756,14 @@ def save_access_route(
         feedback.pushInfo(f"Corredor de acesso salvo: {corridor_path}")
         if np.isfinite(length):
             feedback.pushInfo(f"Comprimento estimado da rota: {length:.1f} m")
+            if anisotropic:
+                feedback.pushInfo(
+                    "Tempo estimado de caminhada (Tobler, anisotropico): {:.2f} h "
+                    "({:d}h{:02d}), velocidade media {:.2f} km/h.".format(
+                        accumulated_cost, int(accumulated_cost),
+                        int(round((accumulated_cost % 1.0) * 60)),
+                        (length / 1000.0) / max(accumulated_cost, 1e-9))
+                )
     append_diagnostic_log(
         log_path,
         "rota_calculada",
@@ -1683,6 +1805,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
     WEIGHT_SLOPE = "WEIGHT_SLOPE"
     WEIGHT_CURVH = "WEIGHT_CURVH"
     WEIGHT_CURVV = "WEIGHT_CURVV"
+    WEIGHT_WETNESS = "WEIGHT_WETNESS"
+    WEIGHT_ROUGHNESS = "WEIGHT_ROUGHNESS"
     MIN_PATCH_AREA_HA = "MIN_PATCH_AREA_HA"
     THRESHOLD = "THRESHOLD"
     AUTO_PERCENTILE = "AUTO_PERCENTILE"
@@ -1853,6 +1977,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             (self.WEIGHT_SLOPE, "Peso da declividade", 1.0),
             (self.WEIGHT_CURVH, "Peso da curvatura horizontal", 1.0),
             (self.WEIGHT_CURVV, "Peso da curvatura vertical", 1.0),
+            # Criterios novos na 0.6.1. Peso zero por padrao: quem ja usa o
+            # plugin nao tem os resultados alterados sem pedir.
+            (self.WEIGHT_WETNESS, "Peso da umidade do terreno (TWI)", 0.0),
+            (self.WEIGHT_ROUGHNESS, "Peso da rugosidade do terreno (TRI)", 0.0),
         ]:
             self.addParameter(
                 QgsProcessingParameterNumber(
@@ -1946,7 +2074,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 self.ROUTE_COST_MODEL,
                 self.tr("Modelo de custo da rota"),
                 options=[self.tr("Inverso da adequabilidade (0.5.x)"),
-                         self.tr("Exponencial - segue mais o relevo")],
+                         self.tr("Exponencial - segue mais o relevo"),
+                         self.tr("Tempo de caminhada (Tobler, anisotropico)")],
                 defaultValue=ROUTE_COST_INVERSE,
             )
         )
@@ -2072,7 +2201,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         slope_weight = self.parameterAsDouble(parameters, self.WEIGHT_SLOPE, context)
         curvh_weight = self.parameterAsDouble(parameters, self.WEIGHT_CURVH, context)
         curvv_weight = self.parameterAsDouble(parameters, self.WEIGHT_CURVV, context)
-        total_weight = altitude_weight + slope_weight + curvh_weight + curvv_weight
+        wetness_weight = self.parameterAsDouble(parameters, self.WEIGHT_WETNESS, context)
+        roughness_weight = self.parameterAsDouble(parameters, self.WEIGHT_ROUGHNESS, context)
+        total_weight = (altitude_weight + slope_weight + curvh_weight + curvv_weight
+                        + wetness_weight + roughness_weight)
 
         output_path = self.parameterAsFileOutput(parameters, self.OUTPUT_FILE, context)
         output_format_idx = self.parameterAsEnum(parameters, self.OUTPUT_FORMAT, context)
@@ -2134,7 +2266,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             message = "A soma dos pesos deve ser maior que zero."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise ValueError(message)
-        if any(weight < 0 for weight in [altitude_weight, slope_weight, curvh_weight, curvv_weight]):
+        if any(weight < 0 for weight in [altitude_weight, slope_weight, curvh_weight,
+                                         curvv_weight, wetness_weight, roughness_weight]):
             message = "Os pesos nao podem ser negativos."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise ValueError(message)
@@ -2315,10 +2448,13 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
 
         # ---- restricoes: cursos d'agua e camada vetorial do usuario ----
         restricted_mask = np.zeros(dem_data.shape, dtype=bool)
-        if streams_from_dem:
-            channels, stream_metrics = stream_network(
-                dem_data, transform, stream_min_basin_km2, feedback)
+        twi_data = None
+        if streams_from_dem or wetness_weight > 0:
+            channels, twi_data, stream_metrics = analyse_hydrology(
+                dem_data, transform, stream_min_basin_km2, feedback,
+                warn_about_width=streams_from_dem)
             append_diagnostic_log(debug_log_path, "drenagem_extraida_do_mde", **stream_metrics)
+        if streams_from_dem:
             if constraint_buffer_m > 0:
                 pixels = max(1, int(round(meters_to_pixels(transform, dem_data.shape, proj, constraint_buffer_m))))
                 channels = ndimage.binary_dilation(
@@ -2390,13 +2526,39 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             pixels_declividade_acima_limite=int(np.sum(valid_mask & (slope_data > max_slope))),
         )
 
+        roughness_data = None
+        if roughness_weight > 0:
+            roughness_data = roughness_index(dem_data, transform, feedback)
+            append_diagnostic_log(
+                debug_log_path, "rugosidade_calculada",
+                metodo="TRI (Riley et al. 1999)",
+                **{k: v for k, v in array_diagnostics(roughness_data).items()
+                   if k in ("min", "p50", "p95", "max")})
+
+        # Criterios opcionais. Ambos sao "menos e melhor": terreno mais seco e
+        # mais liso caminha melhor, entao a nota inverte a normalizacao robusta.
+        wetness_norm = None
+        if wetness_weight > 0:
+            if twi_data is None:
+                raise Exception(
+                    "O peso da umidade do terreno exige a hidrografia extraida do MDE. "
+                    "Marque \"Considerar cursos d'agua extraidos do MDE\" ou zere esse peso."
+                )
+            wetness_norm = (1.0 - robust_abs_norm(twi_data, valid_mask)).astype(np.float32)
+        roughness_norm = None
+        if roughness_weight > 0:
+            roughness_norm = (1.0 - robust_abs_norm(roughness_data, valid_mask)).astype(np.float32)
+
         altitude_component = altitude_weight * altitude_norm
         slope_component = slope_weight * slope_norm
         curvh_component = curvh_weight * curvh_norm
         curvv_component = curvv_weight * curvv_norm
-        raw_score = (
-            altitude_component + slope_component + curvh_component + curvv_component
-        ) / total_weight
+        raw_score = altitude_component + slope_component + curvh_component + curvv_component
+        if wetness_norm is not None:
+            raw_score = raw_score + wetness_weight * np.nan_to_num(wetness_norm)
+        if roughness_norm is not None:
+            raw_score = raw_score + roughness_weight * np.nan_to_num(roughness_norm)
+        raw_score = raw_score / total_weight
         zone_score = np.where(zone_constraint_mask, raw_score, np.nan).astype(np.float32)
         route_score = np.where(route_constraint_mask, raw_score, np.nan).astype(np.float32)
         output_score = zone_score if generate_zones else route_score

@@ -291,6 +291,48 @@ Any vector layer can be used the same way, with a buffer — for a legally
 protected riparian strip, an exclusion around a road, or a tenure boundary.
 Restrictions can either exclude cells outright or simply make them expensive.
 
+## Walking time instead of an abstract cost
+
+The route model was isotropic: a step cost the same uphill and downhill, which
+is the criticism a reader familiar with GRASS `r.walk` will raise first. The
+route cost model now offers **Tobler's hiking function**, which is anisotropic
+and returns a real unit:
+
+    W = 6 · exp(−3.5 · |S + 0.05|)   km/h,   S = signed rise over run
+
+Maximum speed is not on the flat but on a gentle descent, and that asymmetry is
+precisely what an isotropic surface cannot express. Suitability is folded in as
+a dimensionless slowdown — perfect terrain walks at Tobler speed, the worst
+terrain takes three times as long — so the accumulated cost is **hours**, and
+the route carries `tempo_h` as an attribute.
+
+On the test area a 36.8 km route came out at 10h15, averaging 3.59 km/h. With
+watercourses avoided and the two new criteria enabled, 44.5 km at 15h25 and
+2.89 km/h. Those are numbers a field team can plan around; `custo = 1356.70`
+was not.
+
+Tobler describes an unburdened walker on an existing path. It is an estimate of
+relative effort, not a schedule.
+
+## Two more things the DEM already knows
+
+Both are derived from the DEM, both are weighted **zero by default** so existing
+results do not move, and both cost almost nothing to compute.
+
+**Topographic wetness index**, `ln(a / tan β)` (Beven & Kirkby 1979). The flow
+accumulation the drainage network needs already gives `a`, so this is nearly
+free. High values mark ground that collects water and drains badly — valley
+floors, wet headwaters, bogs. That matters twice for a trail: mud underfoot
+now, and accelerated erosion later, which is the dominant mechanism of trail
+degradation in the literature. On the test area, weighting it at 1.0 moved the
+selected zone from 16.3% to 12.3% and from 638 patches to 869: it discriminates.
+
+**Terrain ruggedness index**, the mean absolute elevation difference to the
+eight neighbours (Riley et al. 1999), in metres. It is independent of slope,
+which is the point: it separates a smooth grassy hillside from a boulder field
+at the same average inclination — the thing that actually decides whether you
+can walk there, and the thing slope alone cannot see.
+
 ## How the model works
 
 TopoTrail combines Boolean constraints — elevation range and maximum slope —
@@ -317,11 +359,13 @@ should keep strict mode enabled and fix the CRS at the source.
 Topographic suitability is calculated as:
 
 ```text
-S = (w_alt * A + w_slope * D + w_curv_h * CH + w_curv_v * CV) / sum_of_weights
+S = (w_alt·A + w_slope·D + w_curv_h·CH + w_curv_v·CV + w_wet·W + w_rough·R) / Σw
 ```
 
 where `S` is final suitability, `A` is normalised elevation, `D` is inverted
-normalised slope, `CH` and `CV` are curvature scores, and `w` are user-defined
+normalised slope, `CH` and `CV` are curvature scores, `W` and `R` are the
+optional wetness and ruggedness scores (both inverted — drier and smoother is
+better, both weighted zero unless you ask for them), and `w` are user-defined
 weights. Negative weights are rejected and the sum of weights must be greater
 than zero.
 

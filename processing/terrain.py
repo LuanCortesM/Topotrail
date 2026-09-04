@@ -125,6 +125,54 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
     return curv_h, curv_v
 
 
+def roughness_index(dem_array, transform=None, feedback=None):
+    """Terrain Ruggedness Index: diferenca absoluta media para os 8 vizinhos.
+
+    Riley, S.J., DeGloria, S.D. & Elliot, R. (1999) A terrain ruggedness index
+    that quantifies topographic heterogeneity. Intermountain Journal of Sciences
+    5: 23-27.
+
+    Em metros, e independente da declividade: distingue uma encosta lisa de
+    campo de um campo de blocos com a mesma inclinacao media -- que e
+    exatamente o que decide se da para caminhar ali e o que a declividade
+    sozinha nao enxerga. Celulas de borda usam apenas os vizinhos existentes.
+    """
+    dem = dem_array.astype(np.float64)
+    valid = np.isfinite(dem)
+    rows, cols = dem.shape
+
+    total = np.zeros((rows, cols), np.float64)
+    count = np.zeros((rows, cols), np.float64)
+    neighbours = ((-1, -1), (-1, 0), (-1, 1), (0, -1),
+                  (0, 1), (1, -1), (1, 0), (1, 1))
+    for d_row, d_col in neighbours:
+        shifted = np.full((rows, cols), np.nan)
+        shifted_valid = np.zeros((rows, cols), bool)
+        dst = (slice(max(0, -d_row), rows + min(0, -d_row)),
+               slice(max(0, -d_col), cols + min(0, -d_col)))
+        src = (slice(max(0, d_row), rows + min(0, d_row)),
+               slice(max(0, d_col), cols + min(0, d_col)))
+        shifted[dst] = dem[src]
+        shifted_valid[dst] = valid[src]
+        usable = valid & shifted_valid
+        total[usable] += np.abs(dem[usable] - shifted[usable])
+        count[usable] += 1.0
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        tri = np.where(count > 0, total / count, np.nan).astype(np.float32)
+    tri[~valid] = np.nan
+
+    if feedback:
+        finite = tri[np.isfinite(tri)]
+        if finite.size:
+            feedback.pushInfo(
+                "Rugosidade (TRI) derivada do MDE: p50={:.2f} m, p90={:.2f} m, max={:.2f} m".format(
+                    float(np.percentile(finite, 50)), float(np.percentile(finite, 90)),
+                    float(finite.max()))
+            )
+    return tri
+
+
 def derive_terrain(dem_array, transform, feedback=None):
     """Slope (percent) plus both curvatures, from one DEM in a metric CRS."""
     slope = slope_percent_from_dem(dem_array, transform, feedback)

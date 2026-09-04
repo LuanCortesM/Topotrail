@@ -29,6 +29,7 @@ threshold:
    Vision, Graphics and Image Processing 28: 323-344).
 3. **Flow accumulation** is propagated in descending elevation order.
 4. Cells whose upslope contributing area exceeds the threshold are channels.
+5. The same accumulation gives the Topographic Wetness Index for free.
 
 The threshold is a real methodological choice and should be reported. A useful
 check is drainage density: humid mountainous terrain typically falls between
@@ -63,6 +64,11 @@ MAX_HYDROLOGY_CELLS = 1_200_000
 # Limite de iteracoes do preenchimento. Cada iteracao e uma passagem NumPy sobre
 # a grade inteira; na pratica a convergencia vem em dezenas de passagens.
 MAX_FILL_ITERATIONS = 400
+
+# Piso da declividade no denominador do TWI. tan(beta) tende a zero em terreno
+# plano e o indice iria ao infinito; 0.001 corresponde a 0,057 graus, abaixo da
+# precisao de qualquer MDE.
+MIN_TAN_BETA = 0.001
 
 
 def fill_depressions(dem_array, feedback=None):
@@ -174,10 +180,49 @@ def flow_accumulation(direction, valid, filled):
     return accumulated
 
 
-def stream_network(dem_array, transform, min_basin_km2=1.0, feedback=None):
-    """Mascara booleana dos canais, mais metricas para o log de diagnostico.
+def wetness_index(accumulated, filled, pixel_size_x, pixel_size_y, valid):
+    """Indice topografico de umidade: ln(a / tan(beta)).
 
-    Devolve (mascara, metricas). `min_basin_km2` e a area de contribuicao a
+    Beven, K.J. & Kirkby, M.J. (1979) A physically based, variable contributing
+    area model of basin hydrology. Hydrological Sciences Bulletin 24: 43-69.
+
+    `a` e a area de contribuicao especifica -- area a montante dividida pela
+    largura da curva de nivel, aqui o tamanho da celula. Valores altos indicam
+    terreno que recebe muita agua e escoa mal: fundo de vale, cabeceira umida,
+    brejo. Para trilha isso importa duas vezes -- lama e atoleiro no uso, e
+    erosao acelerada ao longo do tempo, que e o mecanismo dominante de
+    degradacao de trilha na literatura.
+
+    Calculado sobre a superficie preenchida, como e padrao, para que a
+    declividade seja consistente com as direcoes de fluxo.
+    """
+    rows, cols = accumulated.shape
+    cell_area = pixel_size_x * pixel_size_y
+    contour_width = (pixel_size_x + pixel_size_y) / 2.0
+    specific_area = (accumulated.astype(np.float64) * cell_area) / contour_width
+
+    surface = np.where(np.isfinite(filled), filled, np.nan)
+    dz_dy, dz_dx = np.gradient(surface, pixel_size_y, pixel_size_x)
+    tan_beta = np.maximum(np.hypot(dz_dx, dz_dy), MIN_TAN_BETA)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        twi = np.log(np.maximum(specific_area, 1e-6) / tan_beta)
+    twi = np.where(valid & np.isfinite(twi), twi, np.nan).astype(np.float32)
+    return twi
+
+
+def stream_network(dem_array, transform, min_basin_km2=1.0, feedback=None):
+    """Compatibilidade: devolve apenas a mascara de canais e as metricas."""
+    channels, _twi, metrics = analyse_hydrology(
+        dem_array, transform, min_basin_km2, feedback)
+    return channels, metrics
+
+
+def analyse_hydrology(dem_array, transform, min_basin_km2=1.0, feedback=None,
+                      warn_about_width=True):
+    """Rede de drenagem e indice de umidade, numa unica passagem.
+
+    Devolve (canais, twi, metricas). `min_basin_km2` e a area de contribuicao a
     partir da qual uma celula e considerada canal. Grades acima de
     MAX_HYDROLOGY_CELLS sao reamostradas por um fator inteiro para o calculo e
     a mascara e devolvida na resolucao original.
@@ -208,6 +253,7 @@ def stream_network(dem_array, transform, min_basin_km2=1.0, feedback=None):
     filled = fill_depressions(work, feedback=feedback)
     direction = flow_direction(filled, work_px, work_py)
     accumulated = flow_accumulation(direction, valid, filled)
+    twi = wetness_index(accumulated, filled, work_px, work_py, valid)
 
     pixel_area_km2 = (work_px * work_py) / 1e6
     channels = valid & ((accumulated * pixel_area_km2) >= float(min_basin_km2))
@@ -237,15 +283,22 @@ def stream_network(dem_array, transform, min_basin_km2=1.0, feedback=None):
         # A mascara e reamostrada por blocos, entao um canal nunca fica mais
         # estreito que o pixel de trabalho, por menor que seja o buffer pedido.
         "largura_minima_efetiva_m": max(work_px, work_py),
+        "twi_p05": float(np.nanpercentile(twi, 5)) if np.any(np.isfinite(twi)) else None,
+        "twi_p50": float(np.nanpercentile(twi, 50)) if np.any(np.isfinite(twi)) else None,
+        "twi_p95": float(np.nanpercentile(twi, 95)) if np.any(np.isfinite(twi)) else None,
     }
 
     if factor > 1:
-        channels = np.repeat(np.repeat(channels, factor, axis=0), factor, axis=1)
-        channels = channels[:full_rows, :full_cols]
-        if channels.shape != dem_array.shape:                    # borda truncada
-            padded = np.zeros(dem_array.shape, bool)
-            padded[:channels.shape[0], :channels.shape[1]] = channels
-            channels = padded
+        def expand(array, fill):
+            grown = np.repeat(np.repeat(array, factor, axis=0), factor, axis=1)
+            grown = grown[:full_rows, :full_cols]
+            if grown.shape != dem_array.shape:                   # borda truncada
+                padded = np.full(dem_array.shape, fill, dtype=array.dtype)
+                padded[:grown.shape[0], :grown.shape[1]] = grown
+                grown = padded
+            return grown
+        channels = expand(channels, False)
+        twi = expand(twi, np.nan)
 
     if feedback:
         density = metrics["densidade_drenagem_km_por_km2"]
@@ -254,7 +307,7 @@ def stream_network(dem_array, transform, min_basin_km2=1.0, feedback=None):
             "{:,.0f} km2, densidade {:.2f} km/km2.".format(
                 float(min_basin_km2), network_km, area_km2, density or 0.0)
         )
-        if factor > 1:
+        if factor > 1 and warn_about_width:
             feedback.pushWarning(
                 "A rede foi calculada em pixel de {:.0f} m, entao cada curso d'agua "
                 "ocupa pelo menos essa largura ao voltar para a grade do MDE -- um "
@@ -269,4 +322,4 @@ def stream_network(dem_array, transform, min_basin_km2=1.0, feedback=None):
                 "demais aumente o limiar de area de contribuicao; se parecer esparsa "
                 "demais, reduza.".format(density)
             )
-    return channels, metrics
+    return channels, twi, metrics
