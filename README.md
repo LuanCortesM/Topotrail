@@ -291,6 +291,24 @@ Any vector layer can be used the same way, with a buffer — for a legally
 protected riparian strip, an exclusion around a road, or a tenure boundary.
 Restrictions can either exclude cells outright or simply make them expensive.
 
+## Bringing in data the DEM does not have
+
+Everything above comes from the DEM. Real planning often needs one thing it
+cannot know — stoniness, vegetation cover, an existing cost surface — so any
+raster the user has can enter the model as an extra weighted criterion. It is
+warped onto the DEM grid, normalised by the 5th and 95th percentiles of its own
+distribution over the study area (the unit is unknown and may be a percentage,
+an index or a count), and folded into the weighted combination. The user
+declares whether high values are good or bad.
+
+Tested on the Parque Estadual das Carnaúbas, Piauí, with SoilGrids coarse-
+fragment volume as a stoniness criterion: it covers 99% of the study area,
+correlates with slope at only r = 0.36, and moved the selected zone from 17.2%
+to 23.1%. An r² of 0.13 is the point — the criterion is carrying information the
+topography does not have, which is the only reason to add a criterion at all.
+Coverage below 95% raises a warning, because cells the criterion does not reach
+are scored without it and are therefore favoured artificially.
+
 ## The transitability map
 
 The suitability raster is continuous and relative; the potential-zone vector is

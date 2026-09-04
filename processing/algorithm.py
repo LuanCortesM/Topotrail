@@ -53,7 +53,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.6.2"
+PLUGIN_VERSION = "0.6.3"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -109,6 +109,11 @@ TERRAIN_SLOWDOWN_MAX = 2.0
 CONSTRAINT_AVOID = 0        # exclusao dura
 CONSTRAINT_PENALISE = 1     # encarece sem proibir
 CONSTRAINT_PENALTY_FACTOR = 8.0
+
+# Sentido de um criterio raster fornecido pelo usuario: valores altos podem ser
+# bons (cobertura vegetal densa que dá sombra) ou ruins (pedregosidade).
+CRITERION_LOWER_IS_BETTER = 0
+CRITERION_HIGHER_IS_BETTER = 1
 
 # Diagnostico de discriminacao do modelo. Em terreno muito ingreme os limites
 # absolutos de declividade saturam: acima de SLOPE_SCORE_MAX toda celula recebe
@@ -1862,6 +1867,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
     ROUTE_COST_MODEL = "ROUTE_COST_MODEL"
     ROUTE_CONTRAST = "ROUTE_CONTRAST"
     TRANSITABILITY_BREAKS = "TRANSITABILITY_BREAKS"
+    EXTRA_CRITERION_LAYER = "EXTRA_CRITERION_LAYER"
+    EXTRA_CRITERION_WEIGHT = "EXTRA_CRITERION_WEIGHT"
+    EXTRA_CRITERION_DIRECTION = "EXTRA_CRITERION_DIRECTION"
     SLOPE_MAX = "SLOPE_MAX"
     SLOPE_SCORE_MAX = "SLOPE_SCORE_MAX"
     WEIGHT_ALT = "WEIGHT_ALT"
@@ -2154,6 +2162,30 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             )
         )
         self.addParameter(
+            QgsProcessingParameterRasterLayer(
+                self.EXTRA_CRITERION_LAYER,
+                self.tr("Criterio adicional em raster (pedregosidade, vegetacao, ...)"),
+                optional=True,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.EXTRA_CRITERION_WEIGHT,
+                self.tr("Peso do criterio adicional"),
+                QgsProcessingParameterNumber.Double,
+                defaultValue=0.0, minValue=0.0, maxValue=10.0,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.EXTRA_CRITERION_DIRECTION,
+                self.tr("No criterio adicional, valores altos sao"),
+                options=[self.tr("piores (pedregosidade, custo)"),
+                         self.tr("melhores (sombra, cobertura)")],
+                defaultValue=CRITERION_LOWER_IS_BETTER,
+            )
+        )
+        self.addParameter(
             QgsProcessingParameterString(
                 self.TRANSITABILITY_BREAKS,
                 self.tr("Limites de declividade das classes de transitabilidade (%)"),
@@ -2255,6 +2287,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         constraint_mode = self.parameterAsEnum(parameters, self.CONSTRAINT_MODE, context)
         route_cost_model = self.parameterAsEnum(parameters, self.ROUTE_COST_MODEL, context)
         route_contrast = self.parameterAsDouble(parameters, self.ROUTE_CONTRAST, context)
+        extra_layer = self.parameterAsRasterLayer(parameters, self.EXTRA_CRITERION_LAYER, context)
+        extra_weight = self.parameterAsDouble(parameters, self.EXTRA_CRITERION_WEIGHT, context)
+        extra_direction = self.parameterAsEnum(parameters, self.EXTRA_CRITERION_DIRECTION, context)
         breaks_text = self.parameterAsString(parameters, self.TRANSITABILITY_BREAKS, context)
         try:
             transitability_breaks = tuple(
@@ -2291,7 +2326,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         wetness_weight = self.parameterAsDouble(parameters, self.WEIGHT_WETNESS, context)
         roughness_weight = self.parameterAsDouble(parameters, self.WEIGHT_ROUGHNESS, context)
         total_weight = (altitude_weight + slope_weight + curvh_weight + curvv_weight
-                        + wetness_weight + roughness_weight)
+                        + wetness_weight + roughness_weight + extra_weight)
 
         output_path = self.parameterAsFileOutput(parameters, self.OUTPUT_FILE, context)
         output_format_idx = self.parameterAsEnum(parameters, self.OUTPUT_FORMAT, context)
@@ -2354,7 +2389,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise ValueError(message)
         if any(weight < 0 for weight in [altitude_weight, slope_weight, curvh_weight,
-                                         curvv_weight, wetness_weight, roughness_weight]):
+                                         curvv_weight, wetness_weight, roughness_weight,
+                                         extra_weight]):
             message = "Os pesos nao podem ser negativos."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise ValueError(message)
@@ -2613,6 +2649,63 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             pixels_declividade_acima_limite=int(np.sum(valid_mask & (slope_data > max_slope))),
         )
 
+        extra_norm = None
+        if extra_weight > 0:
+            if extra_layer is None:
+                raise Exception(
+                    "O peso do criterio adicional é maior que zero, mas nenhum raster foi "
+                    "informado. Escolha a camada ou zere o peso."
+                )
+            extra_aligned = align_raster_to_reference(
+                extra_layer.source(), prepared_rasters["dem"],
+                os.path.join(temp_work_dir, "criterio_adicional_alinhado.tif"),
+                resampling="bilinear", feedback=feedback, log_path=debug_log_path)
+            extra_data, _, _ = read_raster(extra_aligned, feedback)
+            extra_valid = valid_mask & np.isfinite(extra_data)
+            if not np.any(extra_valid):
+                raise Exception(
+                    "O raster do criterio adicional nao tem nenhuma celula valida sobre a "
+                    "area do MDE. Verifique se ele cobre a area de estudo."
+                )
+            # Normalizacao robusta pelos percentis 5 e 95 da propria cena: a
+            # unidade do raster e desconhecida -- pode ser %, indice, contagem --
+            # e os percentis absorvem tanto a escala quanto valores extremos.
+            low = float(np.percentile(extra_data[extra_valid], 5))
+            high = float(np.percentile(extra_data[extra_valid], 95))
+            if high - low < 1e-12:
+                raise Exception(
+                    "O raster do criterio adicional e praticamente constante sobre a area "
+                    f"de estudo (P05 = {low:.4g}, P95 = {high:.4g}); ele nao distingue nada."
+                )
+            scaled = np.clip((extra_data - low) / (high - low), 0.0, 1.0)
+            extra_norm = (scaled if extra_direction == CRITERION_HIGHER_IS_BETTER
+                          else 1.0 - scaled).astype(np.float32)
+            extra_norm = np.where(extra_valid, extra_norm, np.nan).astype(np.float32)
+            append_diagnostic_log(
+                debug_log_path, "criterio_adicional",
+                origem=str(extra_layer.source()), peso=float(extra_weight),
+                sentido=("maiores sao melhores" if extra_direction == CRITERION_HIGHER_IS_BETTER
+                         else "maiores sao piores"),
+                p05_entrada=low, p95_entrada=high,
+                celulas_validas=int(extra_valid.sum()),
+                cobertura=float(extra_valid.sum() / max(1, int(valid_mask.sum()))),
+            )
+            if feedback:
+                cobertura = 100.0 * extra_valid.sum() / max(1, int(valid_mask.sum()))
+                feedback.pushInfo(
+                    "Criterio adicional: P05={:.4g}, P95={:.4g}, cobre {:.1f}% da area valida, "
+                    "peso {:.2f}, {}.".format(
+                        low, high, cobertura, extra_weight,
+                        "maiores sao melhores" if extra_direction == CRITERION_HIGHER_IS_BETTER
+                        else "maiores sao piores")
+                )
+                if cobertura < 95.0:
+                    feedback.pushWarning(
+                        "O criterio adicional cobre apenas {:.1f}% da area de estudo. As "
+                        "celulas descobertas ficam sem esse criterio, o que as favorece "
+                        "artificialmente na comparacao.".format(cobertura)
+                    )
+
         roughness_data = None
         if roughness_weight > 0:
             roughness_data = roughness_index(dem_data, transform, feedback)
@@ -2645,6 +2738,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             raw_score = raw_score + wetness_weight * np.nan_to_num(wetness_norm)
         if roughness_norm is not None:
             raw_score = raw_score + roughness_weight * np.nan_to_num(roughness_norm)
+        if extra_norm is not None:
+            raw_score = raw_score + extra_weight * np.nan_to_num(extra_norm)
         raw_score = raw_score / total_weight
         zone_score = np.where(zone_constraint_mask, raw_score, np.nan).astype(np.float32)
         route_score = np.where(route_constraint_mask, raw_score, np.nan).astype(np.float32)
