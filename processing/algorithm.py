@@ -24,6 +24,14 @@ from shapely.ops import unary_union  # noqa: E402
 from qgis.PyQt.QtCore import QCoreApplication  # noqa: E402
 from .hydrology import analyse_hydrology  # noqa: E402
 from .terrain import derive_terrain, roughness_index  # noqa: E402
+from .transitability import (  # noqa: E402
+    CLASS_COLORS,
+    CLASS_LABELS,
+    CLASS_LABELS_EN,
+    DEFAULT_SLOPE_BREAKS,
+    classify as classify_transitability,
+    walkable_fraction,
+)
 from qgis.core import (  # noqa: E402
     QgsProcessingAlgorithm,
     QgsProcessingParameterRasterLayer,
@@ -33,6 +41,7 @@ from qgis.core import (  # noqa: E402
     QgsProcessingParameterEnum,
     QgsProcessingParameterCrs,
     QgsProcessingParameterVectorLayer,
+    QgsProcessingParameterString,
     QgsProcessingParameterBoolean,
     QgsProcessingOutputVectorLayer,
     QgsProcessingOutputRasterLayer,
@@ -44,7 +53,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.6.1"
+PLUGIN_VERSION = "0.6.2"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -1137,6 +1146,59 @@ def save_score_raster(score_array, transform, proj, output_path, feedback=None):
     return score_path
 
 
+def save_transitability_raster(classes, transform, proj, output_path, feedback=None):
+    """Grava o mapa de classes com paleta e rotulos embutidos.
+
+    Um raster categorico sem tabela de cores abre no QGIS como uma rampa
+    cinzenta de 0 a 5, que nao comunica nada. Gravar a paleta e a lista de
+    categorias no proprio GeoTIFF faz o mapa abrir ja legivel, com legenda,
+    sem o usuario ter de estiliza-lo.
+    """
+    base_path, _ = os.path.splitext(output_path)
+    path = f"{base_path}_transitabilidade.tif"
+    rows, cols = classes.shape
+    output_dir = os.path.dirname(path)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    driver = gdal.GetDriverByName("GTiff")
+    if os.path.exists(path):
+        try:
+            driver.Delete(path)
+        except RuntimeError:
+            path = available_output_path(path)
+
+    dataset = driver.Create(
+        path, cols, rows, 1, gdal.GDT_Byte,
+        options=["COMPRESS=LZW", "PHOTOMETRIC=PALETTE"],
+    )
+    if dataset is None:
+        raise Exception("Nao foi possivel criar o raster de transitabilidade.")
+    dataset.SetGeoTransform(transform)
+    if proj:
+        dataset.SetProjection(proj)
+
+    band = dataset.GetRasterBand(1)
+    # A paleta precisa ser gravada antes dos dados: o driver GTiff fixa a tag
+    # PhotometricInterpretation na primeira escrita e recusa altera-la depois.
+    table = gdal.ColorTable()
+    for code, colour in CLASS_COLORS.items():
+        table.SetColorEntry(int(code), tuple(int(c) for c in colour))
+    band.SetRasterColorTable(table)
+    band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
+    band.SetCategoryNames(
+        [""] + [CLASS_LABELS[code] for code in sorted(CLASS_LABELS)]
+    )
+    band.SetNoDataValue(0)
+    band.WriteArray(classes.astype(np.uint8))
+    band.FlushCache()
+    dataset = None
+
+    if feedback:
+        feedback.pushInfo(f"Mapa de transitabilidade salvo: {path}")
+    return path
+
+
 def save_risk_raster(risk_array, transform, proj, output_path, feedback=None):
     base_path, _ = os.path.splitext(output_path)
     risk_path = f"{base_path}_risco_topografico.tif"
@@ -1799,6 +1861,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
     CONSTRAINT_MODE = "CONSTRAINT_MODE"
     ROUTE_COST_MODEL = "ROUTE_COST_MODEL"
     ROUTE_CONTRAST = "ROUTE_CONTRAST"
+    TRANSITABILITY_BREAKS = "TRANSITABILITY_BREAKS"
     SLOPE_MAX = "SLOPE_MAX"
     SLOPE_SCORE_MAX = "SLOPE_SCORE_MAX"
     WEIGHT_ALT = "WEIGHT_ALT"
@@ -1823,6 +1886,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
     OUTPUT_VECTOR = "OUTPUT_VECTOR"
     OUTPUT_SCORE_RASTER = "OUTPUT_SCORE_RASTER"
     OUTPUT_RISK_RASTER = "OUTPUT_RISK_RASTER"
+    OUTPUT_TRANSITABILITY = "OUTPUT_TRANSITABILITY"
     OUTPUT_ROUTE = "OUTPUT_ROUTE"
     OUTPUT_CORRIDOR = "OUTPUT_CORRIDOR"
     OUTPUT_DEBUG_LOG = "OUTPUT_DEBUG_LOG"
@@ -2090,6 +2154,13 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             )
         )
         self.addParameter(
+            QgsProcessingParameterString(
+                self.TRANSITABILITY_BREAKS,
+                self.tr("Limites de declividade das classes de transitabilidade (%)"),
+                defaultValue=", ".join(f"{b:.0f}" for b in DEFAULT_SLOPE_BREAKS),
+            )
+        )
+        self.addParameter(
             QgsProcessingParameterBoolean(
                 self.GENERATE_ZONES,
                 self.tr("Gerar zonas vetoriais"),
@@ -2126,6 +2197,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_VECTOR, self.tr("Zonas potenciais")))
         self.addOutput(QgsProcessingOutputRasterLayer(self.OUTPUT_SCORE_RASTER, self.tr("Adequabilidade continua")))
         self.addOutput(QgsProcessingOutputRasterLayer(self.OUTPUT_RISK_RASTER, self.tr("Risco topografico relativo")))
+        self.addOutput(QgsProcessingOutputRasterLayer(self.OUTPUT_TRANSITABILITY, self.tr("Classes de transitabilidade")))
         self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_ROUTE, self.tr("Rota de acesso sugerida")))
         self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_CORRIDOR, self.tr("Corredor de acesso")))
         self.addOutput(QgsProcessingOutputFile(self.OUTPUT_DEBUG_LOG, self.tr("Log diagnostico TopoTrail")))
@@ -2183,6 +2255,21 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         constraint_mode = self.parameterAsEnum(parameters, self.CONSTRAINT_MODE, context)
         route_cost_model = self.parameterAsEnum(parameters, self.ROUTE_COST_MODEL, context)
         route_contrast = self.parameterAsDouble(parameters, self.ROUTE_CONTRAST, context)
+        breaks_text = self.parameterAsString(parameters, self.TRANSITABILITY_BREAKS, context)
+        try:
+            transitability_breaks = tuple(
+                float(part) for part in breaks_text.replace(";", ",").split(",") if part.strip()
+            )
+        except ValueError:
+            raise Exception(
+                f"Nao entendi os limites de transitabilidade: {breaks_text!r}. "
+                "Informe quatro numeros crescentes separados por virgula, em porcentagem."
+            )
+        if len(transitability_breaks) != 4:
+            raise Exception(
+                "Os limites de transitabilidade precisam ser exatamente quatro valores "
+                f"em porcentagem, crescentes. Recebi {len(transitability_breaks)}."
+            )
         slope_unit = self.parameterAsEnum(parameters, self.SLOPE_UNIT, context)
         max_slope = self.parameterAsDouble(parameters, self.SLOPE_MAX, context)
         slope_score_max = self.parameterAsDouble(parameters, self.SLOPE_SCORE_MAX, context)
@@ -2608,6 +2695,33 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
 
         score_path = save_score_raster(output_score, transform, proj, output_path, feedback)
         risk_path = save_risk_raster(risk_score, transform, proj, output_path, feedback)
+
+        transitability_classes, transitability_metrics = classify_transitability(
+            slope_data, valid_mask,
+            roughness=roughness_data, wetness=twi_data,
+            # So marca como intransitavel o que o usuario mandou evitar. Se ele
+            # escolheu apenas encarecer, dizer "intransitavel" no mapa
+            # contradiria a propria escolha dele.
+            blocked_mask=(restricted_mask
+                          if (restricted_mask.any() and constraint_mode == CONSTRAINT_AVOID)
+                          else None),
+            slope_breaks=transitability_breaks, feedback=feedback,
+        )
+        transitability_path = save_transitability_raster(
+            transitability_classes, transform, proj, output_path, feedback)
+        walkable = walkable_fraction(transitability_classes)
+        append_diagnostic_log(
+            debug_log_path, "transitabilidade",
+            arquivo=file_diagnostics(transitability_path),
+            fracao_transitavel_classes_1_2=walkable,
+            rotulos_en={str(k): v for k, v in CLASS_LABELS_EN.items()},
+            **transitability_metrics,
+        )
+        if feedback and walkable is not None:
+            feedback.pushInfo(
+                "Area transitavel a pe sem esforco excepcional (classes 1 e 2): "
+                "{:.1f}% da area valida.".format(100.0 * walkable)
+            )
         append_diagnostic_log(debug_log_path, "raster_adequabilidade_salvo", arquivo=file_diagnostics(score_path))
         append_diagnostic_log(debug_log_path, "raster_risco_topografico_salvo", arquivo=file_diagnostics(risk_path))
         route_path = None
@@ -2684,7 +2798,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                         feedback.pushWarning(f"Não foi possível calcular áreas em CRS métrico: {str(e)}")
         elif feedback:
             feedback.pushInfo("Geracao de zonas vetoriais desativada; raster, rota e corredor foram preservados.")
-        result = {self.OUTPUT_SCORE_RASTER: score_path, self.OUTPUT_RISK_RASTER: risk_path}
+        result = {self.OUTPUT_SCORE_RASTER: score_path, self.OUTPUT_RISK_RASTER: risk_path,
+                  self.OUTPUT_TRANSITABILITY: transitability_path}
         if gdf is not None and len(gdf) > 0:
             vector_path = save_vector(gdf, output_path, output_format, output_crs, feedback)
             result[self.OUTPUT_VECTOR] = vector_path

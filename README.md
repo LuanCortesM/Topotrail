@@ -291,6 +291,40 @@ Any vector layer can be used the same way, with a buffer — for a legally
 protected riparian strip, an exclusion around a road, or a tenure boundary.
 Restrictions can either exclude cells outright or simply make them expensive.
 
+## The transitability map
+
+The suitability raster is continuous and relative; the potential-zone vector is
+binary and depends on a percentile of the scene. Neither answers the question a
+researcher actually asks in front of a map before a field trip: **can I walk
+here, or not?**
+
+`*_transitabilidade.tif` answers it with five absolute classes:
+
+| | class | slope | meaning |
+|---|---|---|---|
+| 1 | Walkable | < 20% | ordinary walking |
+| 2 | Walkable with effort | 20–35% | steep walking |
+| 3 | Hard, hands needed | 35–60% | occasional scrambling |
+| 4 | Very hard, scrambling | 60–100% | climbing rather than walking |
+| 5 | Not walkable | > 100%, or blocked | rock face, or a constraint set to "avoid" |
+
+Absolute is the point. A class has to mean the same thing in the Mantiqueira
+and in the Andes, or two maps cannot be compared and a field team cannot build
+an intuition that transfers. The breaks are a parameter, and they are empirical
+modelling decisions like every other constant here — report them.
+
+Two modifiers push a cell one class worse, never better and never to class 5:
+**ruggedness** above the scene's 90th percentile, because a boulder field and a
+smooth grassy slope at the same inclination are not the same walk; and
+**wetness** above the 95th, because a saturated valley floor at 5% can be less
+passable than a dry 30% hillside. Those two are scene-relative on purpose —
+absolute ruggedness depends on DEM resolution and TWI on basin size, so a fixed
+threshold for them would not transfer. The class the legend promises stays
+absolute.
+
+The palette and the category labels are written into the GeoTIFF, so the map
+opens in QGIS already readable instead of as a grey ramp from 0 to 5.
+
 ## Walking time instead of an abstract cost
 
 The route model was isotropic: a step cost the same uphill and downhill, which
