@@ -118,3 +118,53 @@ def test_both_languages_define_the_same_keys():
         "faltando em ingles: {}; faltando em portugues: {}".format(
             sorted(languages["pt"] - languages["en"]),
             sorted(languages["en"] - languages["pt"])))
+
+
+# --------------------------------------------------------------------------
+# O plugin e usado no mundo todo, e o credito do projeto tem de aparecer
+# --------------------------------------------------------------------------
+
+REGIONAL_EXAMPLES = [
+    "marins", "marinzinho", "itaguaré", "itaguare", "mantiqueira",
+    "caatinga", "cruzeiro", "serra do mar",
+]
+
+
+def test_the_interface_texts_name_no_particular_place():
+    """Os textos de ajuda nao podem usar exemplo de um lugar so.
+
+    A primeira versao do assistente explicava os destinos intermediarios com
+    "desenhe Marins, Marinzinho e Itaguaré nessa sequência". Funciona para quem
+    conhece a Serra da Mantiqueira e nao diz nada para o resto do mundo -- e o
+    TopoTrail e publicado no repositorio oficial do QGIS, para qualquer regiao.
+    A explicacao tem de valer em qualquer lugar: "um cume, depois outro".
+    """
+    import ast
+    tree = ast.parse(DIALOG)
+    texts = next(node for node in tree.body
+                 if isinstance(node, ast.Assign)
+                 and getattr(node.targets[0], "id", None) == "TEXTS")
+    strings = [node.value.lower() for node in ast.walk(texts)
+               if isinstance(node, ast.Constant) and isinstance(node.value, str)]
+    # os creditos podem nomear o projeto e a instituicao; a ajuda dos controles nao
+    body = " ".join(value for value in strings if "herpeto mantiqueira" not in value)
+    offenders = [name for name in REGIONAL_EXAMPLES if name in body]
+    assert not offenders, (
+        f"exemplo preso a uma regiao no texto da interface: {offenders}")
+
+
+def test_the_institutional_logos_are_shipped_and_displayed():
+    """As logos sao credito de projeto e de instituicao, nao decoracao.
+
+    Uma reescrita da janela ja as removeu por descuido uma vez.
+    """
+    for filename in ("logo_herpeto_mantiqueira.png", "logo_enbt.jpg", "logo_jbrj.jpg"):
+        assert (ROOT / "assets" / filename).exists(), f"falta o arquivo {filename}"
+        assert filename in DIALOG, f"{filename} existe mas a janela nao o exibe"
+    assert "logo.png" in DIALOG
+
+
+def test_the_credits_name_author_supervisor_project_and_institution():
+    for fragment in ("Luan da Silva Cortes Maciel", "Leandro Freitas",
+                     "Herpeto Mantiqueira", "Botânica Tropical"):
+        assert fragment in DIALOG, f"credito ausente: {fragment}"

@@ -48,7 +48,29 @@ PLUGIN_DIR = os.path.dirname(os.path.dirname(__file__))
 TEXTS = {
     "pt": {
         "window": "TopoTrail — planejamento de trilhas e acessos",
-        "steps": ["1. Dados", "2. O que você quer", "3. Ajustes", "4. Executar"],
+        "tagline": "Planejamento de trilhas, acessos e deslocamentos de campo "
+                   "em áreas naturais",
+        "steps": ["Dados", "O que você quer", "Ajustes", "Executar"],
+        "about": "Sobre e créditos",
+        "about_text": (
+            "<h3 style='margin-bottom:2px'>TopoTrail</h3>"
+            "<p style='color:#6b7a74;margin-top:0'>Versão {version}</p>"
+            "<p>Ferramenta de apoio ao planejamento de trilhas, acessos e "
+            "deslocamentos de campo em áreas naturais e unidades de "
+            "conservação, integrando altitude, declividade, curvaturas do "
+            "relevo, umidade e rugosidade por análise multicritério em SIG, "
+            "com rota de menor custo e tempo de caminhada.</p>"
+            "<p><b>Desenvolvimento:</b> Luan da Silva Cortes Maciel "
+            "(MACIEL, L. S. C.)<br>"
+            "<b>Orientação:</b> Leandro Freitas<br>"
+            "<b>Projeto associado:</b> Herpeto Mantiqueira</p>"
+            "<p><b>Contexto:</b> desenvolvido como produto da pesquisa de "
+            "mestrado em Biodiversidade em Unidades de Conservação, Escola "
+            "Nacional de Botânica Tropical / Instituto de Pesquisas Jardim "
+            "Botânico do Rio de Janeiro.</p>"
+            "<p style='color:#6b7a74'>Os resultados são evidência de apoio à "
+            "decisão e exigem validação em campo.</p>"
+            "<p>Licença MIT · plugins.qgis.org/plugins/TopoTrail</p>"),
         "back": "◀ Voltar", "next": "Avançar ▶", "run": "Gerar resultados",
         "cancel": "Cancelar execução",
 
@@ -90,9 +112,11 @@ TEXTS = {
         "o_streams": "Levar cursos d'água em conta, extraídos do próprio MDE",
         "o_streams_help": "Deriva a rede de drenagem do relevo e a usa como "
                           "restrição da rota — não precisa de camada de "
-                          "hidrografia. Cuidado em paisagem seca: as equipes "
-                          "cruzam drenagem o dobro do acaso, então evitá-la "
-                          "costuma afastar a rota do que se quer visitar.",
+                          "hidrografia. Cuidado em paisagem sazonalmente seca: "
+                          "o leito seco costuma ser a melhor superfície de "
+                          "caminhada, e em levantamento biológico a drenagem é "
+                          "alvo de amostragem — evitá-la pode afastar a rota "
+                          "justamente do que você quer visitar.",
         "o_route": "Rota entre pontos e corredor de acesso",
         "o_route_help": "Caminho de menor custo entre a origem e o destino, "
                         "podendo passar por destinos intermediários.",
@@ -100,9 +124,12 @@ TEXTS = {
         "start": "Origem", "end": "Destino",
         "via": "Destinos intermediários, na ordem de visita (opcional)",
         "via_help": "Uma camada de pontos. A ordem das feições é a ordem da "
-                    "travessia: desenhe Marins, Marinzinho e Itaguaré nessa "
-                    "sequência e a rota sobe os três. Sem isso o algoritmo "
-                    "contorna os cumes — corretamente, porque o cume é caro.",
+                    "travessia: o primeiro ponto desenhado é a primeira parada. "
+                    "Use para encadear objetivos — subir um cume, depois outro, "
+                    "passar por um ponto de coleta, e então descer. Sem isso o "
+                    "algoritmo contorna os pontos altos, e com razão: o cume é "
+                    "justamente o lugar caro. Declarar cada objetivo é o que faz "
+                    "a rota passar por ele.",
         "optimise": "Deixar o plugin escolher a melhor ordem de visita",
         "optimise_help": "Resolve a ordem de menor custo exatamente, até oito "
                          "pontos intermediários. Ignora a ordem da camada.",
@@ -153,9 +180,8 @@ TEXTS = {
         "cons_box": "Restrições (opcional)",
         "cons_layer": "Camada a evitar",
         "cons_help": "Vetor de feições a evitar: cerca, área vedada, propriedade "
-                     "privada. Atenção com hidrografia: em paisagem seca as "
-                     "equipes cruzam drenagem o dobro do acaso, então penalizá-la "
-                     "costuma afastar a rota do que se quer visitar.",
+                     "privada, zona de exclusão. Vale para qualquer restrição "
+                     "que exista no seu contexto — a camada é sua.",
         "cons_buffer": "Distância a manter (m)", "cons_mode": "Tratamento",
 
         "s4_title": "Onde salvar e executar",
@@ -187,7 +213,28 @@ TEXTS = {
     },
     "en": {
         "window": "TopoTrail — trail and access planning",
-        "steps": ["1. Data", "2. What you want", "3. Tuning", "4. Run"],
+        "tagline": "Planning trails, access routes and field movement in "
+                   "natural areas",
+        "steps": ["Data", "What you want", "Tuning", "Run"],
+        "about": "About and credits",
+        "about_text": (
+            "<h3 style='margin-bottom:2px'>TopoTrail</h3>"
+            "<p style='color:#6b7a74;margin-top:0'>Version {version}</p>"
+            "<p>A tool supporting the planning of trails, access routes and "
+            "field movement in natural and protected areas, combining "
+            "elevation, slope, relief curvature, wetness and ruggedness by "
+            "GIS multicriteria analysis, with least-cost routing and walking "
+            "time.</p>"
+            "<p><b>Development:</b> Luan da Silva Cortes Maciel "
+            "(MACIEL, L. S. C.)<br>"
+            "<b>Supervision:</b> Leandro Freitas<br>"
+            "<b>Associated project:</b> Herpeto Mantiqueira</p>"
+            "<p><b>Context:</b> developed as a product of master's research in "
+            "Biodiversity in Protected Areas, Escola Nacional de Botânica "
+            "Tropical / Rio de Janeiro Botanical Garden Research Institute.</p>"
+            "<p style='color:#6b7a74'>Results are decision-support evidence and "
+            "require field validation.</p>"
+            "<p>MIT licence · plugins.qgis.org/plugins/TopoTrail</p>"),
         "back": "◀ Back", "next": "Next ▶", "run": "Generate results",
         "cancel": "Cancel run",
 
@@ -227,10 +274,11 @@ TEXTS = {
         "o_streams": "Take watercourses into account, extracted from the DEM",
         "o_streams_help": "Derives the drainage network from the relief and uses "
                           "it as a route constraint — no hydrography layer "
-                          "needed. Careful in dry landscapes: teams cross "
-                          "drainage at twice the rate of chance, so avoiding it "
-                          "tends to push the route away from what you want to "
-                          "visit.",
+                          "needed. Careful in seasonally dry landscapes: a dry "
+                          "bed is often the best walking surface, and in "
+                          "biological survey work drainage is a sampling target "
+                          "— avoiding it can push the route away from the very "
+                          "thing you want to visit.",
         "o_route": "Route between points, and access corridor",
         "o_route_help": "Least-cost path from origin to destination, optionally "
                         "through intermediate destinations.",
@@ -238,9 +286,12 @@ TEXTS = {
         "start": "Origin", "end": "Destination",
         "via": "Intermediate destinations, in visiting order (optional)",
         "via_help": "A point layer. Feature order is the order of the traverse: "
-                    "draw Marins, Marinzinho and Itaguaré in that sequence and "
-                    "the route climbs all three. Without it the algorithm skirts "
-                    "the summits — correctly, because a summit is expensive.",
+                    "the first point drawn is the first stop. Use it to chain "
+                    "objectives — climb one summit, then another, call at a "
+                    "sampling point, then descend. Without it the algorithm "
+                    "skirts the high ground, and rightly so: a summit is exactly "
+                    "the expensive place. Declaring each objective is what makes "
+                    "the route go there.",
         "optimise": "Let the plugin choose the best visiting order",
         "optimise_help": "Solves the cheapest order exactly, up to eight "
                          "intermediate points. Ignores the layer order.",
@@ -290,10 +341,8 @@ TEXTS = {
         "cons_box": "Constraints (optional)",
         "cons_layer": "Layer to avoid",
         "cons_help": "Features to keep away from: a fence, a closed area, "
-                     "private land. Careful with hydrography: in dry landscapes "
-                     "teams cross drainage at twice the rate of chance, so "
-                     "penalising it tends to push the route away from what you "
-                     "want to visit.",
+                     "private land, an exclusion zone. Anything that constrains "
+                     "movement where you work — the layer is yours.",
         "cons_buffer": "Distance to keep (m)", "cons_mode": "Treatment",
 
         "s4_title": "Where to save, and run",
@@ -330,19 +379,24 @@ TEXTS = {
 # Pequenos construtores, para que cada controle saia com a mesma aparencia
 # --------------------------------------------------------------------------
 
-MUTED = "#5a6472"
-ACCENT = "#1f6feb"
+# Paleta tirada da logo do plugin: o verde-floresta #0d452c e a cor dominante
+# dela. Uma ferramenta de campo em unidade de conservacao nao tem por que usar
+# o azul generico de painel de controle.
+INK = "#1a2420"
+MUTED = "#6b7a74"
+FOREST = "#0d452c"
+ACCENT = "#17805a"
+ACCENT_SOFT = "#e8f3ee"
+CANVAS = "#f4f6f5"
+LINE = "#e2e8e5"
 
 
 def _help(text):
     """A frase que explica o controle. E o que torna a janela didatica, entao
     nao e opcional em nenhum campo que nao seja obvio."""
     label = QLabel(text)
+    label.setObjectName("ttHelp")
     label.setWordWrap(True)
-    font = label.font()
-    font.setPointSizeF(max(font.pointSizeF() - 1.0, 7.5))
-    label.setFont(font)
-    label.setStyleSheet(f"color: {MUTED};")
     label.setSizePolicy(size_policy("Preferred"), size_policy("Minimum"))
     return label
 
@@ -393,7 +447,9 @@ class _FileRow(QWidget):
         layout.setSpacing(6)
         self.edit = QLineEdit()
         self.button = QPushButton("…")
-        self.button.setFixedWidth(38)
+        self.button.setObjectName("ttBrowse")
+        self.button.setFixedWidth(52)
+        self.button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
         self.button.clicked.connect(self._browse)
         layout.addWidget(self.edit, 1)
         layout.addWidget(self.button, 0)
@@ -495,19 +551,24 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
     # -- construcao ---------------------------------------------------------
     def _build(self):
-        outer = QVBoxLayout(self)
+        outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-        outer.addWidget(self._build_header())
-        outer.addWidget(self._build_steps_bar())
+        outer.addWidget(self._build_sidebar())
+
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
 
         self.stack = QStackedWidget()
         for builder in (self._step_data, self._step_outputs,
                         self._step_tuning, self._step_run):
             page = QWidget()
+            page.setObjectName("ttPage")
             layout = QVBoxLayout(page)
-            layout.setContentsMargins(24, 18, 24, 12)
-            layout.setSpacing(12)
+            layout.setContentsMargins(38, 34, 38, 26)
+            layout.setSpacing(16)
             builder(layout)
             layout.addStretch(1)
             scroll = QScrollArea()
@@ -516,63 +577,138 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             scroll.setWidget(page)
             self.stack.addWidget(scroll)
         self.stack.currentChanged.connect(lambda _index: self._update_nav())
-        outer.addWidget(self.stack, 1)
-        outer.addWidget(self._build_footer())
+        right_layout.addWidget(self.stack, 1)
+        right_layout.addWidget(self._build_footer())
+        outer.addWidget(right, 1)
 
-    def _build_header(self):
-        header = QFrame()
-        header.setObjectName("ttHeader")
-        layout = QHBoxLayout(header)
-        layout.setContentsMargins(20, 12, 20, 12)
+    def _build_sidebar(self):
+        """Barra lateral: identidade, passos e credito institucional.
+
+        As logos ficam aqui, sempre visiveis, em vez de dentro de uma caixa
+        "Sobre" que o usuario abre uma vez e nunca mais. Credito de projeto e de
+        instituicao nao e nota de rodape.
+        """
+        side = QFrame()
+        side.setObjectName("ttSide")
+        side.setFixedWidth(258)
+        layout = QVBoxLayout(side)
+        layout.setContentsMargins(22, 24, 22, 20)
+        layout.setSpacing(0)
+
+        brand = QHBoxLayout()
+        brand.setSpacing(11)
         logo_path = os.path.join(PLUGIN_DIR, "logo.png")
         if os.path.exists(logo_path):
-            logo = QLabel()
-            logo.setPixmap(QPixmap(logo_path).scaledToHeight(
-                42, qt_enum("TransformationMode", "SmoothTransformation")))
-            layout.addWidget(logo)
-        title = _heading("TopoTrail", size=17)
-        layout.addWidget(title)
-        layout.addStretch(1)
-        self.language_button = QPushButton("PT-BR | ENG")
-        self.language_button.setMinimumWidth(
-            self.language_button.fontMetrics().horizontalAdvance("PT-BR | ENG") + 34)
-        self.language_button.clicked.connect(self._toggle_language)
-        layout.addWidget(self.language_button)
-        return header
+            mark = QLabel()
+            mark.setObjectName("ttMark")
+            mark.setFixedSize(44, 44)
+            mark.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
+            mark.setPixmap(QPixmap(logo_path).scaled(
+                32, 32, qt_enum("AspectRatioMode", "KeepAspectRatio"),
+                qt_enum("TransformationMode", "SmoothTransformation")))
+            brand.addWidget(mark)
+        name = QLabel("TopoTrail")
+        name.setObjectName("ttBrand")
+        brand.addWidget(name)
+        brand.addStretch(1)
+        layout.addLayout(brand)
+        self.tagline = QLabel()
+        self.tagline.setObjectName("ttTagline")
+        self.tagline.setWordWrap(True)
+        self._bind(self.tagline, "tagline")
+        layout.addSpacing(6)
+        layout.addWidget(self.tagline)
+        layout.addSpacing(26)
 
-    def _build_steps_bar(self):
-        bar = QFrame()
-        bar.setObjectName("ttSteps")
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(20, 8, 20, 8)
-        layout.setSpacing(6)
         self.step_labels = []
         for index in range(4):
+            row = QFrame()
+            row.setObjectName("ttStepRow")
+            row.setProperty("active", "false")
+            row.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
+            row.mousePressEvent = lambda event, target=index: self._jump_to(target)
+            inner = QHBoxLayout(row)
+            inner.setContentsMargins(12, 9, 12, 9)
+            inner.setSpacing(11)
+            badge = QLabel(str(index + 1))
+            badge.setObjectName("ttBadge")
+            badge.setFixedSize(24, 24)
+            badge.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
             label = QLabel()
-            label.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
-            label.setObjectName("ttStep")
-            label.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
-            label.mousePressEvent = (
-                lambda event, target=index: self._jump_to(target))
+            label.setObjectName("ttStepText")
+            inner.addWidget(badge)
+            inner.addWidget(label, 1)
             self.step_labels.append(label)
-            layout.addWidget(label, 1)
-        return bar
+            self._step_rows = getattr(self, "_step_rows", [])
+            self._step_rows.append((row, badge))
+            layout.addWidget(row)
+            layout.addSpacing(2)
+
+        layout.addStretch(1)
+
+        credit = QFrame()
+        credit.setObjectName("ttCredit")
+        credit_layout = QVBoxLayout(credit)
+        credit_layout.setContentsMargins(10, 14, 10, 14)
+        credit_layout.setSpacing(10)
+        logos = QHBoxLayout()
+        logos.setSpacing(12)
+        logos.addStretch(1)
+        for filename, height in (("logo_herpeto_mantiqueira.png", 54),
+                                 ("logo_enbt.jpg", 48), ("logo_jbrj.jpg", 54)):
+            path = os.path.join(PLUGIN_DIR, "assets", filename)
+            if not os.path.exists(path):
+                continue
+            mark = QLabel()
+            mark.setPixmap(QPixmap(path).scaledToHeight(
+                height, qt_enum("TransformationMode", "SmoothTransformation")))
+            logos.addWidget(mark)
+        logos.addStretch(1)
+        credit_layout.addLayout(logos)
+        layout.addWidget(credit)
+
+        self.about_button = QPushButton()
+        self.about_button.setObjectName("ttLink")
+        self.about_button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
+        self.about_button.clicked.connect(self._show_about)
+        self._bind(self.about_button, "about")
+        layout.addSpacing(8)
+        layout.addWidget(self.about_button)
+
+        self.language_button = QPushButton("PT-BR  |  ENG")
+        self.language_button.setObjectName("ttLink")
+        self.language_button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
+        self.language_button.clicked.connect(self._toggle_language)
+        layout.addWidget(self.language_button)
+        return side
 
     def _build_footer(self):
         footer = QFrame()
         footer.setObjectName("ttFooter")
         layout = QHBoxLayout(footer)
-        layout.setContentsMargins(20, 10, 20, 12)
+        layout.setContentsMargins(38, 14, 38, 16)
+        layout.setSpacing(10)
         self.back_button = QPushButton()
+        self.back_button.setObjectName("ttGhost")
         self.back_button.clicked.connect(lambda: self._go(-1))
         layout.addWidget(self.back_button)
         layout.addStretch(1)
         self.next_button = QPushButton()
         self.next_button.setObjectName("ttPrimary")
-        self.next_button.setMinimumWidth(220)
+        self.next_button.setMinimumWidth(200)
+        self.next_button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
         self.next_button.clicked.connect(self._next_clicked)
         layout.addWidget(self.next_button)
         return footer
+
+    def _show_about(self):
+        """Creditos completos. As logos ja estao na lateral; aqui fica o texto."""
+        try:
+            from ..processing.algorithm import PLUGIN_VERSION as version
+        except Exception:
+            version = "?"
+        QMessageBox.about(self, self.t("about"),
+                          self.t("about_text").format(version=version))
 
     # -- passo 1: dados -----------------------------------------------------
     def _step_data(self, layout):
@@ -805,8 +941,9 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         card, inner = _card()
         inner.addWidget(self._bind(_heading(""), "summary"))
         self.summary_label = _help("")
-        self.summary_label.setSizePolicy(size_policy("Preferred"), size_policy("Expanding"))
-        self.summary_label.setMinimumHeight(96)
+        # Sem altura fixa: o resumo cresce conforme o numero de saidas marcadas,
+        # e com altura fixa a ultima linha ficava cortada.
+        self.summary_label.setSizePolicy(size_policy("Preferred"), size_policy("Minimum"))
         self.summary_label.setAlignment(qt_enum("AlignmentFlag", "AlignTop"))
         inner.addWidget(self.summary_label)
         layout.addWidget(card)
@@ -863,19 +1000,100 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
     def _apply_theme(self):
         self.setStyleSheet(f"""
-            QDialog {{ background: palette(window); }}
-            #ttHeader {{ background: palette(base); border-bottom: 1px solid #d4d9e0; }}
-            #ttSteps {{ background: palette(base); border-bottom: 1px solid #d4d9e0; }}
-            #ttFooter {{ background: palette(base); border-top: 1px solid #d4d9e0; }}
-            #ttCard {{ background: palette(base); border: 1px solid #d9dee5;
-                       border-radius: 8px; }}
-            #ttStep {{ padding: 6px 4px; border-radius: 6px; color: {MUTED}; }}
-            #ttStep[active="true"] {{ background: {ACCENT}; color: white;
-                                      font-weight: bold; }}
-            #ttPrimary {{ background: {ACCENT}; color: white; font-weight: bold;
-                          padding: 9px 18px; border: none; border-radius: 6px; }}
-            #ttPrimary:disabled {{ background: #9db6dd; }}
-            QPushButton {{ padding: 6px 12px; }}
+            QDialog {{ background: {CANVAS}; }}
+            QLabel {{ color: {INK}; }}
+
+            /* Lateral: verde-floresta da propria logo. */
+            #ttSide {{ background: {FOREST}; }}
+            #ttBrand {{ color: #ffffff; font-size: 19px; font-weight: 600;
+                        letter-spacing: 0.3px; }}
+            #ttTagline {{ color: #9dc4b1; font-size: 11px; line-height: 150%; }}
+
+            #ttStepRow {{ border-radius: 8px; background: transparent; }}
+            #ttStepRow[active="true"] {{ background: rgba(255,255,255,0.13); }}
+            #ttStepText {{ color: #8fb5a3; font-size: 12.5px; }}
+            #ttStepText[active="true"] {{ color: #ffffff; font-weight: 600; }}
+            #ttStepText[active="done"] {{ color: #cfe3d8; }}
+            #ttBadge {{ border-radius: 12px; font-size: 11px; font-weight: 600;
+                        background: rgba(255,255,255,0.10); color: #8fb5a3; }}
+            #ttBadge[active="true"] {{ background: #ffffff; color: {FOREST}; }}
+            #ttBadge[active="done"] {{ background: {ACCENT}; color: #ffffff; }}
+
+            #ttCredit {{ background: #ffffff; border-radius: 10px; }}
+            #ttLink {{ background: transparent; border: none; color: #9dc4b1;
+                       font-size: 11.5px; text-align: left; padding: 5px 2px; }}
+            #ttLink:hover {{ color: #ffffff; }}
+
+            #ttPage {{ background: {CANVAS}; }}
+            #ttCard {{ background: #ffffff; border: 1px solid {LINE};
+                       border-radius: 12px; }}
+            #ttFooter {{ background: #ffffff; border-top: 1px solid {LINE}; }}
+
+            #ttPrimary {{ background: {ACCENT}; color: #ffffff; font-size: 13px;
+                          font-weight: 600; padding: 11px 22px; border: none;
+                          border-radius: 9px; }}
+            #ttPrimary:hover {{ background: #146f4e; }}
+            #ttPrimary:disabled {{ background: #a8c9ba; }}
+            #ttGhost {{ background: transparent; color: {MUTED}; border: none;
+                        padding: 11px 14px; font-size: 12.5px; }}
+            #ttGhost:hover {{ color: {INK}; }}
+            #ttGhost:disabled {{ color: #c3ccc8; }}
+
+            QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox, QTextEdit {{
+                border: 1px solid {LINE}; border-radius: 7px;
+                padding: 7px 9px; background: #ffffff; color: {INK};
+                selection-background-color: {ACCENT};
+            }}
+            QDoubleSpinBox, QSpinBox {{ padding-right: 9px; }}
+            QLineEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus,
+            QComboBox:focus, QTextEdit:focus {{ border: 1px solid {ACCENT}; }}
+            QComboBox::drop-down {{ border: none; width: 22px; }}
+
+            /* Os botoes de incremento ficam ocultos de proposito. Com a borda
+               arredondada o Qt perde a geometria padrao deles e eles saem como
+               um traco ou um quadrado escuro; desenhar a seta por borda CSS nao
+               funciona em sub-controle. O valor e digitado e a roda do mouse
+               continua ajustando, entao nao se perde nada e a tela fica limpa. */
+            QDoubleSpinBox::up-button, QSpinBox::up-button,
+            QDoubleSpinBox::down-button, QSpinBox::down-button {{
+                width: 0; height: 0; border: none;
+            }}
+
+            QPushButton {{ background: #ffffff; border: 1px solid {LINE};
+                           border-radius: 7px; padding: 7px 13px; color: {INK}; }}
+            QPushButton:hover {{ border-color: {ACCENT}; color: {ACCENT}; }}
+
+            /* O rotulo pesa mais que a explicacao; antes era o contrario e a
+               tela parecia toda no mesmo nivel. */
+            #ttHelp {{ color: {MUTED}; font-size: 11.5px; }}
+            #ttMark {{ background: #ffffff; border-radius: 11px; }}
+            #ttBrowse {{ padding: 7px 0; font-size: 15px; color: {MUTED}; }}
+            QCheckBox {{ spacing: 10px; color: {INK}; font-size: 13.5px;
+                         font-weight: 500; }}
+            QCheckBox::indicator {{ width: 17px; height: 17px;
+                                    border: 1px solid #c2ccc7; border-radius: 5px;
+                                    background: #ffffff; }}
+            QCheckBox::indicator:checked {{ background: {ACCENT};
+                                            border-color: {ACCENT}; }}
+            /* Marcada e desabilitada continua parecendo marcada: as saidas
+               obrigatorias apareciam como se estivessem desligadas. */
+            QCheckBox::indicator:checked:disabled {{ background: #9ac7b3;
+                                                     border-color: #9ac7b3; }}
+            QCheckBox::indicator:unchecked:disabled {{ background: {ACCENT_SOFT};
+                                                       border-color: #c9ded4; }}
+            QCheckBox:disabled {{ color: #7f8d87; }}
+
+            QProgressBar {{ border: 1px solid {LINE}; border-radius: 7px;
+                            height: 9px; text-align: center; background: {CANVAS}; }}
+            QProgressBar::chunk {{ background: {ACCENT}; border-radius: 6px; }}
+
+            QScrollArea {{ background: {CANVAS}; }}
+            QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
+            QScrollBar::handle:vertical {{ background: #ccd6d1; border-radius: 5px;
+                                           min-height: 30px; }}
+            QScrollBar::handle:vertical:hover {{ background: #b3c2bb; }}
+            QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+            QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
         """)
 
     # -- navegacao ----------------------------------------------------------
@@ -920,9 +1138,13 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             self.next_button.setText(self.t("cancel"))
         else:
             self.next_button.setText(self.t("run") if last else self.t("next"))
-        for position, label in enumerate(self.step_labels):
-            label.setProperty("active", "true" if position == index else "false")
-            label.style().unpolish(label); label.style().polish(label)
+        for position, (row, badge) in enumerate(self._step_rows):
+            state = "true" if position == index else (
+                "done" if position < index else "false")
+            for widget in (row, badge, self.step_labels[position]):
+                widget.setProperty("active", state)
+                widget.style().unpolish(widget)
+                widget.style().polish(widget)
         if last:
             self._refresh_summary()
 
