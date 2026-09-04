@@ -771,10 +771,13 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         credit_layout.setContentsMargins(10, 14, 10, 14)
         credit_layout.setSpacing(10)
         logos = QHBoxLayout()
-        logos.setSpacing(12)
+        logos.setSpacing(11)
         logos.addStretch(1)
-        for filename, height in (("logo_herpeto_mantiqueira.png", 54),
-                                 ("logo_enbt.jpg", 48), ("logo_jbrj.jpg", 54)):
+        # Alturas diferentes de proposito: as tres logos tem proporcoes muito
+        # distintas -- uma circular, duas verticais -- e igualar a altura faria a
+        # circular dominar. Estas alturas equilibram a area ocupada por cada uma.
+        for filename, height in (("logo_herpeto_mantiqueira.png", 62),
+                                 ("logo_enbt.jpg", 56), ("logo_jbrj.jpg", 62)):
             path = os.path.join(PLUGIN_DIR, "assets", filename)
             if not os.path.exists(path):
                 continue
