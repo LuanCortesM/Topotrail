@@ -129,8 +129,20 @@ def _install_stubs():
     _module("qgis")
     _module("qgis.core", **{name: type(name, (_Base,), {}) for name in qgis_names})
     _module("qgis.PyQt")
+    class _Any:
+        """Aceita qualquer atributo.
+
+        Serve para Qt.PointingHandCursor, Qt.StrongFocus e afins: sao apenas
+        constantes de enumeracao usadas em tempo de execucao, e o que os testes
+        de contrato precisam e que o modulo importe.
+        """
+
+        def __getattr__(self, name):
+            return 0
+
     _module(
         "qgis.PyQt.QtCore",
+        Qt=_Any(),
         QCoreApplication=type(
             "QCoreApplication", (object,),
             {"translate": staticmethod(lambda context, text, *a: text)},

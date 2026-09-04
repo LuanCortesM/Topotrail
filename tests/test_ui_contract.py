@@ -215,9 +215,46 @@ def test_icons_render_without_a_display():
 def test_the_version_shown_in_the_interface_comes_from_metadata():
     """A versão era lida por import relativo e voltava vazia sempre que o módulo
     não era carregado como parte do pacote do plugin -- sem erro, só um espaço
-    em branco na tela. Agora vem do metadata.txt, que é a fonte de verdade."""
-    from ui.topotrail_dialog import _plugin_version
-    version = _plugin_version()
-    assert version != "?", "não consegui ler a versão do metadata.txt"
-    assert version in (ROOT / "metadata.txt").read_text(encoding="utf-8")
-    assert version in ALGORITHM, "metadata.txt e algorithm.py discordam da versão"
+    em branco na tela. Agora vem do metadata.txt, que é a fonte de verdade.
+
+    Verificado no código-fonte, e não importando o diálogo: importá-lo puxa todo
+    o Qt e faz este teste depender de qual outro teste rodou antes.
+    """
+    version = None
+    for line in (ROOT / "metadata.txt").read_text(encoding="utf-8").splitlines():
+        if line.startswith("version="):
+            version = line.split("=", 1)[1].strip()
+    assert version, "metadata.txt não declara version="
+    assert f'PLUGIN_VERSION = "{version}"' in ALGORITHM, \
+        "metadata.txt e algorithm.py discordam da versão"
+    assert "metadata.txt" in DIALOG, \
+        "a interface deve ler a versão do metadata.txt"
+    assert "from ..processing.algorithm import PLUGIN_VERSION" not in DIALOG, \
+        "o import relativo falha em silêncio e não deve voltar"
+
+
+def test_the_interface_offers_both_themes():
+    """O QGIS tem tema próprio e o usuário escolhe qual usar. Fixar a janela num
+    dos dois garante que ela vai destoar da metade dos QGIS instalados -- e no
+    escuro apagaria as logos institucionais, que têm fundo branco."""
+    assert "LIGHT = {" in DIALOG and "DARK = {" in DIALOG
+    for token in ("ink", "muted", "accent", "canvas", "surface", "line"):
+        assert DIALOG.count(f'"{token}":') >= 2, (
+            f"o token {token} precisa existir nos dois temas")
+    assert "_is_dark_theme" in DIALOG, "o tema padrão deve seguir o do QGIS"
+
+
+def test_no_colour_is_hardcoded_outside_the_theme_tables():
+    """Uma cor escrita direto numa regra escapa da troca de tema e vira uma
+    mancha clara no escuro. As poucas exceções são deliberadas e estão listadas.
+    """
+    allowed = {
+        "#ffffff", "#0f1a15", "#0d452c", "#22302a", "#0a3a25", "#86a89a",
+        "#cfe3d8", "#7d9a8d", "#83a696", "#b9d5c7", "#26200c", "#24483b",
+        "#cfe6da", "#14614a", "#0b1310",
+    }
+    body = DIALOG[DIALOG.index("def _apply_theme"):]
+    found = set(re.findall(r"#[0-9a-fA-F]{6}", body))
+    unexpected = {colour for colour in found if colour.lower() not in allowed}
+    assert not unexpected, (
+        f"cores fixas fora das tabelas de tema: {sorted(unexpected)}")

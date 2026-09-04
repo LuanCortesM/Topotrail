@@ -17,7 +17,7 @@ import os
 import traceback
 
 from qgis.PyQt.QtCore import Qt
-from qgis.PyQt.QtGui import QFont, QPixmap
+from qgis.PyQt.QtGui import QFont, QFontMetrics, QPixmap
 from qgis.PyQt.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
     QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
@@ -67,7 +67,31 @@ def _plugin_version():
 TEXTS = {
     "pt": {
         "window": "TopoTrail — planejamento de trilhas e acessos",
-        "steps": ["Dados", "O que você quer", "Ajustes", "Executar"],
+        "tagline": "Planejamento topográfico",
+        "eyebrow": "ETAPA {n} DE 4",
+        "theme_auto": "Tema: automático",
+        "theme_light": "Tema: claro",
+        "theme_dark": "Tema: escuro",
+        "badge_required": "Obrigatório",
+        "badge_included": "incluído",
+        "credit_line": "ENBT · Jardim Botânico do Rio de Janeiro · Herpeto Mantiqueira",
+        "s1_banner": "Só o MDE é obrigatório. Declividade e curvaturas são "
+                     "calculadas a partir dele, o que elimina problemas de "
+                     "unidade, de convenção de sinal e de alinhamento de grade.",
+        "chip_unreadable": "Não consegui abrir este arquivo como raster",
+        "chip_no_crs": "sem CRS definido",
+        "chip_crs_ok": "CRS definido",
+        "chip_unit": "unidades",
+        "change": "Alterar",
+        "group_always_sub": "Resultados básicos para interpretar o terreno",
+        "group_optional_sub": "{n} de 4 selecionados",
+        "total_chip": "{n} no total",
+        "note_need_dem": "Selecione o MDE para continuar",
+        "note_outputs": "{n} produtos selecionados",
+        "note_tuning": "Padrões calibrados com trilhas reais",
+        "note_review": "Revise os produtos antes de executar",
+        "next_alt": "Continuar",
+        "steps": ["Dados", "Produtos", "Critérios", "Executar"],
         "about": "Sobre",
         "status_title": "SELEÇÃO ATUAL",
         "status_no_dem": "Nenhum MDE escolhido",
@@ -95,9 +119,9 @@ TEXTS = {
         "back": "◀ Voltar", "next": "Avançar ▶", "run": "Gerar resultados",
         "cancel": "Cancelar execução",
 
-        "s1_title": "De que dados você dispõe?",
-        "s1_sub": "Só o modelo digital de elevação é obrigatório. Declividade e "
-                  "curvaturas são calculadas a partir dele.",
+        "s1_title": "Dados de entrada",
+        "s1_sub": "Selecione o modelo de elevação. O TopoTrail cuida das camadas "
+                  "derivadas e do alinhamento da grade.",
         "dem": "Arquivo do MDE",
         "dem_help": "Um raster de altitude em GeoTIFF. Serve qualquer fonte: "
                     "Copernicus, SRTM, ALOS, carta topográfica nacional.",
@@ -112,10 +136,10 @@ TEXTS = {
         "slope": "Declividade", "curvh": "Curvatura horizontal",
         "curvv": "Curvatura vertical", "sunit": "Unidade da declividade",
 
-        "s2_title": "O que você quer que o plugin produza?",
-        "s2_sub": "Marque o que for útil. Os dois primeiros saem sempre.",
-        "always": "SEMPRE GERADOS",
-        "optional_group": "OPCIONAIS — MARQUE O QUE PRECISAR",
+        "s2_title": "Produtos da análise",
+        "s2_sub": "Escolha o que deseja gerar. Os dois mapas essenciais já estão incluídos.",
+        "always": "Incluídos em toda análise",
+        "optional_group": "Produtos opcionais",
         "o_transit_tip": "Os rótulos descrevem inclinação, não um veredito sobre "
                          "quem passa: em trilhas reais percorridas a pé, equipes "
                          "de campo cruzam rotineiramente as classes 4 e 5.\n\n"
@@ -166,7 +190,7 @@ TEXTS = {
         "margin_help": "Quanto a rota pode se afastar da linha reta. Pequena "
                        "demais força uma reta; grande demais deixa lento.",
 
-        "s3_title": "Ajustes",
+        "s3_title": "Critérios e limites",
         "s3_sub": "Os valores padrão foram calibrados contra trilhas reais. "
                   "Mexer aqui é opcional.",
         "w_box": "Peso de cada critério",
@@ -206,7 +230,7 @@ TEXTS = {
                      "que exista no seu contexto — a camada é sua.",
         "cons_buffer": "Distância a manter (m)", "cons_mode": "Tratamento",
 
-        "s4_title": "Onde salvar e executar",
+        "s4_title": "Revisar e executar",
         "s4_sub": "O cálculo roda em segundo plano; o QGIS continua utilizável.",
         "out": "Arquivo de saída", "fmt": "Formato do vetor",
         "crs": "CRS de saída (opcional)",
@@ -236,7 +260,31 @@ TEXTS = {
     },
     "en": {
         "window": "TopoTrail — trail and access planning",
-        "steps": ["Data", "What you want", "Tuning", "Run"],
+        "tagline": "Topographic planning",
+        "eyebrow": "STEP {n} OF 4",
+        "theme_auto": "Theme: automatic",
+        "theme_light": "Theme: light",
+        "theme_dark": "Theme: dark",
+        "badge_required": "Required",
+        "badge_included": "included",
+        "credit_line": "ENBT · Rio de Janeiro Botanical Garden · Herpeto Mantiqueira",
+        "s1_banner": "Only the DEM is required. Slope and curvatures are derived "
+                     "from it, which removes unit, sign-convention and "
+                     "grid-alignment problems in one step.",
+        "chip_unreadable": "I could not open this file as a raster",
+        "chip_no_crs": "no CRS defined",
+        "chip_crs_ok": "CRS defined",
+        "chip_unit": "units",
+        "change": "Change",
+        "group_always_sub": "Baseline results for reading the terrain",
+        "group_optional_sub": "{n} of 4 selected",
+        "total_chip": "{n} in total",
+        "note_need_dem": "Choose the DEM to continue",
+        "note_outputs": "{n} outputs selected",
+        "note_tuning": "Defaults calibrated against real trails",
+        "note_review": "Review the outputs before running",
+        "next_alt": "Continue",
+        "steps": ["Data", "Products", "Criteria", "Run"],
         "about": "About",
         "status_title": "CURRENT SELECTION",
         "status_no_dem": "No DEM chosen",
@@ -263,9 +311,9 @@ TEXTS = {
         "back": "◀ Back", "next": "Next ▶", "run": "Generate results",
         "cancel": "Cancel run",
 
-        "s1_title": "What data do you have?",
-        "s1_sub": "Only the digital elevation model is required. Slope and "
-                  "curvatures are derived from it.",
+        "s1_title": "Input data",
+        "s1_sub": "Choose the elevation model. TopoTrail handles the derived "
+                  "layers and the grid alignment.",
         "dem": "DEM file",
         "dem_help": "An elevation raster in GeoTIFF. Any source works: "
                     "Copernicus, SRTM, ALOS, a national topographic sheet.",
@@ -279,10 +327,10 @@ TEXTS = {
         "slope": "Slope", "curvh": "Plan curvature",
         "curvv": "Profile curvature", "sunit": "Slope unit",
 
-        "s2_title": "What should the plugin produce?",
-        "s2_sub": "Tick whatever is useful. The first two are always produced.",
-        "always": "ALWAYS PRODUCED",
-        "optional_group": "OPTIONAL — TICK WHAT YOU NEED",
+        "s2_title": "Analysis products",
+        "s2_sub": "Choose what to generate. The two essential maps are already included.",
+        "always": "Always included",
+        "optional_group": "Optional products",
         "o_transit_tip": "The labels describe steepness, not a verdict on the "
                          "walker: on real walked trails, field teams routinely "
                          "cross classes 4 and 5.\n\nThe class distribution "
@@ -330,7 +378,7 @@ TEXTS = {
         "margin_help": "How far the route may stray from the straight line. "
                        "Too small forces a straight route; too large is slow.",
 
-        "s3_title": "Tuning",
+        "s3_title": "Criteria and limits",
         "s3_sub": "The defaults were calibrated against real trails. Changing "
                   "anything here is optional.",
         "w_box": "Weight of each criterion",
@@ -369,7 +417,7 @@ TEXTS = {
                      "movement where you work — the layer is yours.",
         "cons_buffer": "Distance to keep (m)", "cons_mode": "Treatment",
 
-        "s4_title": "Where to save, and run",
+        "s4_title": "Review and run",
         "s4_sub": "The computation runs in the background; QGIS stays usable.",
         "out": "Output file", "fmt": "Vector format",
         "crs": "Output CRS (optional)",
@@ -407,13 +455,67 @@ TEXTS = {
 # Paleta tirada da logo do plugin: o verde-floresta #0d452c e a cor dominante
 # dela. Uma ferramenta de campo em unidade de conservacao nao tem por que usar
 # o azul generico de painel de controle.
-INK = "#1a2420"
-MUTED = "#6b7a74"
-FOREST = "#0d452c"
-ACCENT = "#17805a"
-ACCENT_SOFT = "#e8f3ee"
-CANVAS = "#f4f6f5"
-LINE = "#e2e8e5"
+#
+# Os tons claro e escuro existem os dois porque o QGIS tem tema proprio e o
+# usuario escolhe qual usar. Fixar a janela em escuro -- ou em claro -- garante
+# que ela vai destoar da metade dos QGIS instalados, e no caso do escuro ainda
+# apagaria as logos institucionais, que tem fundo branco. Entao a paleta e
+# escolhida a partir do tema em vigor, e nao decidida aqui.
+
+LIGHT = {
+    "ink": "#1a2420", "muted": "#6b7a74", "forest": "#0d452c",
+    "accent": "#17805a", "accent_hover": "#146f4e", "accent_soft": "#e8f3ee",
+    "accent_tint": "#eef7f2", "canvas": "#f4f6f5", "surface": "#ffffff",
+    "surface_alt": "#fbfcfb", "line": "#e2e8e5", "line_strong": "#c7d4cc",
+    "gold": "#c98f22", "plate": "#ffffff", "disabled": "#7f8d87",
+}
+
+DARK = {
+    "ink": "#e8efea", "muted": "#93a79e", "forest": "#0b2c20",
+    "accent": "#3fae82", "accent_hover": "#4fc294", "accent_soft": "#16342a",
+    "accent_tint": "#14342a", "canvas": "#141a17", "surface": "#1b231f",
+    "surface_alt": "#182019", "line": "#2b3833", "line_strong": "#3b4b44",
+    "gold": "#e4aa3b", "plate": "#ffffff", "disabled": "#68786f",
+}
+
+# Preenchido em tempo de execucao por _adopt_theme(); os nomes em maiuscula
+# continuam existindo porque sao usados na construcao dos widgets.
+T = dict(LIGHT)
+INK = T["ink"]
+MUTED = T["muted"]
+FOREST = T["forest"]
+ACCENT = T["accent"]
+ACCENT_SOFT = T["accent_soft"]
+CANVAS = T["canvas"]
+LINE = T["line"]
+
+
+def _is_dark_theme():
+    """O QGIS esta em tema escuro?
+
+    Lido da paleta em vigor do Qt, que e o que o proprio QGIS ajusta quando o
+    usuario troca de tema, em vez de uma configuracao propria do plugin -- assim
+    a janela acompanha o resto do programa sem ninguem precisar configurar nada.
+    """
+    try:
+        from qgis.PyQt.QtWidgets import QApplication
+        from qgis.PyQt.QtGui import QPalette
+        application = QApplication.instance()
+        if application is None:
+            return False
+        window = application.palette().color(QPalette.Window)
+        return window.lightness() < 128
+    except Exception:
+        return False
+
+
+def _adopt_theme():
+    global T, INK, MUTED, FOREST, ACCENT, ACCENT_SOFT, CANVAS, LINE
+    T = dict(DARK if _is_dark_theme() else LIGHT)
+    INK, MUTED, FOREST = T["ink"], T["muted"], T["forest"]
+    ACCENT, ACCENT_SOFT = T["accent"], T["accent_soft"]
+    CANVAS, LINE = T["canvas"], T["line"]
+    return T
 
 
 def _help(text):
@@ -441,39 +543,6 @@ def _icon(name, size=22, color=INK, width=1.9):
     label.setPixmap(icons.pixmap(name, size, color, width))
     label.setFixedSize(size, size)
     return label
-
-
-class _StepTrack(QFrame):
-    """Desenha o fio vertical que liga os marcadores dos passos.
-
-    Feito com paintEvent e não com um QFrame de 2 px entre as linhas porque o
-    fio precisa passar por trás dos marcadores e acompanhar a posição real
-    deles, que muda com a fonte e o DPI do sistema.
-    """
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("ttStepTrack")
-        self._badges = []
-
-    def set_rows(self, badges):
-        self._badges = badges
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if len(self._badges) < 2:
-            return
-        from qgis.PyQt.QtGui import QPainter, QPen, QColor
-        first, last = self._badges[0], self._badges[-1]
-        top = first.mapTo(self, first.rect().center())
-        bottom = last.mapTo(self, last.rect().center())
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        pen = QPen(QColor(255, 255, 255, 38))
-        pen.setWidth(2)
-        painter.setPen(pen)
-        painter.drawLine(top.x(), top.y(), bottom.x(), bottom.y())
-        painter.end()
 
 
 class OptionCard(QFrame):
@@ -518,8 +587,9 @@ class OptionCard(QFrame):
 
         self.tick = QLabel()
         self.tick.setObjectName("ttTick")
-        self.tick.setFixedSize(22, 22)
-        layout.addWidget(self.tick, 0, qt_enum("AlignmentFlag", "AlignTop"))
+        self.tick.setAlignment(qt_enum("AlignmentFlag", "AlignRight"))
+        layout.addWidget(self.tick, 0, qt_enum("AlignmentFlag", "AlignVCenter"))
+        self.setFocusPolicy(Qt.StrongFocus)
 
         self.body = QWidget()
         self.body.setVisible(False)
@@ -543,8 +613,8 @@ class OptionCard(QFrame):
         self._checked = value
         self.setProperty("checked", "true" if value else "false")
         self.icon_label.setPixmap(icons.pixmap(
-            self.glyph, 24, ACCENT if value else MUTED, 1.85))
-        self.tick.setPixmap(icons.pixmap("check", 22, ACCENT, 1.9)
+            self.glyph, 22, ACCENT if value else MUTED, 1.85))
+        self.tick.setPixmap(icons.pixmap("check", 20, ACCENT, 1.9)
                             if value else QPixmap())
         self.style().unpolish(self); self.style().polish(self)
         for callback in self._callbacks:
@@ -553,21 +623,51 @@ class OptionCard(QFrame):
     def toggled(self, callback):
         self._callbacks.append(callback)
 
-    def lock_checked(self):
-        """Saída obrigatória: marcada, sem interação, e visivelmente assim."""
+    def lock_checked(self, badge_text=""):
+        """Saída obrigatória: sempre gerada, e dito com palavra.
+
+        A versão anterior usava uma caixa de marcação marcada e desabilitada, e
+        o resultado era uma caixa apagada que se lê como *desligada* -- foi
+        exatamente assim que passou despercebido que essas saídas estavam
+        ativas. Um selo escrito "Incluído" não depende de cor nem de convenção.
+        """
         self._checked = True
         self._enabled = False
         self.setProperty("checked", "false")
         self.setProperty("locked", "true")
-        self.icon_label.setPixmap(icons.pixmap(self.glyph, 24, "#9ab0a6", 1.85))
-        self.tick.setPixmap(icons.pixmap("check", 22, "#9ac7b3", 1.9))
+        self.setFocusPolicy(Qt.NoFocus)
+        self.icon_label.setPixmap(icons.pixmap(self.glyph, 22, MUTED, 1.85))
+        self.tick.setPixmap(QPixmap())
+        self.tick.setText(badge_text)
+
+    def refresh_theme(self):
+        colour = MUTED if (self._locked() or not self._checked) else ACCENT
+        self.icon_label.setPixmap(icons.pixmap(self.glyph, 22, colour, 1.85))
+        if self._checked and not self._locked():
+            self.tick.setPixmap(icons.pixmap("check", 20, ACCENT, 1.9))
+
+    def _locked(self):
+        return self.property("locked") == "true"
 
     def mousePressEvent(self, event):
         if self._enabled:
             self.setChecked(not self._checked)
 
+    def keyPressEvent(self, event):
+        """Espaço e Enter alternam o cartão.
 
-def _card(title=None, glyph=None):
+        Sem isto o cartão só existe para quem usa o mouse -- a versão anterior
+        trocou caixas de marcação, que o Qt já tornava acessíveis por teclado,
+        por um QFrame que não respondia a tecla nenhuma.
+        """
+        if self._enabled and event.key() in (Qt.Key_Space, Qt.Key_Return,
+                                             Qt.Key_Enter):
+            self.setChecked(not self._checked)
+            return
+        super().keyPressEvent(event)
+
+
+def _card(title=None, glyph=None, badge=None):
     """Um bloco visual. Agrupar reduz a impressao de painel de controle."""
     frame = QFrame()
     frame.setObjectName("ttCard")
@@ -582,6 +682,12 @@ def _card(title=None, glyph=None):
         label = QLabel(title or "")
         label.setObjectName("ttCardTitle")
         head.addWidget(label, 1)
+        if badge:
+            chip = QLabel()
+            chip.setObjectName("ttBadgeChip")
+            chip.setProperty("kind", badge)
+            head.addWidget(chip, 0)
+            frame._badge = chip
         holder = QWidget()
         holder.setLayout(head)
         head.setContentsMargins(0, 0, 0, 2)
@@ -640,6 +746,189 @@ class _FileRow(QWidget):
         self.edit.setText(value)
 
 
+class _Toggle(QCheckBox):
+    """Interruptor deslizante. Só a aparência muda; é um QCheckBox por dentro,
+    então tudo que já lia isChecked()/toggled continua valendo."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ttToggle")
+        self.setCursor(Qt.PointingHandCursor)
+
+
+class _Segmented(QWidget):
+    """Escolha entre poucas opções, todas visíveis.
+
+    Uma caixa de seleção para "metros ou pés" esconde metade da resposta atrás
+    de um clique e não deixa claro que só existem duas opções. Com o controle
+    segmentado as duas ficam à vista e a escolha é um clique, não dois.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ttSegment")
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(3, 3, 3, 3)
+        layout.setSpacing(3)
+        self._buttons = []
+        self._index = 0
+
+    def addItems(self, labels):
+        for button in self._buttons:
+            button.setParent(None)
+        self._buttons = []
+        for position, text in enumerate(labels):
+            button = QPushButton(text)
+            button.setObjectName("ttSegmentButton")
+            button.setCheckable(True)
+            # A largura e reservada para o texto em semibold, que e o peso do
+            # estado marcado: dimensionar pelo peso normal fazia o rotulo do
+            # segmento ativo ser cortado no proprio botao.
+            bold = button.font()
+            bold.setBold(True)
+            button.setMinimumWidth(
+                QFontMetrics(bold).horizontalAdvance(text) + 40)
+            button.setCursor(Qt.PointingHandCursor)
+            button.clicked.connect(
+                lambda _checked, index=position: self.setCurrentIndex(index))
+            self.layout().addWidget(button)
+            self._buttons.append(button)
+        self.setCurrentIndex(min(self._index, len(labels) - 1))
+
+    def clear(self):
+        pass
+
+    def currentIndex(self):
+        return self._index
+
+    def currentText(self):
+        return self._buttons[self._index].text() if self._buttons else ""
+
+    def setCurrentIndex(self, index):
+        if not self._buttons:
+            self._index = max(index, 0)
+            return
+        self._index = max(0, min(index, len(self._buttons) - 1))
+        for position, button in enumerate(self._buttons):
+            button.setChecked(position == self._index)
+
+
+class _RasterChip(QWidget):
+    """Campo de arquivo que, escolhido o raster, mostra o que foi lido dele.
+
+    Um campo de texto vazio nao diz se o arquivo abriu, qual a resolucao, nem se
+    o CRS esta definido -- e o usuario so descobre que escolheu o arquivo errado
+    depois de rodar a analise inteira. Aqui o GDAL le o cabecalho na hora e a
+    ficha responde antes: nome, formato, tamanho da celula e sistema de
+    coordenadas, ou uma mensagem clara de que o arquivo nao serve.
+    """
+
+    def __init__(self, dialog, parent=None):
+        super().__init__(parent)
+        self.dialog = dialog
+        self._path = ""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.empty = QWidget()
+        empty_layout = QHBoxLayout(self.empty)
+        empty_layout.setContentsMargins(0, 0, 0, 0)
+        empty_layout.setSpacing(7)
+        self.edit = QLineEdit()
+        self.edit.editingFinished.connect(lambda: self.set_path(self.edit.text()))
+        self.browse = QPushButton("…")
+        self.browse.setObjectName("ttBrowse")
+        self.browse.setFixedWidth(52)
+        self.browse.setCursor(Qt.PointingHandCursor)
+        self.browse.clicked.connect(self._pick)
+        empty_layout.addWidget(self.edit, 1)
+        empty_layout.addWidget(self.browse, 0)
+        layout.addWidget(self.empty)
+
+        self.filled = QFrame()
+        self.filled.setObjectName("ttChip")
+        self.filled.setVisible(False)
+        chip = QHBoxLayout(self.filled)
+        chip.setContentsMargins(13, 11, 12, 11)
+        chip.setSpacing(12)
+        self.chip_icon = _icon("mountain", 21, ACCENT, 1.85)
+        chip.addWidget(self.chip_icon, 0, qt_enum("AlignmentFlag", "AlignVCenter"))
+        column = QVBoxLayout()
+        column.setSpacing(2)
+        self.name = QLabel()
+        self.name.setObjectName("ttChipName")
+        self.detail = QLabel()
+        self.detail.setObjectName("ttChipDetail")
+        column.addWidget(self.name)
+        column.addWidget(self.detail)
+        chip.addLayout(column, 1)
+        self.change = QPushButton(dialog.t("change"))
+        self.change.setCursor(Qt.PointingHandCursor)
+        self.change.clicked.connect(self._pick)
+        dialog._labels.append((self.change, "change", "setText"))
+        chip.addWidget(self.change, 0)
+        layout.addWidget(self.filled)
+
+    def _pick(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, self.dialog.t("dem"), "",
+            "GeoTIFF (*.tif *.tiff);;Todos (*)")
+        if path:
+            self.set_path(path)
+
+    def text(self):
+        return self._path
+
+    def setText(self, value):
+        self.set_path(value)
+
+    def set_path(self, path):
+        path = (path or "").strip()
+        self._path = path
+        if not path:
+            self.empty.setVisible(True)
+            self.filled.setVisible(False)
+            self.edit.setText("")
+            return
+        self.empty.setVisible(False)
+        self.filled.setVisible(True)
+        self.name.setText(os.path.basename(path))
+        self.detail.setText(self._describe(path))
+        self.setToolTip(path)
+        if hasattr(self.dialog, "footer_note"):
+            self.dialog._refresh_context()
+
+    def _describe(self, path):
+        """Le o cabecalho do raster. Nunca levanta: um arquivo ilegivel aqui e
+        informacao para o usuario, nao motivo para derrubar a janela."""
+        try:
+            from osgeo import gdal
+            gdal.UseExceptions()
+            dataset = gdal.Open(path)
+            if dataset is None:
+                return self.dialog.t("chip_unreadable")
+            driver = dataset.GetDriver().ShortName
+            transform = dataset.GetGeoTransform()
+            size = abs(transform[1]) if transform else 0.0
+            parts = [driver]
+            if size:
+                parts.append(f"{size:.6g} {self.dialog.t('chip_unit')}"
+                             if size < 1 else f"{size:.0f} m")
+            projection = dataset.GetProjection()
+            if projection:
+                from osgeo import osr
+                reference = osr.SpatialReference(wkt=projection)
+                code = reference.GetAuthorityCode(None)
+                parts.append(f"EPSG:{code}" if code else self.dialog.t("chip_crs_ok"))
+            else:
+                parts.append(self.dialog.t("chip_no_crs"))
+            parts.append(f"{dataset.RasterXSize} × {dataset.RasterYSize} px")
+            return " · ".join(parts)
+        except Exception:
+            return self.dialog.t("chip_unreadable")
+
+
 class _Section(QWidget):
     """Bloco que so aparece quando a caixa correspondente e marcada.
 
@@ -681,7 +970,11 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
     def __init__(self, iface=None, parent=None):
         super().__init__(parent)
         self.iface = iface
+        _adopt_theme()
+        self.theme_mode = "auto"
         self.lang = "pt"
+        self._option_cards = []
+        self._static_icons = []
         self._temp_point_files = []
         self._task = None
         self._feedback = None
@@ -713,7 +1006,11 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self.setWindowTitle(self.t("window"))
         self.version_label.setText(f"v{_plugin_version()}")
         for widget, key, attribute in self._labels:
-            getattr(widget, attribute)(self.t(key))
+            text = self.t(key)
+            if key == "eyebrow":
+                text = text.format(n=getattr(widget, "_step_number", 1))
+            getattr(widget, attribute)(text)
+        self.theme_button.setText(self.t(f"theme_{self.theme_mode}"))
         for index, name in enumerate(self.t("steps")):
             self.step_labels[index].setText(name)
         self.back_button.setText(self.t("back"))
@@ -726,15 +1023,10 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
     # -- construcao ---------------------------------------------------------
     def _build(self):
-        outer = QHBoxLayout(self)
+        outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-        outer.addWidget(self._build_sidebar())
-
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(0)
+        outer.addWidget(self._build_header())
 
         self.stack = QStackedWidget()
         for builder in (self._step_data, self._step_outputs,
@@ -742,8 +1034,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             page = QWidget()
             page.setObjectName("ttPage")
             layout = QVBoxLayout(page)
-            layout.setContentsMargins(38, 34, 38, 26)
-            layout.setSpacing(16)
+            layout.setContentsMargins(34, 26, 34, 22)
+            layout.setSpacing(14)
             builder(layout)
             layout.addStretch(1)
             scroll = QScrollArea()
@@ -752,164 +1044,137 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             scroll.setWidget(page)
             self.stack.addWidget(scroll)
         self.stack.currentChanged.connect(lambda _index: self._update_nav())
-        right_layout.addWidget(self.stack, 1)
-        right_layout.addWidget(self._build_footer())
-        outer.addWidget(right, 1)
+        outer.addWidget(self.stack, 1)
+        outer.addWidget(self._build_footer())
+        outer.addWidget(self._build_credits())
 
-    def _build_sidebar(self):
-        """Barra lateral: marca, progresso, estado atual e crédito institucional.
+    def _build_header(self):
+        """Marca, etapas e ações da janela, em três linhas finas no topo.
 
-        A primeira versão errava três coisas. A logo aparecia a 32 px ao lado de
-        um rótulo de texto "TopoTrail" -- mas a logo *é* um lockup que já contém
-        a palavra, então o nome saía duplicado e ilegível nos dois lugares. A
-        linha de apoio era um parágrafo de 11 px em três linhas, que se lê como
-        letra miúda. E sobravam 250 px de vazio entre os passos e o rodapé.
-
-        Aqui a marca aparece uma vez, no tamanho em que se lê; e o vazio virou
-        um painel de estado que responde à pergunta "o que já está escolhido?"
-        sem obrigar a voltar passo a passo.
+        A barra lateral saiu: numa janela de plugin, 270 px fixos a esquerda sao
+        um quarto da largura util gastos em navegacao que cabe numa faixa. O
+        credito institucional, que morava la, ganhou faixa propria no rodape --
+        continua permanente, que era o requisito.
         """
-        side = QFrame()
-        side.setObjectName("ttSide")
-        side.setFixedWidth(272)
-        layout = QVBoxLayout(side)
-        layout.setContentsMargins(20, 20, 20, 18)
-        layout.setSpacing(0)
+        header = QFrame()
+        header.setObjectName("ttHeader")
+        column = QVBoxLayout(header)
+        column.setContentsMargins(24, 16, 24, 0)
+        column.setSpacing(14)
 
+        brand = QHBoxLayout()
+        brand.setSpacing(12)
         logo_path = os.path.join(PLUGIN_DIR, "logo.png")
         if os.path.exists(logo_path):
-            plate = QFrame()
-            plate.setObjectName("ttPlate")
-            plate_layout = QVBoxLayout(plate)
-            plate_layout.setContentsMargins(16, 14, 16, 14)
-            mark = QLabel()
-            mark.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
-            mark.setPixmap(QPixmap(logo_path).scaledToWidth(
-                122, qt_enum("TransformationMode", "SmoothTransformation")))
-            plate_layout.addWidget(mark)
-            layout.addWidget(plate)
-        else:
-            name = QLabel("TopoTrail")
-            name.setObjectName("ttBrand")
-            layout.addWidget(name)
+            plate = QLabel()
+            plate.setObjectName("ttMark")
+            plate.setFixedSize(42, 42)
+            plate.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
+            plate.setPixmap(QPixmap(logo_path).scaled(
+                32, 32, qt_enum("AspectRatioMode", "KeepAspectRatio"),
+                qt_enum("TransformationMode", "SmoothTransformation")))
+            brand.addWidget(plate)
+        titles = QVBoxLayout()
+        titles.setSpacing(1)
+        name = QLabel("TOPOTRAIL")
+        name.setObjectName("ttBrand")
+        self.tagline = QLabel()
+        self.tagline.setObjectName("ttTagline")
+        self._bind(self.tagline, "tagline")
+        titles.addWidget(name)
+        titles.addWidget(self.tagline)
+        brand.addLayout(titles)
+        brand.addStretch(1)
 
+        self.theme_button = QPushButton()
+        self.theme_button.setObjectName("ttHeaderAction")
+        self.theme_button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
+        self.theme_button.clicked.connect(self._cycle_theme)
+        self._bind(self.theme_button, "theme_auto")
+        brand.addWidget(self.theme_button)
+        self.language_button = QPushButton("PT-BR | ENG")
+        self.language_button.setObjectName("ttHeaderAction")
+        self.language_button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
+        self.language_button.clicked.connect(self._toggle_language)
+        brand.addWidget(self.language_button)
+        column.addLayout(brand)
+
+        steps = QHBoxLayout()
+        steps.setSpacing(8)
+        self.step_labels = []
+        self._step_rows = []
+        for index in range(4):
+            pill = QFrame()
+            pill.setObjectName("ttPill")
+            pill.setProperty("active", "false")
+            pill.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
+            pill.mousePressEvent = lambda event, target=index: self._jump_to(target)
+            inner = QHBoxLayout(pill)
+            inner.setContentsMargins(13, 8, 16, 8)
+            inner.setSpacing(10)
+            badge = QLabel(str(index + 1))
+            badge.setObjectName("ttBadge")
+            badge.setFixedSize(24, 24)
+            badge.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
+            label = QLabel()
+            label.setObjectName("ttStepText")
+            inner.addWidget(badge)
+            inner.addWidget(label)
+            self.step_labels.append(label)
+            self._step_rows.append((pill, badge))
+            steps.addWidget(pill)
+        steps.addStretch(1)
+        column.addLayout(steps)
+
+        meta = QHBoxLayout()
+        meta.setContentsMargins(2, 0, 2, 0)
+        self.about_button = QPushButton()
+        self.about_button.setObjectName("ttQuiet")
+        self.about_button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
+        self.about_button.clicked.connect(self._show_about)
+        self._bind(self.about_button, "about")
+        meta.addWidget(self.about_button)
+        meta.addStretch(1)
         self.version_label = QLabel()
-        self.version_label.setObjectName("ttVersion")
-        self.version_label.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
-        layout.addSpacing(9)
-        layout.addWidget(self.version_label)
-        layout.addSpacing(22)
+        self.version_label.setObjectName("ttQuietText")
+        meta.addWidget(self.version_label)
+        column.addLayout(meta)
+        column.addSpacing(2)
+        return header
 
-        layout.addWidget(self._build_steps())
-        layout.addSpacing(18)
-        layout.addWidget(self._build_status())
-        layout.addStretch(1)
+    def _build_credits(self):
+        """Faixa de crédito institucional, fixa na base.
 
-        credit = QFrame()
-        credit.setObjectName("ttCredit")
-        credit_layout = QVBoxLayout(credit)
-        credit_layout.setContentsMargins(12, 14, 12, 14)
-        logos = QHBoxLayout()
-        logos.setSpacing(11)
-        logos.addStretch(1)
-        # Alturas diferentes de proposito: as tres logos tem proporcoes muito
-        # distintas -- uma circular, duas verticais -- e igualar a altura faria a
-        # circular dominar. Estas alturas equilibram a area ocupada por cada uma.
-        for filename, height in (("logo_herpeto_mantiqueira.png", 62),
-                                 ("logo_enbt.jpg", 56), ("logo_jbrj.jpg", 62)):
+        Numa placa clara de propósito: as três marcas têm fundo branco, e sobre
+        o fundo escuro da janela elas apareceriam como retângulos brancos soltos.
+        """
+        strip = QFrame()
+        strip.setObjectName("ttCreditStrip")
+        layout = QHBoxLayout(strip)
+        layout.setContentsMargins(24, 9, 24, 11)
+        layout.setSpacing(12)
+
+        plate = QFrame()
+        plate.setObjectName("ttCredit")
+        plate_layout = QHBoxLayout(plate)
+        plate_layout.setContentsMargins(12, 6, 12, 6)
+        plate_layout.setSpacing(13)
+        for filename, height in (("logo_herpeto_mantiqueira.png", 30),
+                                 ("logo_enbt.jpg", 27), ("logo_jbrj.jpg", 30)):
             path = os.path.join(PLUGIN_DIR, "assets", filename)
             if not os.path.exists(path):
                 continue
             mark = QLabel()
             mark.setPixmap(QPixmap(path).scaledToHeight(
                 height, qt_enum("TransformationMode", "SmoothTransformation")))
-            logos.addWidget(mark)
-        logos.addStretch(1)
-        credit_layout.addLayout(logos)
-        layout.addWidget(credit)
-        layout.addSpacing(12)
-
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        self.about_button = QPushButton()
-        self.about_button.setObjectName("ttSideLink")
-        self.about_button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
-        self.about_button.clicked.connect(self._show_about)
-        self._bind(self.about_button, "about")
-        self.language_button = QPushButton("PT-BR | ENG")
-        self.language_button.setObjectName("ttSideLink")
-        self.language_button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
-        self.language_button.clicked.connect(self._toggle_language)
-        row.addWidget(self.about_button, 3)
-        row.addWidget(self.language_button, 2)
-        holder = QWidget(); holder.setLayout(row)
-        row.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(holder)
-        return side
-
-    def _build_steps(self):
-        """Os quatro passos, com o fio que liga os marcadores.
-
-        O fio não é enfeite: é o que transforma quatro linhas soltas numa
-        sequência com começo e fim, e mostra de relance quanto falta.
-        """
-        block = _StepTrack()
-        layout = QVBoxLayout(block)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
-        self.step_labels = []
-        self._step_rows = []
-        for index in range(4):
-            row = QFrame()
-            row.setObjectName("ttStepRow")
-            row.setProperty("active", "false")
-            row.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
-            row.mousePressEvent = lambda event, target=index: self._jump_to(target)
-            inner = QHBoxLayout(row)
-            inner.setContentsMargins(10, 11, 12, 11)
-            inner.setSpacing(13)
-            badge = QLabel(str(index + 1))
-            badge.setObjectName("ttBadge")
-            badge.setFixedSize(28, 28)
-            badge.setAlignment(qt_enum("AlignmentFlag", "AlignCenter"))
-            label = QLabel()
-            label.setObjectName("ttStepText")
-            inner.addWidget(badge)
-            inner.addWidget(label, 1)
-            self.step_labels.append(label)
-            self._step_rows.append((row, badge))
-            layout.addWidget(row)
-        block.set_rows([badge for _row, badge in self._step_rows])
-        return block
-
-    def _build_status(self):
-        """Painel de estado: o que já foi escolhido, sem voltar passo a passo."""
-        panel = QFrame()
-        panel.setObjectName("ttStatus")
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(14, 13, 14, 13)
-        layout.setSpacing(9)
-        title = QLabel()
-        title.setObjectName("ttStatusTitle")
-        self._bind(title, "status_title")
-        layout.addWidget(title)
-        self.status_rows = {}
-        for key, glyph in (("status_dem", "mountain"),
-                           ("status_outputs", "layers"),
-                           ("status_output_file", "save")):
-            row = QHBoxLayout()
-            row.setSpacing(9)
-            row.addWidget(_icon(glyph, 15, "#7fa694", 1.8), 0,
-                          qt_enum("AlignmentFlag", "AlignTop"))
-            value = QLabel("—")
-            value.setObjectName("ttStatusValue")
-            value.setMinimumWidth(1)
-            row.addWidget(value, 1)
-            holder = QWidget(); holder.setLayout(row)
-            row.setContentsMargins(0, 0, 0, 0)
-            layout.addWidget(holder)
-            self.status_rows[key] = value
-        return panel
+            plate_layout.addWidget(mark)
+        layout.addWidget(plate)
+        layout.addStretch(1)
+        self.credit_text = QLabel()
+        self.credit_text.setObjectName("ttQuietText")
+        self._bind(self.credit_text, "credit_line")
+        layout.addWidget(self.credit_text)
+        return strip
 
     def _build_footer(self):
         footer = QFrame()
@@ -921,6 +1186,10 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self.back_button.setObjectName("ttGhost")
         self.back_button.clicked.connect(lambda: self._go(-1))
         layout.addWidget(self.back_button)
+        layout.addStretch(1)
+        self.footer_note = QLabel()
+        self.footer_note.setObjectName("ttFooterNote")
+        layout.addWidget(self.footer_note)
         layout.addStretch(1)
         self.next_button = QPushButton()
         self.next_button.setObjectName("ttPrimary")
@@ -935,11 +1204,26 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         QMessageBox.about(self, self.t("about"),
                           self.t("about_text").format(version=_plugin_version()))
 
-    def _page_head(self, layout, glyph, title_key, subtitle_key):
+    def _page_head(self, layout, glyph, title_key, subtitle_key, step=1):
+        row = QHBoxLayout()
+        row.setSpacing(11)
+        mark = _icon(glyph, 17, ACCENT, 1.9)
+        self._static_icons = getattr(self, "_static_icons", [])
+        self._static_icons.append((mark, glyph, 17, 1.9))
+        row.addWidget(mark, 0, qt_enum("AlignmentFlag", "AlignVCenter"))
+        eyebrow = QLabel()
+        eyebrow.setObjectName("ttEyebrow")
+        eyebrow.setText(self.t("eyebrow").format(n=step))
+        self._labels.append((eyebrow, "eyebrow", "setText"))
+        eyebrow._step_number = step
+        row.addWidget(eyebrow)
+        row.addStretch(1)
+        holder_top = QWidget(); holder_top.setLayout(row)
+        row.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(holder_top)
+
         row = QHBoxLayout()
         row.setSpacing(13)
-        row.addWidget(_icon(glyph, 27, ACCENT, 2.0), 0,
-                      qt_enum("AlignmentFlag", "AlignTop"))
         column = QVBoxLayout()
         column.setSpacing(4)
         title = QLabel()
@@ -955,24 +1239,39 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         row.addLayout(column, 1)
         holder = QWidget()
         holder.setLayout(row)
-        row.setContentsMargins(0, 0, 0, 6)
+        row.setContentsMargins(0, 0, 0, 4)
         layout.addWidget(holder)
 
     # -- passo 1: dados -----------------------------------------------------
     def _step_data(self, layout):
-        self._page_head(layout, "mountain", "s1_title", "s1_sub")
+        self._page_head(layout, "mountain", "s1_title", "s1_sub", 1)
 
-        card, inner = _card(self.t("dem_card"), "mountain")
+        banner = QFrame()
+        banner.setObjectName("ttBanner")
+        banner_layout = QHBoxLayout(banner)
+        banner_layout.setContentsMargins(14, 11, 14, 11)
+        banner_layout.setSpacing(10)
+        banner_layout.addWidget(_icon("check", 17, ACCENT, 1.85), 0,
+                                qt_enum("AlignmentFlag", "AlignTop"))
+        note = QLabel()
+        note.setObjectName("ttBannerText")
+        note.setWordWrap(True)
+        self._bind(note, "s1_banner")
+        banner_layout.addWidget(note, 1)
+        layout.addWidget(banner)
+
+        card, inner = _card(self.t("dem_card"), "mountain", badge="required")
         self._bind(card._title_label, "dem_card")
-        self.dem_file = _FileRow("GeoTIFF (*.tif *.tiff);;Todos (*)", "MDE")
+        self._bind(card._badge, "badge_required")
+        self.dem_file = _RasterChip(self)
         inner.addWidget(self.dem_file)
         inner.addWidget(self._help_label("dem_help"))
 
         row = QHBoxLayout()
         row.addWidget(self._label("vunit"))
-        self.vertical_unit = QComboBox()
-        row.addWidget(self.vertical_unit)
         row.addStretch(1)
+        self.vertical_unit = _Segmented()
+        row.addWidget(self.vertical_unit)
         inner.addLayout(row)
         inner.addWidget(self._help_label("vunit_help"))
         layout.addWidget(card)
@@ -1004,26 +1303,45 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self._bind(card.title, title_key)
         self._bind(card.description, help_key)
         if locked:
-            card.lock_checked()
+            card.lock_checked(self.t("badge_included"))
+            self._labels.append((card.tick, "badge_included", "setText"))
         elif checked:
             card.setChecked(True)
+        self._option_cards.append(card)
         return card
 
-    def _step_outputs(self, layout):
-        self._page_head(layout, "layers", "s2_title", "s2_sub")
+    def _group_head(self, title_key, subtitle_key, chip=False):
+        holder = QWidget()
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(2, 4, 2, 2)
+        row.setSpacing(10)
+        column = QVBoxLayout()
+        column.setSpacing(1)
+        title = QLabel(); title.setObjectName("ttGroupLabel")
+        self._bind(title, title_key)
+        subtitle = QLabel(); subtitle.setObjectName("ttGroupSub")
+        column.addWidget(title); column.addWidget(subtitle)
+        row.addLayout(column, 1)
+        holder._subtitle = subtitle
+        holder._subtitle_key = subtitle_key
+        if chip:
+            badge = QLabel(); badge.setObjectName("ttCountChip")
+            row.addWidget(badge, 0, qt_enum("AlignmentFlag", "AlignTop"))
+            holder._chip = badge
+        else:
+            subtitle.setText(self.t(subtitle_key))
+        return holder
 
-        band = QLabel()
-        band.setObjectName("ttGroupLabel")
-        self._bind(band, "always")
-        layout.addWidget(band)
+    def _step_outputs(self, layout):
+        self._page_head(layout, "layers", "s2_title", "s2_sub", 2)
+
+        layout.addWidget(self._group_head("always", "group_always_sub"))
         layout.addWidget(self._option("grid", "o_score", "o_score_help", locked=True))
         layout.addWidget(self._option("alert", "o_risk", "o_risk_help", locked=True))
-
-        band = QLabel()
-        band.setObjectName("ttGroupLabel")
-        self._bind(band, "optional_group")
-        layout.addSpacing(4)
-        layout.addWidget(band)
+        layout.addSpacing(6)
+        self.optional_head = self._group_head(
+            "optional_group", "group_optional_sub", chip=True)
+        layout.addWidget(self.optional_head)
 
         self.want_zones = self._option("polygon", "o_zones", "o_zones_help", checked=True)
         self.want_transit = self._option("boot", "o_transit", "o_transit_help", checked=True)
@@ -1033,6 +1351,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
         self.want_route = self._option("route", "o_route", "o_route_help")
         layout.addWidget(self.want_route)
+        optional_cards = [self.want_zones, self.want_transit,
+                          self.want_streams, self.want_route]
         for card, tip in ((self.want_transit, "o_transit_tip"),
                           (self.want_streams, "o_streams_tip"),
                           (self.want_route, "o_route_tip")):
@@ -1092,10 +1412,12 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             body.addWidget(holder)
         body.addWidget(self._help_label("margin_help"))
         self.want_route.toggled(self.want_route.body.setVisible)
+        for card in optional_cards:
+            card.toggled(lambda _value: self._refresh_context())
 
     # -- passo 3: ajustes ---------------------------------------------------
     def _step_tuning(self, layout):
-        self._page_head(layout, "sliders", "s3_title", "s3_sub")
+        self._page_head(layout, "sliders", "s3_title", "s3_sub", 3)
 
         card, inner = _card(self.t("w_box"), "scale")
         self._bind(card._title_label, "w_box")
@@ -1183,7 +1505,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
     # -- passo 4: executar --------------------------------------------------
     def _step_run(self, layout):
-        self._page_head(layout, "play", "s4_title", "s4_sub")
+        self._page_head(layout, "play", "s4_title", "s4_sub", 4)
 
         card, inner = _card(self.t("out_box"), "save")
         self._bind(card._title_label, "out_box")
@@ -1268,136 +1590,211 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             self.output_format.setCurrentIndex(1)      # GeoPackage
             self._format_initialised = True
 
+    def _cycle_theme(self):
+        """auto → claro → escuro → auto.
+
+        Existe porque o QGIS tem tema proprio: seguir o tema em vigor e o
+        comportamento certo por padrao, mas quem quiser a janela escura num QGIS
+        claro (ou o contrario) nao deveria ter de trocar o tema do programa
+        inteiro para isso.
+        """
+        order = ["auto", "light", "dark"]
+        self.theme_mode = order[(order.index(self.theme_mode) + 1) % 3]
+        self._apply_theme()
+        self._retranslate()
+        self._repaint_icons()
+
     def _apply_theme(self):
+        global T, INK, MUTED, FOREST, ACCENT, ACCENT_SOFT, CANVAS, LINE
+        mode = getattr(self, "theme_mode", "auto")
+        dark = _is_dark_theme() if mode == "auto" else (mode == "dark")
+        T = dict(DARK if dark else LIGHT)
+        INK, MUTED, FOREST = T["ink"], T["muted"], T["forest"]
+        ACCENT, ACCENT_SOFT = T["accent"], T["accent_soft"]
+        CANVAS, LINE = T["canvas"], T["line"]
+        t = T
+        header_bg = "#0f1a15" if dark else "#0d452c"
         self.setStyleSheet(f"""
-            QDialog {{ background: {CANVAS}; }}
-            QLabel {{ color: {INK}; }}
+            QDialog {{ background: {t['canvas']}; }}
+            QLabel {{ color: {t['ink']}; }}
 
-            /* Lateral: verde-floresta da propria logo. */
-            #ttSide {{ background: {FOREST}; }}
-            #ttBrand {{ color: #ffffff; font-size: 21px; font-weight: 600; }}
-            #ttPlate {{ background: #ffffff; border-radius: 14px; }}
-            #ttVersion {{ color: #7fa694; font-size: 11px; letter-spacing: 0.6px; }}
-            #ttStepTrack {{ background: transparent; }}
-            #ttStatus {{ background: rgba(255,255,255,0.07); border-radius: 11px; }}
-            #ttStatusTitle {{ color: #7fa694; font-size: 9.5px; font-weight: 700;
-                              letter-spacing: 1.1px; }}
-            #ttStatusValue {{ color: #cfe3d8; font-size: 11.5px; }}
-            #ttSideLink {{ background: rgba(255,255,255,0.07); border: none;
-                           color: #b9d5c7; font-size: 11.5px; padding: 9px 6px;
-                           border-radius: 8px; }}
-            #ttSideLink:hover {{ background: rgba(255,255,255,0.15);
-                                 color: #ffffff; }}
+            #ttHeader {{ background: {header_bg};
+                         border-bottom: 1px solid {'#22302a' if dark else '#0a3a25'}; }}
+            #ttMark {{ background: {t['plate']}; border-radius: 11px; }}
+            #ttBrand {{ color: #ffffff; font-size: 13px; font-weight: 700;
+                        letter-spacing: 1.4px; }}
+            #ttTagline {{ color: #86a89a; font-size: 10.5px; }}
+            #ttHeaderAction {{ background: rgba(255,255,255,0.08); border: none;
+                               color: #cfe3d8; font-size: 11px; padding: 7px 12px;
+                               border-radius: 8px; }}
+            #ttHeaderAction:hover {{ background: rgba(255,255,255,0.16);
+                                     color: #ffffff; }}
+            #ttQuiet {{ background: transparent; border: none; color: #7d9a8d;
+                        font-size: 10.5px; padding: 4px 2px; text-align: left; }}
+            #ttQuiet:hover {{ color: #ffffff; }}
+            #ttQuietText {{ color: #7d9a8d; font-size: 10.5px; }}
 
-            #ttStepRow {{ border-radius: 8px; background: transparent; }}
-            #ttStepRow[active="true"] {{ background: rgba(255,255,255,0.13); }}
-            #ttStepText {{ color: #9dc4b1; font-size: 13.5px; }}
+            #ttPill {{ background: transparent; border-radius: 10px; }}
+            #ttPill:hover {{ background: rgba(255,255,255,0.06); }}
+            #ttPill[active="true"] {{ background: rgba(255,255,255,0.13); }}
+            #ttStepText {{ color: #83a696; font-size: 12px; }}
             #ttStepText[active="true"] {{ color: #ffffff; font-weight: 600; }}
-            #ttStepText[active="done"] {{ color: #cfe3d8; }}
-            #ttBadge {{ border-radius: 14px; font-size: 12px; font-weight: 700;
-                        background: {FOREST}; color: #8fb5a3;
-                        border: 2px solid rgba(255,255,255,0.16); }}
-            #ttBadge[active="true"] {{ background: #ffffff; color: {FOREST};
-                                       border: 2px solid #ffffff; }}
-            #ttBadge[active="done"] {{ background: {ACCENT}; color: #ffffff;
-                                       border: 2px solid {ACCENT}; }}
+            #ttStepText[active="done"] {{ color: #b9d5c7; }}
+            #ttBadge {{ border-radius: 12px; font-size: 11px; font-weight: 700;
+                        background: rgba(255,255,255,0.09); color: #83a696; }}
+            #ttBadge[active="true"] {{ background: {t['gold']}; color: #26200c; }}
+            #ttBadge[active="done"] {{ background: rgba(63,174,130,0.22);
+                                       color: {t['accent']}; }}
 
-            #ttCredit {{ background: #ffffff; border-radius: 10px; }}
+            #ttPage {{ background: {t['canvas']}; }}
+            #ttEyebrow {{ color: {t['accent']}; font-size: 10px; font-weight: 700;
+                          letter-spacing: 1.3px; }}
+            #ttPageTitle {{ font-size: 22px; font-weight: 600; color: {t['ink']}; }}
+            #ttPageSub {{ font-size: 12.5px; color: {t['muted']}; }}
+            #ttGroupLabel {{ font-size: 12.5px; font-weight: 600; color: {t['ink']}; }}
+            #ttGroupSub {{ font-size: 10.5px; color: {t['muted']}; }}
+            #ttCountChip {{ background: {t['accent_soft']}; color: {t['accent']};
+                            font-size: 10px; font-weight: 600; padding: 4px 9px;
+                            border-radius: 9px; }}
 
-            #ttPage {{ background: {CANVAS}; }}
-            #ttPageTitle {{ font-size: 20px; font-weight: 600; color: {INK};
-                            letter-spacing: -0.2px; }}
-            #ttPageSub {{ font-size: 12.5px; color: {MUTED}; }}
-            #ttCardTitle {{ font-size: 14px; font-weight: 600; color: {INK}; }}
-            #ttGroupLabel {{ font-size: 10.5px; font-weight: 700; color: #93a29b;
-                             letter-spacing: 1.1px; padding: 6px 2px 2px 2px; }}
-            #ttDivider {{ background: {LINE}; border: none; }}
+            #ttBanner {{ background: {t['accent_soft']};
+                         border: 1px solid {'#24483b' if dark else '#cfe6da'};
+                         border-radius: 10px; }}
+            #ttBannerText {{ color: {t['accent'] if dark else '#14614a'};
+                             font-size: 12px; }}
 
-            /* Cartao de saida: estado visivel de longe, area clicavel inteira. */
-            #ttOption {{ background: #ffffff; border: 1px solid {LINE};
+            #ttCard {{ background: {t['surface']}; border: 1px solid {t['line']};
+                       border-radius: 14px; }}
+            #ttCardTitle {{ font-size: 13.5px; font-weight: 600; color: {t['ink']}; }}
+            #ttBadgeChip {{ background: {t['accent_soft']}; color: {t['accent']};
+                            font-size: 9.5px; font-weight: 700; padding: 4px 9px;
+                            border-radius: 8px; }}
+            #ttHelp {{ color: {t['muted']}; font-size: 11.5px; }}
+            #ttDivider {{ background: {t['line']}; border: none; }}
+
+            #ttChip {{ background: {t['surface_alt']}; border: 1px solid {t['line']};
+                       border-radius: 11px; }}
+            #ttChipName {{ font-size: 12.5px; font-weight: 600; color: {t['ink']}; }}
+            #ttChipDetail {{ font-size: 10.5px; color: {t['muted']}; }}
+
+            #ttSegment {{ background: {t['surface_alt']};
+                          border: 1px solid {t['line']}; border-radius: 10px; }}
+            #ttSegmentButton {{ background: transparent; border: none;
+                                color: {t['muted']}; font-size: 11.5px;
+                                padding: 6px 18px; border-radius: 7px; }}
+            #ttSegmentButton:checked {{ background: {t['accent']}; color: #ffffff;
+                                        font-weight: 600; }}
+
+            #ttOption {{ background: {t['surface']}; border: 1px solid {t['line']};
                          border-radius: 12px; }}
-            #ttOption:hover {{ border-color: #b9cfc4; }}
-            #ttOption[checked="true"] {{ border: 1.6px solid {ACCENT};
-                                         background: #eef7f2; }}
-            #ttOption[locked="true"] {{ background: #fbfcfb; border-style: dashed; }}
-            #ttOption[locked="true"]:hover {{ border-color: {LINE}; }}
-            #ttOptionTitle {{ font-size: 13.5px; font-weight: 600; color: {INK}; }}
-            #ttOption[locked="true"] #ttOptionTitle {{ color: #7f8d87; }}
-            #ttCard {{ background: #ffffff; border: 1px solid {LINE};
-                       border-radius: 12px; }}
-            #ttFooter {{ background: #ffffff; border-top: 1px solid {LINE}; }}
+            #ttOption:hover {{ border-color: {t['line_strong']}; }}
+            #ttOption[checked="true"] {{ border: 1.5px solid {t['accent']};
+                                         background: {t['accent_tint']}; }}
+            #ttOption[locked="true"] {{ background: {t['surface_alt']}; }}
+            #ttOption[locked="true"]:hover {{ border-color: {t['line']}; }}
+            #ttOptionTitle {{ font-size: 12.5px; font-weight: 600; color: {t['ink']}; }}
+            #ttOption[locked="true"] #ttOptionTitle {{ color: {t['disabled']}; }}
+            #ttTick {{ color: {t['muted']}; font-size: 10px; }}
 
-            #ttPrimary {{ background: {ACCENT}; color: #ffffff; font-size: 13px;
-                          font-weight: 600; padding: 11px 22px; border: none;
+            #ttFooter {{ background: {t['surface']};
+                         border-top: 1px solid {t['line']}; }}
+            #ttFooterNote {{ color: {t['muted']}; font-size: 11.5px; }}
+            #ttPrimary {{ background: {t['accent']}; color: #ffffff; font-size: 12.5px;
+                          font-weight: 600; padding: 10px 22px; border: none;
                           border-radius: 9px; }}
-            #ttPrimary:hover {{ background: #146f4e; }}
-            #ttPrimary:disabled {{ background: #a8c9ba; }}
-            #ttGhost {{ background: transparent; color: {MUTED}; border: none;
-                        padding: 11px 14px; font-size: 12.5px; }}
-            #ttGhost:hover {{ color: {INK}; }}
-            #ttGhost:disabled {{ color: #c3ccc8; }}
+            #ttPrimary:hover {{ background: {t['accent_hover']}; }}
+            #ttPrimary:disabled {{ background: {t['line_strong']}; }}
+            #ttGhost {{ background: transparent; color: {t['muted']}; border: none;
+                        padding: 10px 12px; font-size: 12px; }}
+            #ttGhost:hover {{ color: {t['ink']}; }}
+            #ttGhost:disabled {{ color: {t['line_strong']}; }}
+
+            #ttCreditStrip {{ background: {header_bg};
+                              border-top: 1px solid {'#22302a' if dark else '#0a3a25'}; }}
+            #ttCredit {{ background: {t['plate']}; border-radius: 9px; }}
 
             QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox, QTextEdit {{
-                border: 1px solid {LINE}; border-radius: 7px;
-                padding: 7px 9px; background: #ffffff; color: {INK};
-                selection-background-color: {ACCENT};
+                border: 1px solid {t['line']}; border-radius: 8px;
+                padding: 7px 9px; background: {t['surface_alt']}; color: {t['ink']};
+                selection-background-color: {t['accent']};
             }}
-            QDoubleSpinBox, QSpinBox {{ padding-right: 9px; }}
             QLineEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus,
-            QComboBox:focus, QTextEdit:focus {{ border: 1px solid {ACCENT}; }}
+            QComboBox:focus, QTextEdit:focus {{ border: 1px solid {t['accent']}; }}
             QComboBox::drop-down {{ border: none; width: 22px; }}
-
-            /* Os botoes de incremento ficam ocultos de proposito. Com a borda
-               arredondada o Qt perde a geometria padrao deles e eles saem como
-               um traco ou um quadrado escuro; desenhar a seta por borda CSS nao
-               funciona em sub-controle. O valor e digitado e a roda do mouse
-               continua ajustando, entao nao se perde nada e a tela fica limpa. */
             QDoubleSpinBox::up-button, QSpinBox::up-button,
             QDoubleSpinBox::down-button, QSpinBox::down-button {{
                 width: 0; height: 0; border: none;
             }}
 
-            QPushButton {{ background: #ffffff; border: 1px solid {LINE};
-                           border-radius: 7px; padding: 7px 13px; color: {INK}; }}
-            QPushButton:hover {{ border-color: {ACCENT}; color: {ACCENT}; }}
+            QPushButton {{ background: {t['surface_alt']};
+                           border: 1px solid {t['line']}; border-radius: 8px;
+                           padding: 7px 13px; color: {t['ink']}; }}
+            QPushButton:hover {{ border-color: {t['accent']}; color: {t['accent']}; }}
+            #ttBrowse {{ padding: 7px 0; font-size: 15px; color: {t['muted']}; }}
 
-            /* O rotulo pesa mais que a explicacao; antes era o contrario e a
-               tela parecia toda no mesmo nivel. */
-            #ttHelp {{ color: {MUTED}; font-size: 11.5px; }}
-            #ttMark {{ background: #ffffff; border-radius: 11px; }}
-            #ttBrowse {{ padding: 7px 0; font-size: 15px; color: {MUTED}; }}
-            QCheckBox {{ spacing: 10px; color: {INK}; font-size: 13.5px;
-                         font-weight: 500; }}
+            QCheckBox {{ spacing: 10px; color: {t['ink']}; font-size: 12.5px; }}
             QCheckBox::indicator {{ width: 17px; height: 17px;
-                                    border: 1px solid #c2ccc7; border-radius: 5px;
-                                    background: #ffffff; }}
-            QCheckBox::indicator:checked {{ background: {ACCENT};
-                                            border-color: {ACCENT}; }}
-            /* Marcada e desabilitada continua parecendo marcada: as saidas
-               obrigatorias apareciam como se estivessem desligadas. */
-            QCheckBox::indicator:checked:disabled {{ background: #9ac7b3;
-                                                     border-color: #9ac7b3; }}
-            QCheckBox::indicator:unchecked:disabled {{ background: {ACCENT_SOFT};
-                                                       border-color: #c9ded4; }}
-            QCheckBox:disabled {{ color: #7f8d87; }}
+                                    border: 1px solid {t['line_strong']};
+                                    border-radius: 5px; background: {t['surface_alt']}; }}
+            QCheckBox::indicator:checked {{ background: {t['accent']};
+                                            border-color: {t['accent']}; }}
+            #ttToggle::indicator {{ width: 40px; height: 22px; border-radius: 11px;
+                                    background: {t['line_strong']};
+                                    border: none; }}
+            #ttToggle::indicator:checked {{ background: {t['accent']}; }}
 
             QProgressBar {{ border: none; border-radius: 5px; height: 8px;
                             text-align: center; color: transparent;
-                            background: #e6ebe8; }}
-            QProgressBar::chunk {{ background: {ACCENT}; border-radius: 5px; }}
-            #ttLog {{ background: #fbfcfb; font-family: "DejaVu Sans Mono",
-                      Consolas, monospace; font-size: 11px; color: #46534c; }}
+                            background: {t['line']}; }}
+            QProgressBar::chunk {{ background: {t['accent']}; border-radius: 5px; }}
+            #ttLog {{ background: {t['surface_alt']}; font-family: "DejaVu Sans Mono",
+                      Consolas, monospace; font-size: 11px; color: {t['muted']}; }}
 
-            QToolTip {{ background: {INK}; color: #ffffff; border: none;
-                        padding: 9px 11px; border-radius: 7px; font-size: 11.5px; }}
-            QScrollArea {{ background: {CANVAS}; }}
+            QToolTip {{ background: {'#0b1310' if dark else t['ink']}; color: #ffffff;
+                        border: 1px solid {t['line']}; padding: 9px 11px;
+                        border-radius: 7px; font-size: 11.5px; }}
+            QScrollArea {{ background: {t['canvas']}; }}
             QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
-            QScrollBar::handle:vertical {{ background: #ccd6d1; border-radius: 5px;
-                                           min-height: 30px; }}
-            QScrollBar::handle:vertical:hover {{ background: #b3c2bb; }}
+            QScrollBar::handle:vertical {{ background: {t['line_strong']};
+                                           border-radius: 5px; min-height: 30px; }}
             QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
             QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
         """)
+        # Sem repolir explicitamente, a folha nova so alcanca os filhos no
+        # proximo show(): trocar de tema com a janela aberta nao surtia efeito
+        # nenhum, que e justamente quando o botao de tema e usado.
+        for widget in self.findChildren(QWidget):
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+
+    def showEvent(self, event):
+        """Reaplica o tema quando a janela aparece.
+
+        O Qt só termina de polir a árvore de widgets no primeiro show, e uma
+        folha de estilo aplicada antes disso não alcança o que está dentro da
+        área de rolagem: cabeçalho e rodapé ficavam escuros e o miolo continuava
+        claro. Reaplicar aqui, uma vez, resolve sem depender da ordem de chamada.
+        """
+        super().showEvent(event)
+        if not getattr(self, "_theme_settled", False):
+            self._theme_settled = True
+            self._apply_theme()
+            self._repaint_icons()
+
+    def _repaint_icons(self):
+        """Redesenha os glifos na cor do tema em vigor.
+
+        Os ícones são pixmaps traçados com a cor embutida, então trocar a folha
+        de estilo não os alcança -- é o preço de desenhá-los em tempo de
+        execução, e a contrapartida é que aqui basta redesenhar.
+        """
+        for card in getattr(self, "_option_cards", []):
+            card.refresh_theme()
+        for label, name, size, width in getattr(self, "_static_icons", []):
+            label.setPixmap(icons.pixmap(name, size, ACCENT, width))
 
     # -- navegacao ----------------------------------------------------------
     def _go(self, delta):
@@ -1440,40 +1837,48 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         if last and self._task is not None:
             self.next_button.setText(self.t("cancel"))
         else:
-            self.next_button.setText(self.t("run") if last else self.t("next"))
+            self.next_button.setText(
+                self.t("run") if last else self.t("next_alt"))
         for position, (row, badge) in enumerate(self._step_rows):
             state = "true" if position == index else (
                 "done" if position < index else "false")
+            badge.setText("✓" if state == "done" else str(position + 1))
             for widget in (row, badge, self.step_labels[position]):
                 widget.setProperty("active", state)
                 widget.style().unpolish(widget)
                 widget.style().polish(widget)
-        self._refresh_status()
+        self._refresh_context()
         if last:
             self._refresh_summary()
 
-    def _elide(self, label, text):
-        """Corta pelo meio, não pelo fim: a extensão do arquivo é justamente a
-        parte que o usuário usa para reconhecê-lo."""
-        metrics = label.fontMetrics()
-        width = max(label.width(), 176)
-        label.setText(metrics.elidedText(
-            text, qt_enum("TextElideMode", "ElideMiddle"), width))
-        label.setToolTip(text)
+    def _refresh_context(self):
+        """A mensagem do rodapé e os contadores do passo 2.
 
-    def _refresh_status(self):
-        """Mantém o painel da lateral em dia com o que já foi escolhido."""
-        dem = self.dem_file.text()
-        self._elide(self.status_rows["status_dem"],
-                    os.path.basename(dem) if dem else self.t("status_no_dem"))
-        count = 2 + sum(card.isChecked() for card in
-                        (self.want_zones, self.want_transit,
-                         self.want_streams, self.want_route))
-        self.status_rows["status_outputs"].setText(
-            self.t("status_outputs_n").format(n=count))
-        out = self.output_edit.text().strip()
-        self._elide(self.status_rows["status_output_file"],
-                    os.path.basename(out) if out else self.t("status_no_output"))
+        O rodapé tinha espaço vazio entre "Voltar" e "Avançar", e a pergunta que
+        o usuário faz nesse ponto é sempre a mesma -- posso seguir? o que falta?
+        Agora é ali que está a resposta.
+        """
+        optional = [self.want_zones, self.want_transit,
+                    self.want_streams, self.want_route]
+        chosen = sum(card.isChecked() for card in optional)
+        if hasattr(self, "optional_head"):
+            self.optional_head._subtitle.setText(
+                self.t("group_optional_sub").format(n=chosen))
+            self.optional_head._chip.setText(
+                self.t("total_chip").format(n=chosen + 2))
+
+        index = self.stack.currentIndex()
+        if not self.dem_file.text():
+            note = self.t("note_need_dem")
+        elif index == 1:
+            note = self.t("note_outputs").format(n=chosen + 2)
+        elif index == 2:
+            note = self.t("note_tuning")
+        elif index == 3:
+            note = self.t("note_review")
+        else:
+            note = self.t("note_outputs").format(n=chosen + 2)
+        self.footer_note.setText(note)
 
     def _refresh_summary(self):
         pt = self.lang == "pt"
