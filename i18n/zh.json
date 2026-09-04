@@ -108,6 +108,7 @@
   "dem": "DEM 文件",
   "dem_card": "数字高程模型",
   "dem_help": "GeoTIFF 格式的高程栅格。任何来源均可：Copernicus、SRTM、ALOS 或国家地形图。",
+  "developed_by": "开发者：MACIEL, L. S. C.",
   "dir_high": "有利（越大越好）",
   "dir_low": "不利（越小越好）",
   "done_text": "已向工程加载 {count} 个图层。",

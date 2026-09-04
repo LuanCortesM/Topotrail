@@ -17,11 +17,21 @@ from qgis.PyQt.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 GRID = 24.0
 
 
+def _qt(group, value):
+    """Enum do Qt que funciona no Qt5 e no Qt6.
+
+    O Qt6 -- e portanto o QGIS 4 -- removeu o acesso solto: `Qt.RoundCap` deixa
+    de existir e vira `Qt.PenCapStyle.RoundCap`. Buscar o grupo com recurso ao
+    proprio Qt cobre os dois casos sem `if` de versao espalhado pelo arquivo.
+    """
+    return getattr(getattr(Qt, group, Qt), value)
+
+
 def _pen(color, width=1.9):
     pen = QPen(QColor(color))
     pen.setWidthF(width)
-    pen.setCapStyle(Qt.RoundCap)
-    pen.setJoinStyle(Qt.RoundJoin)
+    pen.setCapStyle(_qt("PenCapStyle", "RoundCap"))
+    pen.setJoinStyle(_qt("PenJoinStyle", "RoundJoin"))
     return pen
 
 
@@ -196,7 +206,7 @@ def pixmap(name, size=22, color="#1a2420", width=1.9, ratio=1):
     painter.setRenderHint(QPainter.Antialiasing, True)
     painter.scale(device / GRID, device / GRID)
     painter.setPen(_pen(color, width))
-    painter.setBrush(Qt.NoBrush)
+    painter.setBrush(_qt("BrushStyle", "NoBrush"))
     glyph(painter)
     painter.end()
     image.setDevicePixelRatio(ratio)

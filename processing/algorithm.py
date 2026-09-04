@@ -52,7 +52,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.11.2"
+PLUGIN_VERSION = "0.12.0"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -2103,6 +2103,18 @@ def save_access_route(
     return route_path, corridor_path
 
 
+def _qgs_enum(cls, group, value):
+    """Enum de classe do QGIS que funciona no Qt5 e no Qt6.
+
+    No QGIS 4 (Qt6) o acesso solto sai: _qgs_enum(QgsProcessingParameterNumber, "Type", "Double") vira
+    QgsProcessingParameterNumber.Type.Double, e o mesmo vale para o Behavior do
+    parametro de arquivo. Buscar o grupo com recurso a propria classe atende as
+    duas versoes -- e o metadata.txt ja declarava qgisMaximumVersion=4.99, ou
+    seja, o plugin prometia QGIS 4 com codigo que estouraria la.
+    """
+    return getattr(getattr(cls, group, cls), value)
+
+
 def _class_labels():
     """Rotulos das classes de transitabilidade no idioma em vigor.
 
@@ -2258,7 +2270,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.ALT_MIN,
                 self.tr("alg_altmin"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=0.0,
             )
         )
@@ -2266,7 +2278,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.ALT_MAX,
                 self.tr("alg_altmax"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=2600.0,
             )
         )
@@ -2282,7 +2294,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.SLOPE_MAX,
                 self.tr("alg_slopemax"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=55.0,
             )
         )
@@ -2290,7 +2302,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.SLOPE_SCORE_MAX,
                 self.tr("alg_slopescore"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=50.0,
                 minValue=1.0,
             )
@@ -2299,7 +2311,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.THRESHOLD,
                 self.tr("alg_threshold"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=0.0,
                 minValue=0.0,
                 maxValue=1.0,
@@ -2309,7 +2321,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.AUTO_PERCENTILE,
                 self.tr("alg_percentile"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=75.0,
                 minValue=1.0,
                 maxValue=99.0,
@@ -2320,7 +2332,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.MIN_PATCH_AREA_HA,
                 self.tr("alg_minarea"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=50.0,
                 minValue=0.0,
             )
@@ -2336,7 +2348,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.ALTITUDE_BAND_SIZE_M,
                 self.tr("alg_bandsize"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=200.0,
                 minValue=50.0,
             )
@@ -2363,7 +2375,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 QgsProcessingParameterNumber(
                     key,
                     self.tr(label),
-                    QgsProcessingParameterNumber.Double,
+                    _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                     defaultValue=default,
                     minValue=0.0,
                     maxValue=10.0,
@@ -2374,7 +2386,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterFile(
                 self.START_POINT_FILE,
                 self.tr("alg_start"),
-                behavior=QgsProcessingParameterFile.File,
+                behavior=_qgs_enum(QgsProcessingParameterFile, "Behavior", "File"),
                 fileFilter="Vetores (*.gpkg *.shp *.kml *.geojson)",
                 optional=True,
             )
@@ -2383,7 +2395,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterFile(
                 self.END_POINT_FILE,
                 self.tr("alg_end"),
-                behavior=QgsProcessingParameterFile.File,
+                behavior=_qgs_enum(QgsProcessingParameterFile, "Behavior", "File"),
                 fileFilter="Vetores (*.gpkg *.shp *.kml *.geojson)",
                 optional=True,
             )
@@ -2392,7 +2404,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterFile(
                 self.VIA_POINTS_FILE,
                 self.tr("alg_via"),
-                behavior=QgsProcessingParameterFile.File,
+                behavior=_qgs_enum(QgsProcessingParameterFile, "Behavior", "File"),
                 fileFilter="Vetores (*.gpkg *.shp *.kml *.geojson)",
                 optional=True,
             )
@@ -2409,7 +2421,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.ROUTE_BUFFER_M,
                 self.tr("alg_corridor"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=100.0,
                 minValue=1.0,
             )
@@ -2418,7 +2430,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.ROUTE_MARGIN_M,
                 self.tr("alg_margin"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=5000.0,
                 minValue=100.0,
             )
@@ -2434,7 +2446,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.STREAM_MIN_BASIN_KM2,
                 self.tr("alg_basin"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=1.0,
                 minValue=0.01,
             )
@@ -2450,7 +2462,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.CONSTRAINT_BUFFER_M,
                 self.tr("alg_consbuffer"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=30.0,
                 minValue=0.0,
             )
@@ -2477,7 +2489,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.ROUTE_CONTRAST,
                 self.tr("alg_contrast"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=DEFAULT_ROUTE_CONTRAST,
                 minValue=0.5,
                 maxValue=20.0,
@@ -2494,7 +2506,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.EXTRA_CRITERION_WEIGHT,
                 self.tr("alg_extraweight"),
-                QgsProcessingParameterNumber.Double,
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
                 defaultValue=0.0, minValue=0.0, maxValue=10.0,
             )
         )

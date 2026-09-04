@@ -108,6 +108,7 @@
   "dem": "Fichier du MNT",
   "dem_card": "Modèle numérique de terrain",
   "dem_help": "Un raster d'altitude en GeoTIFF. N'importe quelle source convient : Copernicus, SRTM, ALOS, une carte topographique nationale.",
+  "developed_by": "Développé par MACIEL, L. S. C.",
   "dir_high": "Bonnes (plus haut est mieux)",
   "dir_low": "Mauvaises (plus bas est mieux)",
   "done_text": "{count} couche(s) chargée(s) dans le projet.",

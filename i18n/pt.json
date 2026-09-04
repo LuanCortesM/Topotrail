@@ -108,6 +108,7 @@
   "dem": "Arquivo do MDE",
   "dem_card": "Modelo digital de elevação",
   "dem_help": "Um raster de altitude em GeoTIFF. Serve qualquer fonte: Copernicus, SRTM, ALOS, carta topográfica nacional.",
+  "developed_by": "Desenvolvido por MACIEL, L. S. C.",
   "dir_high": "Bons (maior é melhor)",
   "dir_low": "Ruins (menor é melhor)",
   "done_text": "{count} camada(s) carregada(s) no projeto.",

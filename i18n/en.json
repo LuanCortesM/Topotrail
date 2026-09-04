@@ -108,6 +108,7 @@
   "dem": "DEM file",
   "dem_card": "Digital elevation model",
   "dem_help": "An elevation raster in GeoTIFF. Any source works: Copernicus, SRTM, ALOS, a national topographic sheet.",
+  "developed_by": "Developed by MACIEL, L. S. C.",
   "dir_high": "Good (higher is better)",
   "dir_low": "Bad (lower is better)",
   "done_text": "{count} layer(s) loaded into the project.",

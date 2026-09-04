@@ -33,6 +33,7 @@ import qgis.processing as processing
 from . import icons
 from . import i18n
 from .support import (
+    class_enum,
     TopotrailSupportMixin, append_gui_diagnostic_log, qt_enum,
     serialize_processing_params, size_policy,
 )
@@ -118,7 +119,7 @@ def _is_dark_theme():
         application = QApplication.instance()
         if application is None:
             return False
-        window = application.palette().color(QPalette.Window)
+        window = application.palette().color(class_enum(QPalette, "ColorRole", "Window"))
         return window.lightness() < 128
     except Exception:
         return False
@@ -179,7 +180,7 @@ class OptionCard(QFrame):
         self.setProperty("checked", "false")
         self.setProperty("locked", "false" if enabled else "true")
         if enabled:
-            self.setCursor(Qt.PointingHandCursor)
+            self.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(15, 13, 15, 13)
@@ -204,7 +205,7 @@ class OptionCard(QFrame):
         self.tick.setObjectName("ttTick")
         self.tick.setAlignment(qt_enum("AlignmentFlag", "AlignRight"))
         layout.addWidget(self.tick, 0, qt_enum("AlignmentFlag", "AlignVCenter"))
-        self.setFocusPolicy(Qt.StrongFocus)
+        self.setFocusPolicy(qt_enum("FocusPolicy", "StrongFocus"))
 
         self.body = QWidget()
         self.body.setVisible(False)
@@ -250,7 +251,7 @@ class OptionCard(QFrame):
         self._enabled = False
         self.setProperty("checked", "false")
         self.setProperty("locked", "true")
-        self.setFocusPolicy(Qt.NoFocus)
+        self.setFocusPolicy(qt_enum("FocusPolicy", "NoFocus"))
         self.icon_label.setPixmap(icons.pixmap(self.glyph, 22, MUTED, 1.85))
         self.tick.setPixmap(QPixmap())
         self.tick.setText(badge_text)
@@ -275,8 +276,8 @@ class OptionCard(QFrame):
         trocou caixas de marcação, que o Qt já tornava acessíveis por teclado,
         por um QFrame que não respondia a tecla nenhuma.
         """
-        if self._enabled and event.key() in (Qt.Key_Space, Qt.Key_Return,
-                                             Qt.Key_Enter):
+        if self._enabled and event.key() in (qt_enum("Key", "Key_Space"), qt_enum("Key", "Key_Return"),
+                                             qt_enum("Key", "Key_Enter")):
             self.setChecked(not self._checked)
             return
         super().keyPressEvent(event)
@@ -394,7 +395,7 @@ class _Segmented(QWidget):
             bold.setBold(True)
             button.setMinimumWidth(
                 QFontMetrics(bold).horizontalAdvance(text) + 40)
-            button.setCursor(Qt.PointingHandCursor)
+            button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
             button.clicked.connect(
                 lambda _checked, index=position: self.setCurrentIndex(index))
             self.layout().addWidget(button)
@@ -446,7 +447,7 @@ class _RasterChip(QWidget):
         self.browse = QPushButton("…")
         self.browse.setObjectName("ttBrowse")
         self.browse.setFixedWidth(52)
-        self.browse.setCursor(Qt.PointingHandCursor)
+        self.browse.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
         self.browse.clicked.connect(self._pick)
         empty_layout.addWidget(self.edit, 1)
         empty_layout.addWidget(self.browse, 0)
@@ -470,7 +471,7 @@ class _RasterChip(QWidget):
         column.addWidget(self.detail)
         chip.addLayout(column, 1)
         self.change = QPushButton(dialog.t("change"))
-        self.change.setCursor(Qt.PointingHandCursor)
+        self.change.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
         self.change.clicked.connect(self._pick)
         dialog._labels.append((self.change, "change", "setText"))
         chip.addWidget(self.change, 0)
@@ -690,7 +691,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             layout.addStretch(1)
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
-            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setFrameShape(class_enum(QFrame, "Shape", "NoFrame"))
             scroll.setWidget(page)
             self.stack.addWidget(scroll)
         self.stack.currentChanged.connect(lambda _index: self._update_nav())
@@ -828,11 +829,21 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
                 height, qt_enum("TransformationMode", "SmoothTransformation")))
             plate_layout.addWidget(mark)
         layout.addWidget(plate)
+
+        # A autoria fica junto das logos, a esquerda: e credito de pessoa, e nao
+        # de instituicao, e some se ficar na mesma linha corrida que elas.
+        self.author_label = QLabel()
+        self.author_label.setObjectName("ttAuthor")
+        self._bind(self.author_label, "developed_by")
+        layout.addWidget(self.author_label)
+
         layout.addStretch(1)
-        self.credit_text = QLabel()
-        self.credit_text.setObjectName("ttQuietText")
-        self._bind(self.credit_text, "credit_line")
-        layout.addWidget(self.credit_text)
+        # O nome das instituicoes saiu daqui: as tres logos ao lado dizem
+        # exatamente isso, e repetir em texto so competia por largura -- em
+        # 940 px a linha era cortada. Fica como dica de ferramenta da placa,
+        # onde continua legivel por leitor de tela e por quem nao reconhece uma
+        # das marcas.
+        self._bind(plate, "credit_line", "setToolTip")
         return strip
 
     def _build_footer(self):
@@ -1379,6 +1390,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             #ttCreditStrip {{ background: {header_bg};
                               border-top: 1px solid {'#22302a' if dark else '#0a3a25'}; }}
             #ttCredit {{ background: {t['plate']}; border-radius: 9px; }}
+            #ttAuthor {{ color: #b9d5c7; font-size: 11px; font-weight: 600; }}
 
             QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox, QTextEdit {{
                 border: 1px solid {t['line']}; border-radius: 8px;

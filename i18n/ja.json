@@ -108,6 +108,7 @@
   "dem": "DEM ファイル",
   "dem_card": "数値標高モデル",
   "dem_help": "GeoTIFF 形式の標高ラスタ。Copernicus、SRTM、ALOS、各国の地形図など、出典は問いません。",
+  "developed_by": "開発：MACIEL, L. S. C.",
   "dir_high": "有利（大きいほど良い）",
   "dir_low": "不利（小さいほど良い）",
   "done_text": "{count} 個のレイヤをプロジェクトに読み込みました。",
