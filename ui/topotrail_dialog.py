@@ -627,6 +627,13 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
                 self.step_labels[index].setText(name)
                 # Sem recalcular, a pílula mantém a largura do idioma anterior e
                 # corta o rótulo novo -- "データ" virava "デー".
+                # A largura e reservada para o texto em semibold, que e o peso
+                # do passo ativo: dimensionar pelo peso normal cortava sempre a
+                # etapa em que a pessoa esta -- "Produtos" virava "Produto".
+                negrito = QFont(self.step_labels[index].font())
+                negrito.setBold(True)
+                self.step_labels[index].setMinimumWidth(
+                    QFontMetrics(negrito).horizontalAdvance(name) + 2)
                 self.step_labels[index].adjustSize()
                 self._step_rows[index][0].adjustSize()
         self.back_button.setText(self.t("back"))
@@ -1032,7 +1039,10 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             box.setContentsMargins(0, 0, 0, 0)
             box.setSpacing(7)
             label = self._label(key)
-            label.setFixedWidth(64)
+            # Largura minima, e nao fixa: "Destination" precisa de 98 px e ficava
+            # cortado em 64, enquanto "Origem" cabia. Um numero fixo so serve
+            # para a lingua em que foi medido.
+            label.setMinimumWidth(70)
             box.addWidget(label)
             box.addWidget(file_row, 3)
             box.addWidget(coord, 2)

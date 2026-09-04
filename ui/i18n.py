@@ -91,8 +91,11 @@ def detect():
     except Exception:
         pass
     try:
+        # getlocale() e nao getdefaultlocale(): a segunda esta depreciada e sai
+        # no Python 3.15, e um plugin de QGIS costuma sobreviver a mais de uma
+        # versao do interpretador.
         import locale
-        candidates.append(locale.getdefaultlocale()[0] or "")
+        candidates.append((locale.getlocale()[0] or ""))
     except Exception:
         pass
     candidates.append(os.environ.get("LANG", ""))
