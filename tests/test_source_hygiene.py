@@ -12,6 +12,7 @@ code base and that are invisible until a user hits them:
 
 import ast
 import pathlib
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -114,3 +115,60 @@ def test_no_stray_run_logs_are_committed():
     root = pathlib.Path(__file__).resolve().parent.parent
     sobras = [p.name for p in root.glob("*.log")]
     assert not sobras, f"log de execução no repositório: {sobras}"
+
+
+# What every QGIS installation ships. Anything imported at module level that
+# is not in this list (or the standard library, or the plugin itself) makes
+# the plugin fail to load on a clean install -- which is exactly what happened
+# with geopandas before 0.13.
+QGIS_GUARANTEED_MODULES = {"qgis", "osgeo", "numpy", "scipy", "PyQt5", "PyQt6"}
+PLUGIN_MODULES = {"processing", "ui", "topotrail", "topotrail_config", "i18n"}
+
+
+def _stdlib_names():
+    names = set(getattr(sys, "stdlib_module_names", ()))
+    if not names:  # Python < 3.10
+        names = set(sys.builtin_module_names) | {
+            "os", "sys", "json", "math", "re", "heapq", "shutil", "tempfile",
+            "platform", "datetime", "locale", "functools", "itertools",
+            "collections", "pathlib", "typing", "traceback", "subprocess",
+            "unittest", "importlib", "types", "textwrap", "xml", "csv",
+        }
+    return names
+
+
+def _top_level_imports(path):
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                yield alias.name.split(".")[0]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            yield node.module.split(".")[0]
+
+
+def test_shipped_code_imports_only_what_qgis_guarantees():
+    allowed = QGIS_GUARANTEED_MODULES | PLUGIN_MODULES | _stdlib_names()
+    shipped = [path for path in python_files() if "tests" not in path.parts]
+    offenders = sorted(
+        f"{path.relative_to(ROOT)}: {name}"
+        for path in shipped
+        for name in _top_level_imports(path)
+        if name not in allowed
+    )
+    assert not offenders, (
+        "Import de biblioteca que o QGIS nao garante em instalacao limpa:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
+def test_geopandas_and_shapely_are_gone_from_shipped_code():
+    banned = ("geopandas", "shapely", "fiona", "pyproj", "pandas")
+    shipped = [path for path in python_files() if "tests" not in path.parts]
+    hits = sorted(
+        f"{path.relative_to(ROOT)}: {name}"
+        for path in shipped
+        for name in _top_level_imports(path)
+        if name in banned
+    )
+    assert not hits, "\n".join(hits)

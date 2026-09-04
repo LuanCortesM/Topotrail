@@ -101,64 +101,19 @@ Download a release ZIP from the
 ### Requirements
 
 - QGIS **3.22** or later (QGIS 4 / Qt6 supported).
-- The QGIS Python environment must provide **GDAL, NumPy, SciPy, Pandas,
-  GeoPandas and Shapely**.
 - Input rasters must have a defined CRS.
 
-GDAL, NumPy, SciPy and Pandas ship with most QGIS installations. **GeoPandas and
-Shapely often do not**, and this is the most common installation failure. Note
-that `requirements.txt` documents the version floors — it is not a `pip install`
-target, because these libraries have to be installed into the interpreter QGIS
-itself uses.
+That is all. TopoTrail uses only what every QGIS installation already ships —
+**GDAL/OGR, NumPy and SciPy** — so there is nothing to `pip install` on
+Windows, Linux or macOS. Install the plugin and it runs. (`requirements.txt`
+documents the version floors of those bundled libraries for reference; it is
+not an install target.)
 
-<details>
-<summary><b>Windows (OSGeo4W)</b></summary>
-
-Open the **OSGeo4W Shell** from the Start menu (not a regular command prompt),
-then:
-
-```bat
-python -m pip install geopandas shapely
-```
-
-If QGIS was installed through the standalone installer rather than OSGeo4W, use
-the `Python Console` inside QGIS to find the interpreter:
+Verify from the QGIS Python Console, if you like:
 
 ```python
-import sys; print(sys.executable)
-```
-
-and install with that interpreter.
-</details>
-
-<details>
-<summary><b>Linux</b></summary>
-
-If QGIS came from your distribution's packages, prefer distribution packages so
-the GDAL versions match:
-
-```bash
-sudo apt install python3-geopandas python3-shapely   # Debian/Ubuntu
-```
-
-For a Flatpak QGIS, install inside the Flatpak's own Python environment.
-</details>
-
-<details>
-<summary><b>macOS</b></summary>
-
-With the official QGIS.app build:
-
-```bash
-/Applications/QGIS.app/Contents/MacOS/bin/python3 -m pip install geopandas shapely
-```
-</details>
-
-Verify from the QGIS Python Console:
-
-```python
-import geopandas, shapely, scipy, numpy
-print(geopandas.__version__, shapely.__version__, scipy.__version__, numpy.__version__)
+from osgeo import gdal; import numpy, scipy
+print(gdal.__version__, numpy.__version__, scipy.__version__)
 ```
 
 ## Quick start

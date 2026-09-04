@@ -27,7 +27,7 @@ Results should be interpreted as a preliminary topographic basis. For operationa
 ## Requirements
 
 - QGIS 3.22 or later.
-- GDAL, NumPy, SciPy, GeoPandas and Shapely available in the QGIS Python environment.
+- GDAL, NumPy and SciPy — all shipped with QGIS itself; nothing extra to install.
 - DEM with a defined CRS.
 
 ## Inputs

@@ -58,9 +58,9 @@ TopoTrail runs inside the QGIS Python environment. It is not installed with pip.
 4. The [Plugin Reloader](https://plugins.qgis.org/plugins/plugin_reloader/)
    plugin saves a great deal of time while iterating.
 
-Runtime dependencies (NumPy, SciPy, Pandas, GeoPandas, Shapely, GDAL) must be
-available to the QGIS Python interpreter. On Windows, install them through the
-OSGeo4W shell rather than a system Python. See the README for details.
+The plugin has no runtime dependency beyond what QGIS ships (NumPy, SciPy,
+GDAL/OGR). Keep it that way: a module-level import of anything else makes the
+plugin fail to load on a clean QGIS install, and the test suite checks for it.
 
 ## Checks that run on every pull request
 

@@ -15,12 +15,9 @@ os.environ["PATH"] = ";".join(
     if "Microsoft\\WindowsApps" not in path
 )
 
-import geopandas as gpd  # noqa: E402
 import numpy as np  # noqa: E402
 from osgeo import gdal, ogr, osr  # noqa: E402
 from scipy import ndimage  # noqa: E402
-from shapely.geometry import LineString  # noqa: E402
-from shapely.ops import unary_union  # noqa: E402
 from .hydrology import analyse_hydrology  # noqa: E402
 from .terrain import derive_terrain, vector_ruggedness  # noqa: E402
 from .transitability import (  # noqa: E402
@@ -52,7 +49,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.12.2"
+PLUGIN_VERSION = "0.13.0"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -283,6 +280,179 @@ def srs_from_projection(projection, default_crs=None):
         return None
     srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
     return srs
+
+
+def srs_from_any(crs):
+    """SRS a partir de 'EPSG:32723', WKT ou qualquer entrada que o OSR aceite."""
+    srs = osr.SpatialReference()
+    text = str(crs)
+    if text.upper().startswith("EPSG:"):
+        srs.ImportFromEPSG(int(text.split(":")[1]))
+    else:
+        srs.SetFromUserInput(text)
+    srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    return srs
+
+
+class FeatureSet:
+    """Camada vetorial em memoria, feita so com OGR.
+
+    Substitui o GeoDataFrame do geopandas nos pontos em que o plugin monta,
+    reprojeta, mede e grava vetores. O QGIS garante GDAL/OGR (e com ele o GEOS)
+    em toda instalacao; o geopandas, nao -- e um import dele no topo do modulo
+    impedia o plugin de carregar em QGIS limpo.
+
+    ``geometries`` sao ogr.Geometry; ``attributes`` uma lista de dicionarios,
+    um por feicao, todos com as mesmas chaves; ``crs`` e a string que
+    identifica o sistema (WKT ou AUTHORITY:CODE).
+    """
+
+    def __init__(self, geometries=(), attributes=(), crs=None):
+        self.geometries = [g for g in geometries]
+        self.attributes = [dict(a) for a in attributes]
+        if len(self.attributes) != len(self.geometries):
+            raise ValueError("FeatureSet: geometrias e atributos com tamanhos diferentes")
+        self.crs = crs
+
+    def __len__(self):
+        return len(self.geometries)
+
+    @property
+    def columns(self):
+        names = []
+        for record in self.attributes:
+            for key in record:
+                if key not in names:
+                    names.append(key)
+        return names + ["geometry"]
+
+    def column(self, name):
+        return [record.get(name) for record in self.attributes]
+
+    def set_column(self, name, values):
+        values = list(values)
+        if len(values) != len(self.attributes):
+            raise ValueError(f"FeatureSet: coluna {name} com {len(values)} valores para {len(self)} feicoes")
+        for record, value in zip(self.attributes, values):
+            record[name] = value
+
+    def drop_column(self, name):
+        for record in self.attributes:
+            record.pop(name, None)
+
+    def srs(self):
+        return srs_from_any(self.crs) if self.crs else None
+
+    def to_crs(self, target):
+        """Nova colecao com as geometrias transformadas para ``target``."""
+        source_srs = self.srs()
+        target_srs = srs_from_any(target)
+        if source_srs is None:
+            raise Exception("FeatureSet sem CRS de origem; nao ha como reprojetar")
+        if source_srs.IsSame(target_srs):
+            return FeatureSet([g.Clone() for g in self.geometries], self.attributes, self.crs)
+        transformation = osr.CoordinateTransformation(source_srs, target_srs)
+        moved = []
+        for geometry in self.geometries:
+            clone = geometry.Clone()
+            if clone.Transform(transformation) != 0:
+                raise Exception("Falha ao reprojetar geometria com o OSR")
+            moved.append(clone)
+        return FeatureSet(moved, self.attributes, str(target))
+
+    def buffer(self, distance):
+        return FeatureSet([g.Buffer(float(distance)) for g in self.geometries], self.attributes, self.crs)
+
+    def lengths(self):
+        return [float(g.Length()) for g in self.geometries]
+
+    def areas(self):
+        return [float(g.GetArea()) for g in self.geometries]
+
+    def total_bounds(self):
+        """[minx, miny, maxx, maxy] de todas as geometrias."""
+        if not self.geometries:
+            return None
+        envelopes = [g.GetEnvelope() for g in self.geometries]  # (minx, maxx, miny, maxy)
+        return [
+            min(e[0] for e in envelopes), min(e[2] for e in envelopes),
+            max(e[1] for e in envelopes), max(e[3] for e in envelopes),
+        ]
+
+    @staticmethod
+    def _field_type(values):
+        for value in values:
+            if value is None:
+                continue
+            if isinstance(value, (bool, np.bool_)):
+                return ogr.OFTInteger
+            if isinstance(value, (int, np.integer)):
+                return ogr.OFTInteger64
+            if isinstance(value, (float, np.floating)):
+                return ogr.OFTReal
+            return ogr.OFTString
+        return ogr.OFTString
+
+    def to_file(self, path, driver="GPKG", layer_name=None, stringify=False):
+        """Grava a colecao. ``stringify`` converte todo atributo em texto (KML)."""
+        ogr_driver = ogr.GetDriverByName(driver)
+        if ogr_driver is None:
+            raise Exception(f"Driver OGR indisponivel: {driver}")
+        datasource = ogr_driver.CreateDataSource(path)
+        if datasource is None:
+            raise Exception(f"Nao foi possivel criar o arquivo vetorial: {path}")
+        if layer_name is None:
+            layer_name = os.path.splitext(os.path.basename(path))[0]
+        geom_type = ogr.wkbUnknown
+        kinds = {ogr.GT_Flatten(g.GetGeometryType()) for g in self.geometries}
+        if kinds == {ogr.wkbPolygon} or kinds == {ogr.wkbMultiPolygon} or kinds == {ogr.wkbPolygon, ogr.wkbMultiPolygon}:
+            geom_type = ogr.wkbMultiPolygon
+        elif kinds == {ogr.wkbLineString}:
+            geom_type = ogr.wkbLineString
+        elif kinds == {ogr.wkbPoint}:
+            geom_type = ogr.wkbPoint
+        layer = datasource.CreateLayer(layer_name, srs=self.srs(), geom_type=geom_type)
+        if layer is None:
+            raise Exception(f"Nao foi possivel criar a camada em: {path}")
+
+        names = [name for name in self.columns if name != "geometry"]
+        for name in names:
+            values = self.column(name)
+            field_type = ogr.OFTString if stringify else self._field_type(values)
+            definition = ogr.FieldDefn(name, field_type)
+            if field_type == ogr.OFTString:
+                definition.SetWidth(254)
+            layer.CreateField(definition)
+        layer_defn = layer.GetLayerDefn()
+        # Shapefile trunca nomes com mais de 10 caracteres: gravamos pelo indice.
+        for geometry, record in zip(self.geometries, self.attributes):
+            feature = ogr.Feature(layer_defn)
+            for index, name in enumerate(names):
+                value = record.get(name)
+                if value is None or (isinstance(value, (float, np.floating)) and not np.isfinite(value)):
+                    if stringify:
+                        feature.SetField(index, "")
+                    else:
+                        feature.SetFieldNull(index)
+                    continue
+                if stringify:
+                    feature.SetField(index, str(value))
+                elif isinstance(value, (bool, np.bool_)):
+                    feature.SetField(index, int(value))
+                elif isinstance(value, np.integer):
+                    feature.SetField(index, int(value))
+                elif isinstance(value, np.floating):
+                    feature.SetField(index, float(value))
+                else:
+                    feature.SetField(index, value)
+            geometry_out = geometry.Clone()
+            if geom_type == ogr.wkbMultiPolygon and ogr.GT_Flatten(geometry_out.GetGeometryType()) == ogr.wkbPolygon:
+                geometry_out = ogr.ForceToMultiPolygon(geometry_out)
+            feature.SetGeometry(geometry_out)
+            layer.CreateFeature(feature)
+            feature = None
+        layer = None
+        datasource = None
 
 
 def srs_label(srs):
@@ -1386,14 +1556,15 @@ def compute_topographic_risk(slope_data, curvh_data, curvv_data, valid_mask, max
 
 def vectorize_binary_raster(binary_array, transform, proj, feedback=None):
     """Polygonize a binary raster and return only polygons with value 1."""
+    srs = osr.SpatialReference()
+    srs.ImportFromWkt(proj) if proj else srs.ImportFromEPSG(4326)
+    srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    crs = srs.ExportToWkt()
+    if np.sum(binary_array == 1) == 0:
+        return FeatureSet([], [], crs)
+
     temp_dir = tempfile.mkdtemp()
     try:
-        if np.sum(binary_array == 1) == 0:
-            srs = osr.SpatialReference()
-            srs.ImportFromWkt(proj) if proj else srs.ImportFromEPSG(4326)
-            crs = srs.ExportToWkt()
-            return gpd.GeoDataFrame({"value": []}, geometry=[], crs=crs)
-
         temp_raster = os.path.join(temp_dir, "mask.tif")
         rows, cols = binary_array.shape
         driver = gdal.GetDriverByName("GTiff")
@@ -1410,14 +1581,11 @@ def vectorize_binary_raster(binary_array, transform, proj, feedback=None):
         band.FlushCache()
         dataset = None
 
-        temp_vector = os.path.join(temp_dir, "mask.shp")
-        shp_driver = ogr.GetDriverByName("ESRI Shapefile")
-        vector_ds = shp_driver.CreateDataSource(temp_vector)
+        # Poligoniza para uma camada em memoria: nada toca o disco alem do raster.
+        mem_driver = ogr.GetDriverByName("Memory")
+        vector_ds = mem_driver.CreateDataSource("mask")
         if vector_ds is None:
             raise Exception("Não foi possível criar vetor temporário")
-
-        srs = osr.SpatialReference()
-        srs.ImportFromWkt(proj) if proj else srs.ImportFromEPSG(4326)
         layer = vector_ds.CreateLayer("polygons", srs=srs, geom_type=ogr.wkbPolygon)
         layer.CreateField(ogr.FieldDefn("value", ogr.OFTInteger))
 
@@ -1425,60 +1593,70 @@ def vectorize_binary_raster(binary_array, transform, proj, feedback=None):
         raster_band = raster_ds.GetRasterBand(1)
         gdal.Polygonize(raster_band, raster_band, layer, 0, options=["8CONNECTED=8"])
         raster_ds = None
+
+        geometries, attributes = [], []
+        layer.ResetReading()
+        for feature in layer:
+            if feature.GetField("value") != 1:
+                continue
+            geometry = feature.GetGeometryRef()
+            if geometry is None:
+                continue
+            geometry = geometry.Clone()
+            # buffer(0): o mesmo reparo de anel que o shapely fazia, agora pelo GEOS do OGR.
+            if not geometry.IsValid():
+                geometry = geometry.Buffer(0)
+            if geometry is None or geometry.IsEmpty() or not geometry.IsValid():
+                continue
+            geometries.append(geometry)
+            attributes.append({"value": 1})
         vector_ds = None
 
-        gdf = gpd.read_file(temp_vector)
-        if "value" in gdf.columns:
-            gdf = gdf[gdf["value"] == 1].copy()
-        else:
-            gdf["value"] = 1
-
-        if len(gdf) > 0:
-            gdf["geometry"] = gdf.geometry.buffer(0)
-            gdf = gdf[gdf.is_valid & ~gdf.is_empty].copy()
-
+        result = FeatureSet(geometries, attributes, crs)
         if feedback:
-            feedback.pushInfo(f"Vetorizações geradas: {len(gdf)} polígonos")
-
-        return gdf
+            feedback.pushInfo(f"Vetorizações geradas: {len(result)} polígonos")
+        return result
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-def save_vector(gdf, output_path, output_format, output_crs, feedback=None):
+def save_vector(features, output_path, output_format, output_crs, feedback=None):
     driver_map = {
         "Shapefile": "ESRI Shapefile",
         "GeoPackage": "GPKG",
         "KML": "KML",
     }
 
-    if len(gdf) == 0:
+    if len(features) == 0:
         raise Exception("Nenhuma area atingiu o threshold configurado. Reduza o threshold ou revise os criterios.")
 
     output_dir = os.path.dirname(output_path)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    if len(gdf) > 0 and output_crs and output_crs.isValid():
+    if output_crs and output_crs.isValid():
         target_crs = output_crs.authid()
         if target_crs:
-            gdf = gdf.to_crs(target_crs)
+            features = features.to_crs(target_crs)
             if feedback:
                 feedback.pushInfo(f"Resultado reprojetado para {target_crs}")
 
-    export_gdf = gdf.copy()
-    if output_format == "Shapefile" and "area_m2" in export_gdf.columns:
-        export_gdf = export_gdf.drop(columns=["area_m2"])
+    export = FeatureSet(features.geometries, features.attributes, features.crs)
+    if output_format == "Shapefile" and "area_m2" in export.columns:
+        export.drop_column("area_m2")
         if feedback:
             feedback.pushInfo("Campo area_m2 removido da saida Shapefile para evitar estouro de largura DBF; area_ha foi preservado.")
-    if output_format == "KML":
-        for column in export_gdf.columns:
-            if column != export_gdf.geometry.name:
-                export_gdf[column] = export_gdf[column].apply(
-                    lambda value: "" if value is None or (isinstance(value, float) and np.isnan(value)) else str(value)
-                )
 
     driver = driver_map.get(output_format, "ESRI Shapefile")
+    stringify = False
+    if output_format == "KML":
+        # O driver classico "KML" do OGR descarta atributos: joga os dois
+        # primeiros campos em Name/Description e perde o resto. O LIBKML grava
+        # todos, com tipo; e o que o QGIS usa para ler KML quando existe.
+        if ogr.GetDriverByName("LIBKML") is not None:
+            driver = "LIBKML"
+        else:
+            stringify = True
     driver_obj = ogr.GetDriverByName(driver)
     if driver_obj and os.path.exists(output_path):
         try:
@@ -1490,10 +1668,10 @@ def save_vector(gdf, output_path, output_format, output_crs, feedback=None):
                     "O vetor anterior esta em uso no QGIS ou bloqueado pelo sistema. "
                     f"Salvando novo arquivo como: {output_path}"
                 )
-    export_gdf.to_file(output_path, driver=driver)
+    export.to_file(output_path, driver=driver, stringify=stringify)
 
     if feedback:
-        feedback.pushInfo(f"{output_format} salvo com sucesso: {len(gdf)} feições")
+        feedback.pushInfo(f"{output_format} salvo com sucesso: {len(features)} feições")
     return output_path
 
 
@@ -2003,20 +2181,20 @@ def save_access_route(
             "Use pontos mais afastados ou um raster de maior resolucao para gerar uma rota."
         )
     coordinates = [pixel_to_world(transform, row + row_min, col + col_min) for row, col in path_cells]
-    line = LineString(coordinates)
+    line = ogr.Geometry(ogr.wkbLineString)
+    for x, y in coordinates:
+        line.AddPoint_2D(float(x), float(y))
     route_attributes = {
-        "tipo": ["rota_principal"],
-        "custo": [accumulated_cost],
-        "vertices": [len(coordinates)],
-        "trechos": [len(leg_costs)],
+        "tipo": "rota_principal",
+        "custo": float(accumulated_cost),
+        "vertices": len(coordinates),
+        "trechos": len(leg_costs),
     }
     if anisotropic:
         # No modelo de Tobler o custo acumulado tem unidade: horas.
-        route_attributes["tempo_h"] = [float(accumulated_cost)]
-        route_attributes["tempo_hms"] = [
-            "{:d}h{:02d}".format(int(accumulated_cost),
-                                 int(round((accumulated_cost % 1.0) * 60)))
-        ]
+        route_attributes["tempo_h"] = float(accumulated_cost)
+        route_attributes["tempo_hms"] = "{:d}h{:02d}".format(
+            int(accumulated_cost), int(round((accumulated_cost % 1.0) * 60)))
     if elevation_array is not None:
         route_altitudes = [
             float(elevation_array[row + row_min, col + col_min])
@@ -2026,11 +2204,11 @@ def save_access_route(
         if route_altitudes:
             route_attributes.update(
                 {
-                    "alt_ini_m": [route_altitudes[0]],
-                    "alt_fim_m": [route_altitudes[-1]],
-                    "alt_min_m": [min(route_altitudes)],
-                    "alt_max_m": [max(route_altitudes)],
-                    "ganho_m": [max(route_altitudes) - route_altitudes[0]],
+                    "alt_ini_m": route_altitudes[0],
+                    "alt_fim_m": route_altitudes[-1],
+                    "alt_min_m": min(route_altitudes),
+                    "alt_max_m": max(route_altitudes),
+                    "ganho_m": max(route_altitudes) - route_altitudes[0],
                 }
             )
 
@@ -2038,43 +2216,33 @@ def save_access_route(
     raster_srs.ImportFromWkt(proj) if proj else raster_srs.ImportFromEPSG(4326)
     raster_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
     crs_wkt = raster_srs.ExportToWkt()
-    route_gdf = gpd.GeoDataFrame(
-        route_attributes,
-        geometry=[line],
-        crs=crs_wkt,
-    )
+    route = FeatureSet([line], [route_attributes], crs_wkt)
 
     base_path, _ = os.path.splitext(output_path)
     route_path = f"{base_path}_rota.gpkg"
     corridor_path = f"{base_path}_corredor.gpkg"
 
+    corridor_attributes = {"tipo": "corredor_acesso", "buffer_m": float(buffer_m)}
     try:
         metric_crs = metric_crs_for_raster(transform, score_array.shape, proj)
-        metric_route = route_gdf.to_crs(metric_crs) if raster_srs.IsGeographic() else route_gdf
-        route_gdf["compr_m"] = metric_route.geometry.length.values
-        corridor_geometry = metric_route.geometry.buffer(buffer_m)
-        corridor_gdf = gpd.GeoDataFrame(
-            {"tipo": ["corredor_acesso"], "buffer_m": [buffer_m]},
-            geometry=corridor_geometry,
-            crs=metric_route.crs,
-        )
-        corridor_area_m2 = float(corridor_gdf.geometry.area.iloc[0]) if len(corridor_gdf) else None
+        metric_route = route.to_crs(metric_crs) if raster_srs.IsGeographic() else route
+        route_length_m = metric_route.lengths()[0]
+        route.set_column("compr_m", [route_length_m])
+        corridor = FeatureSet(metric_route.buffer(buffer_m).geometries, [corridor_attributes], metric_route.crs)
+        corridor_area_m2 = corridor.areas()[0] if len(corridor) else None
         if raster_srs.IsGeographic():
-            corridor_gdf = corridor_gdf.to_crs(crs_wkt)
+            corridor = corridor.to_crs(crs_wkt)
     except Exception:
-        route_gdf["compr_m"] = np.nan
-        corridor_gdf = gpd.GeoDataFrame(
-            {"tipo": ["corredor_acesso"], "buffer_m": [buffer_m]},
-            geometry=route_gdf.geometry.buffer(0),
-            crs=crs_wkt,
-        )
+        route_length_m = float("nan")
+        route.set_column("compr_m", [route_length_m])
+        corridor = FeatureSet(route.buffer(0).geometries, [corridor_attributes], crs_wkt)
         corridor_area_m2 = None
 
     if output_crs and output_crs.isValid():
         target_crs = output_crs.authid()
         if target_crs:
-            route_gdf = route_gdf.to_crs(target_crs)
-            corridor_gdf = corridor_gdf.to_crs(target_crs)
+            route = route.to_crs(target_crs)
+            corridor = corridor.to_crs(target_crs)
             if feedback:
                 feedback.pushInfo(f"Rota e corredor reprojetados para {target_crs}")
 
@@ -2094,11 +2262,11 @@ def save_access_route(
                         "Salvando com novo nome."
                     )
 
-    route_gdf.to_file(route_path, driver="GPKG")
-    corridor_gdf.to_file(corridor_path, driver="GPKG")
+    route.to_file(route_path, driver="GPKG", layer_name="rota")
+    corridor.to_file(corridor_path, driver="GPKG", layer_name="corredor")
 
     if feedback:
-        length = route_gdf["compr_m"].iloc[0]
+        length = route_length_m
         feedback.pushInfo(f"Rota de acesso salva: {route_path}")
         feedback.pushInfo(f"Corredor de acesso salvo: {corridor_path}")
         if np.isfinite(length):
@@ -2117,12 +2285,12 @@ def save_access_route(
         custo_acumulado=float(accumulated_cost),
         celulas_percorridas=int(len(path_cells)),
         vertices=int(len(coordinates)),
-        comprimento_m=float(route_gdf["compr_m"].iloc[0]) if "compr_m" in route_gdf and np.isfinite(route_gdf["compr_m"].iloc[0]) else None,
+        comprimento_m=float(route_length_m) if np.isfinite(route_length_m) else None,
         buffer_m=float(buffer_m),
-        crs_buffer=str(corridor_gdf.crs),
+        crs_buffer=srs_label(corridor.srs()),
         area_corredor_m2=corridor_area_m2,
-        extensao_corredor=list(corridor_gdf.total_bounds) if len(corridor_gdf) else None,
-        geometrias_corredor=int(len(corridor_gdf)),
+        extensao_corredor=corridor.total_bounds(),
+        geometrias_corredor=int(len(corridor)),
     )
 
     return route_path, corridor_path
@@ -3244,15 +3412,15 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 "zonas_vetorizadas",
                 feicoes=int(len(gdf)),
                 colunas=list(gdf.columns),
-                crs=str(gdf.crs),
+                crs=srs_label(gdf.srs()),
             )
 
             if len(gdf) > 0:
                 area_crs = metric_crs_for_raster(transform, dem_data.shape, proj)
                 try:
-                    area_gdf = gdf.to_crs(area_crs)
-                    gdf["area_m2"] = area_gdf.geometry.area.values
-                    gdf["area_ha"] = gdf["area_m2"] / 10000.0
+                    areas_m2 = gdf.to_crs(area_crs).areas()
+                    gdf.set_column("area_m2", areas_m2)
+                    gdf.set_column("area_ha", [a / 10000.0 for a in areas_m2])
                 except Exception as e:
                     if feedback:
                         feedback.pushWarning(f"Não foi possível calcular áreas em CRS métrico: {str(e)}")
