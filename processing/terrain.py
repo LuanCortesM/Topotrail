@@ -69,12 +69,19 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
     defined relative to the direction of steepest descent rather than to the
     grid axes:
 
-    * **plan** curvature is measured across the slope. It is positive on
-      diverging terrain (ridges and spurs, where flow spreads out) and negative
-      on converging terrain (hollows and channels, where flow concentrates).
-    * **profile** curvature is measured along the slope. It describes whether
-      the terrain is accelerating (convex breaks) or decelerating (concave
-      footslopes) downhill.
+    Sign convention, verified against surfaces with known shape in
+    `tests/test_terrain_math.py` rather than asserted here:
+
+    * **negative on convex forms** -- domes, ridges, spurs, where the surface
+      falls away from the cell;
+    * **positive on concave forms** -- bowls, hollows, channels, where the
+      surface closes in around it.
+
+    * **plan** curvature is measured across the slope, so it captures whether
+      flow spreads out or concentrates. On a cylindrical ridge, whose contours
+      are straight, it is exactly zero -- the test asserts that.
+    * **profile** curvature is measured along the slope: convex breaks where
+      the gradient steepens downhill are negative, concave footslopes positive.
 
     Both are returned in units of 1/m. Their absolute scale does not matter to
     the suitability model, which normalises each by a percentile of its own
@@ -132,10 +139,18 @@ def roughness_index(dem_array, transform=None, feedback=None):
     that quantifies topographic heterogeneity. Intermountain Journal of Sciences
     5: 23-27.
 
-    Em metros, e independente da declividade: distingue uma encosta lisa de
-    campo de um campo de blocos com a mesma inclinacao media -- que e
-    exatamente o que decide se da para caminhar ali e o que a declividade
-    sozinha nao enxerga. Celulas de borda usam apenas os vizinhos existentes.
+    Em metros. **Nao e independente da declividade**, e a documentacao anterior
+    afirmava que era: numa rampa perfeitamente lisa de 80% o TRI vale 6,00 m,
+    contra 3,36 m numa superficie ruidosa de declividade media 27%. Isso nao e
+    defeito do indice -- e a definicao dele, a diferenca absoluta media de
+    altitude, que cresce com a inclinacao. O teste que mede isso esta em
+    tests/test_terrain_math.py.
+
+    Para a rugosidade desacoplada da inclinacao, que e o que o modelo quer,
+    use `vector_ruggedness`. Este indice fica disponivel por ser o padrao
+    citavel e por ser util como medida de amplitude local em metros.
+
+    Celulas de borda usam apenas os vizinhos existentes.
     """
     dem = dem_array.astype(np.float64)
     valid = np.isfinite(dem)
@@ -171,6 +186,75 @@ def roughness_index(dem_array, transform=None, feedback=None):
                     float(finite.max()))
             )
     return tri
+
+
+def vector_ruggedness(dem_array, transform, feedback=None):
+    """Vector Ruggedness Measure: rugosidade desacoplada da inclinacao.
+
+    Sappington, J.M., Longshore, K.M. & Thompson, D.B. (2007) Quantifying
+    landscape ruggedness for animal habitat analysis. Journal of Wildlife
+    Management 71: 1419-1426.
+
+    Cada celula vira o vetor unitario normal a superficie, decomposto por
+    declividade e orientacao. Os vetores da vizinhanca 3x3 sao somados; se o
+    terreno for um plano, por mais ingreme que seja, todos os normais apontam
+    para o mesmo lado, a resultante tem modulo igual ao numero de celulas e o
+    indice da zero. Quanto mais os normais divergem, menor a resultante e maior
+    o indice.
+
+    Sai entre 0 (plano, qualquer que seja a inclinacao) e 1 (maximamente
+    rugoso). E esta a medida que separa uma encosta lisa de campo de um campo de
+    blocos na mesma inclinacao media -- o TRI nao separa, apesar do que a
+    documentacao anterior afirmava.
+    """
+    px, py = _metric_spacing(transform)
+    filled, valid = _filled_for_gradient(dem_array)
+    rows, cols = dem_array.shape
+
+    dz_dy, dz_dx = np.gradient(filled, py, px)
+    slope = np.arctan(np.hypot(dz_dx, dz_dy))
+    aspect = np.arctan2(-dz_dy, dz_dx)
+
+    # Vetor normal unitario de cada celula.
+    xy = np.sin(slope)
+    vector_x = xy * np.cos(aspect)
+    vector_y = xy * np.sin(aspect)
+    vector_z = np.cos(slope)
+
+    neighbours = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 0),
+                  (0, 1), (1, -1), (1, 0), (1, 1))
+    sum_x = np.zeros((rows, cols))
+    sum_y = np.zeros((rows, cols))
+    sum_z = np.zeros((rows, cols))
+    count = np.zeros((rows, cols))
+    for d_row, d_col in neighbours:
+        dst = (slice(max(0, -d_row), rows + min(0, -d_row)),
+               slice(max(0, -d_col), cols + min(0, -d_col)))
+        src = (slice(max(0, d_row), rows + min(0, d_row)),
+               slice(max(0, d_col), cols + min(0, d_col)))
+        usable = np.zeros((rows, cols), bool)
+        usable[dst] = valid[src]
+        sum_x[dst] += np.where(valid[src], vector_x[src], 0.0)
+        sum_y[dst] += np.where(valid[src], vector_y[src], 0.0)
+        sum_z[dst] += np.where(valid[src], vector_z[src], 0.0)
+        count += usable
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        resultant = np.sqrt(sum_x ** 2 + sum_y ** 2 + sum_z ** 2)
+        vrm = np.where(count > 0, 1.0 - resultant / count, np.nan)
+    vrm = np.clip(vrm, 0.0, 1.0).astype(np.float32)
+    vrm[~valid] = np.nan
+
+    if feedback:
+        finite = vrm[np.isfinite(vrm)]
+        if finite.size:
+            feedback.pushInfo(
+                "Rugosidade vetorial (VRM) derivada do MDE: p50={:.5f}, p90={:.5f}, "
+                "max={:.5f}".format(
+                    float(np.percentile(finite, 50)), float(np.percentile(finite, 90)),
+                    float(finite.max()))
+            )
+    return vrm
 
 
 def derive_terrain(dem_array, transform, feedback=None):

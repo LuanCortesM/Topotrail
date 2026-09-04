@@ -3,7 +3,7 @@ name=TopoTrail
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
 description=Topographic suitability, access zones and least-cost routes for preliminary trail and field planning, from a single DEM.
-version=0.6.3
+version=0.7.0
 author=MACIEL, L. S. C.
 email=herpetomantiqueira@gmail.com
 homepage=https://github.com/LuanCortesM/Topotrail#readme
@@ -17,7 +17,8 @@ license=MIT
 experimental=False
 deprecated=False
 hasProcessingProvider=True
-changelog=0.6.3 - Any raster the user has can now enter the model as an extra weighted criterion -- stoniness, vegetation cover, a cost surface -- aligned to the DEM grid and normalised by scene percentiles. Weighted zero by default.
+changelog=0.7.0 - First empirical validation against real field GPS: 110 h and 224 km of surveyed tracks in two biomes. Tobler's walking speed is optimistic by a factor of 1.7-3.1 for field survey work, but the route is provably unaffected -- only the estimated duration changes -- while the decay, which does move the route, could not be separated from its published value and is kept. Transitability labels no longer claim a walker cannot pass: real teams walked 115.8% slope. The class map now records the cell size and warns when it is coarse, because the same terrain reads as 48% or 76% walkable depending on resolution. Full record in docs/VALIDACAO.md.
+    0.6.3 - Any raster the user has can now enter the model as an extra weighted criterion -- stoniness, vegetation cover, a cost surface -- aligned to the DEM grid and normalised by scene percentiles. Weighted zero by default.
     0.6.2 - New output: a transitability class map with absolute, field-meaningful classes and a colour palette written into the GeoTIFF, so it opens legible in QGIS with its legend. Slope sets the class; high ruggedness or high wetness push a cell one class worse; constraints marked as avoided become class 5.
     0.6.1 - Route cost can be estimated walking time using Tobler's anisotropic hiking function, so uphill and downhill no longer cost the same and the accumulated cost is in hours. Two optional criteria added, both derived from the DEM and both weighted zero by default: topographic wetness index and terrain ruggedness index. Fixes the reprojection fill entering the analysis as sea-level terrain.
     0.6.0 - Only the DEM is required: slope and both curvatures are derived from it by default, which removes the unit, sign-convention, grid-alignment and coverage problems in one step. Slope unit and DEM vertical unit are now explicit parameters. Watercourses can be extracted from the DEM and used as a constraint, and any vector layer can be used the same way. Route cost model is selectable. Potential zones now use the multicriteria model by default. Temporary directories are cleaned up.

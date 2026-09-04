@@ -51,20 +51,26 @@ DEFAULT_SLOPE_BREAKS = (20.0, 35.0, 60.0, 100.0)
 ROUGHNESS_PERCENTILE = 90.0
 WETNESS_PERCENTILE = 95.0
 
+# Os rotulos descrevem a declividade, nao um veredito sobre quem consegue
+# passar. A primeira versao chamava a classe 5 de "intransitavel", e 28.567
+# fixes de GPS de trilhas realmente percorridas na Mantiqueira e na caatinga
+# falsificaram isso: 5,9% a 14,4% dos pontos caem nas classes 4 e 5, e a maior
+# declividade efetivamente caminhada foi de 115,8% -- acima do limite que a
+# legenda declarava intransponivel. Ver docs/VALIDACAO.md.
 CLASS_LABELS = {
-    CLASS_EASY: "1 - Transitavel a pe",
-    CLASS_MODERATE: "2 - Transitavel com esforco",
-    CLASS_STEEP: "3 - Dificil, exige apoio",
-    CLASS_SCRAMBLE: "4 - Muito dificil, escalonamento",
-    CLASS_IMPASSABLE: "5 - Intransitavel a pe",
+    CLASS_EASY: "1 - Suave (< 20%)",
+    CLASS_MODERATE: "2 - Moderada (20-35%)",
+    CLASS_STEEP: "3 - Forte (35-60%)",
+    CLASS_SCRAMBLE: "4 - Muito forte (60-100%)",
+    CLASS_IMPASSABLE: "5 - Escarpada (> 100%)",
 }
 
 CLASS_LABELS_EN = {
-    CLASS_EASY: "1 - Walkable",
-    CLASS_MODERATE: "2 - Walkable with effort",
-    CLASS_STEEP: "3 - Hard, hands needed",
-    CLASS_SCRAMBLE: "4 - Very hard, scrambling",
-    CLASS_IMPASSABLE: "5 - Not walkable",
+    CLASS_EASY: "1 - Gentle (< 20%)",
+    CLASS_MODERATE: "2 - Moderate (20-35%)",
+    CLASS_STEEP: "3 - Steep (35-60%)",
+    CLASS_SCRAMBLE: "4 - Very steep (60-100%)",
+    CLASS_IMPASSABLE: "5 - Escarpment (> 100%)",
 }
 
 # Cor por classe, do verde ao vermelho escuro. Gravadas no proprio GeoTIFF para
@@ -79,8 +85,18 @@ CLASS_COLORS = {
 }
 
 
+# Acima deste tamanho de celula a classificacao deixa de descrever o terreno
+# que uma pessoa encontra e passa a descrever a media da paisagem. Medido: no
+# mesmo terreno da Mantiqueira, a proporcao da classe 1 sobe de 48,2% a 30 m
+# para 75,7% a 250 m, e a classe 4 cai nove vezes. O numero nao e um limite
+# fisico, e o ponto a partir do qual o vies passa a ser maior que a largura de
+# uma classe.
+COARSE_CELL_WARNING_M = 60.0
+
+
 def classify(slope_percent, valid_mask, roughness=None, wetness=None,
-             blocked_mask=None, slope_breaks=DEFAULT_SLOPE_BREAKS, feedback=None):
+             blocked_mask=None, slope_breaks=DEFAULT_SLOPE_BREAKS, feedback=None,
+             cell_size_m=None):
     """Devolve (classes uint8, metricas).
 
     `blocked_mask` marca celulas intransitaveis por restricao -- curso d'agua,
@@ -101,6 +117,16 @@ def classify(slope_percent, valid_mask, roughness=None, wetness=None,
     classes[usable & (slope_percent < breaks[0])] = CLASS_EASY
 
     metrics = {"limites_declividade_pct": list(breaks)}
+    if cell_size_m:
+        metrics["tamanho_celula_m"] = float(cell_size_m)
+        if cell_size_m > COARSE_CELL_WARNING_M and feedback:
+            feedback.pushWarning(
+                "Celula de {:.0f} m: a declividade e suavizada pela resolucao e as "
+                "classes ficam sistematicamente mais brandas do que o terreno real. "
+                "No mesmo terreno, passar de 30 m para 250 m move 27 pontos "
+                "percentuais da area para a classe 1. Informe o tamanho da celula "
+                "junto com qualquer numero tirado deste mapa.".format(cell_size_m)
+            )
 
     # Modificadores: pioram uma classe, nunca melhoram, e nunca criam classe 5 --
     # terreno rugoso ou encharcado e pior de caminhar, mas nao e um paredao.

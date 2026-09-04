@@ -23,7 +23,7 @@ from shapely.geometry import LineString  # noqa: E402
 from shapely.ops import unary_union  # noqa: E402
 from qgis.PyQt.QtCore import QCoreApplication  # noqa: E402
 from .hydrology import analyse_hydrology  # noqa: E402
-from .terrain import derive_terrain, roughness_index  # noqa: E402
+from .terrain import derive_terrain, vector_ruggedness  # noqa: E402
 from .transitability import (  # noqa: E402
     CLASS_COLORS,
     CLASS_LABELS,
@@ -53,7 +53,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.6.3"
+PLUGIN_VERSION = "0.7.0"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -96,9 +96,43 @@ DEFAULT_ROUTE_CONTRAST = 6.0
 # sinal: W = 6 * exp(-3.5 * |S + 0.05|). O maximo de 6 km/h ocorre em S = -0.05,
 # uma descida suave, e nao no plano -- e essa assimetria e justamente o que o
 # modelo isotropico nao representa.
+#
+# Os tres valores foram medidos contra 110 horas de GPS de campo em duas
+# regioes (docs/VALIDACAO.md). O que se pode afirmar:
+#
+#   vmax   Superestimado por um fator de 1,7 a 3,1 para levantamento de campo.
+#          A pe, com equipamento e parando para procurar animais, a mediana
+#          observada na caatinga foi de 2,4 a 3,6 km/h conforme o criterio de
+#          parada, nao 6. IMPORTANTE: vmax nao altera a rota. O A* compara
+#          custos relativos, entao multiplicar a velocidade por uma constante
+#          divide todos os custos pela mesma constante e o caminho escolhido e
+#          bit a bit identico (test_routing_math.py fixa essa invariancia). O
+#          erro aparece so na duracao estimada, que escala por 6/vmax.
+#   decay  Ajuste observado 1,3 a 2,3, abaixo dos 3,5 publicados, mas com
+#          intervalo largo e sujeito a diluicao de regressao: o gradiente vem
+#          de um MDE de 90 m e o erro no preditor achata a estimativa. Usando a
+#          altimetria do GPS em janelas de 360 m o valor sobe para 2,3 +- 0,7,
+#          a 1,7 desvios de 3,5. Nao ha base para rejeitar 3,5, e este e o
+#          parametro que de fato governa a geometria da rota -- entre 1,3 e 3,5
+#          as rotas compartilham apenas 9% das celulas. Fica no valor publicado.
+#   otimo  Ajuste em 0,00 contra os 0,05 publicados: nenhuma vantagem de
+#          descida suave foi detectada. Evidencia fraca, amostra pequena em
+#          declive negativo.
+#
+# O gradiente explicou apenas 4 a 10% da variancia da velocidade observada
+# (R2 no log). Em levantamento de campo o ritmo e determinado pela vegetacao,
+# pela carga e pelo comportamento de busca, nao pela topografia. A funcao de
+# Tobler continua sendo a melhor base disponivel para *comparar* trechos, que e
+# o que a rota precisa, mas a duracao que ela devolve nao deve ser lida como
+# previsao de tempo de campo.
 TOBLER_MAX_SPEED_KMH = 6.0
 TOBLER_DECAY = 3.5
 TOBLER_OPTIMUM_SLOPE = 0.05
+
+# Ritmo mediano medido em levantamento herpetologico na caatinga, com paradas
+# de ate 120 s contadas como caminhada. Oferecido como alternativa explicita a
+# 6,0 km/h para quem quer que a duracao estimada se pareca com a duracao real.
+FIELD_SURVEY_SPEED_KMH = 2.4
 
 # Quanto o terreno ruim retarda a caminhada, alem da inclinacao. Adequabilidade
 # 1 nao retarda nada (Tobler puro); adequabilidade 0 multiplica o tempo por
@@ -2052,7 +2086,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             # Criterios novos na 0.6.1. Peso zero por padrao: quem ja usa o
             # plugin nao tem os resultados alterados sem pedir.
             (self.WEIGHT_WETNESS, "Peso da umidade do terreno (TWI)", 0.0),
-            (self.WEIGHT_ROUGHNESS, "Peso da rugosidade do terreno (TRI)", 0.0),
+            (self.WEIGHT_ROUGHNESS, "Peso da rugosidade do terreno (VRM)", 0.0),
         ]:
             self.addParameter(
                 QgsProcessingParameterNumber(
@@ -2708,10 +2742,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
 
         roughness_data = None
         if roughness_weight > 0:
-            roughness_data = roughness_index(dem_data, transform, feedback)
+            roughness_data = vector_ruggedness(dem_data, transform, feedback)
             append_diagnostic_log(
                 debug_log_path, "rugosidade_calculada",
-                metodo="TRI (Riley et al. 1999)",
+                metodo="VRM (Sappington et al. 2007), desacoplado da declividade",
                 **{k: v for k, v in array_diagnostics(roughness_data).items()
                    if k in ("min", "p50", "p95", "max")})
 
@@ -2801,6 +2835,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                           if (restricted_mask.any() and constraint_mode == CONSTRAINT_AVOID)
                           else None),
             slope_breaks=transitability_breaks, feedback=feedback,
+            cell_size_m=abs(float(transform[1])),
         )
         transitability_path = save_transitability_raster(
             transitability_classes, transform, proj, output_path, feedback)
