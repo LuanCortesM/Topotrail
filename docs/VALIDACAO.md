@@ -282,14 +282,122 @@ a geometria é grande: entre 0 e 2,0 as rotas compartilham 45% das células.
 **É a maior alavanca ainda não calibrada do modelo**, e quem publicar números do
 plugin deve declarar o valor usado.
 
-## 7. O que continua sem validação
+## 8. Calibração contra o objetivo certo: a geometria
+
+O estudo da seção 6c calibrou `TERRAIN_SLOWDOWN_MAX` contra **velocidade** e o
+reprovou. A pergunta estava errada. Prever tempo nunca foi função dessa
+constante — a função dela é escolher por onde a rota passa. Uma constante de
+roteamento tem de ser medida contra roteamento.
+
+Refeita a calibração contra a concordância geométrica com os sete trajetos de
+trabalho (Goodchild–Hunter a 250 m), varrendo `TERRAIN_SLOWDOWN_MAX` e
+`TOBLER_DECAY` conjuntamente:
+
+| SLOWDOWN \ decay | 1,3 | 2,3 | **3,5** | 5,0 |
+|---|---|---|---|---|
+| 0,0 | 61,0% | 62,9% | 72,0% | 79,2% |
+| 0,5 | 69,3% | 69,9% | 74,0% | 79,0% |
+| 1,0 | 68,4% | 72,4% | 83,5% | 81,1% |
+| **2,0** | 72,4% | 76,9% | **84,1%** | 84,9% |
+| 4,0 | 74,0% | 79,3% | 87,9% | 86,6% |
+
+### 8.1 O termo de terreno existe
+
+Desligar `SLOWDOWN` custa **12 pontos de concordância** (72,0% contra 84,1%).
+Contra o objetivo certo, o termo se sustenta com folga — o oposto do que a
+calibração por velocidade sugeria. A seção 6c não estava errada nos números;
+estava medindo outra coisa.
+
+### 8.2 O `decay` publicado é confirmado
+
+A concordância sobe monotonicamente de 72,4% em `decay = 1,3` para 84,1% em
+3,5, e estabiliza depois. **A calibração geométrica confirma o 3,5 de Tobler**,
+justamente onde o ajuste por velocidade sugeria 1,3. Como o `decay` governa
+geometria e não ritmo, a medida geométrica é a que vale, e o valor publicado
+fica — agora por evidência, não por deferência à literatura.
+
+### 8.3 A magnitude do `SLOWDOWN` não é resolúvel com sete trilhas
+
+O melhor valor no conjunto todo é 4,0, com 87,9% contra os 84,1% do padrão. Mas
+sob **validação cruzada leave-one-out** — parâmetros escolhidos usando só os
+outros seis trajetos, avaliados no que ficou de fora:
+
+| Trajeto deixado de fora | Escolhido | No trajeto | Padrão (2,0; 3,5) |
+|---|---|---|---|
+| dia_18_junho_covao | (4,0; 3,5) | 86,4% | 86,4% |
+| dia_19_junho | (4,0; 3,5) | 99,6% | 99,5% |
+| trajeto_1_janeiro | (4,0; 3,5) | 96,3% | 96,3% |
+| trajeto_2_janeiro | (4,0; 3,5) | 93,6% | 90,2% |
+| trajeto_3_janeiro | (4,0; 3,5) | 48,8% | 48,8% |
+| trajeto_4_janeiro | (4,0; 5,0) | 67,4% | 67,4% |
+| trajeto_5_janeiro | (4,0; 3,5) | 92,5% | **100,0%** |
+| **Média** | | **83,5%** | **84,1%** |
+
+**Fora da amostra, o valor "melhor" é pior que o padrão.** É a assinatura
+clássica de superajuste: sete curvas não sustentam o ajuste de dois parâmetros.
+
+**Decisão: os padrões não mudam.** `TERRAIN_SLOWDOWN_MAX = 2,0` e
+`TOBLER_DECAY = 3,5` permanecem — não por inércia, mas porque a calibração
+honesta não produziu nada melhor. O que mudou é o estatuto: eram valores
+arbitrários e passaram a ser valores com evidência. Separar 2,0 de 4,0 exige
+mais trilhas, não mais análise.
+
+### 8.4 Penalizar drenagem não ajuda a geometria
+
+| Fator de penalidade | Concordância | Desvio mediano |
+|---|---|---|
+| 0,5 (drenagem como atrativo) | 69,4% | 194 m |
+| **1,0 (desligado, padrão)** | **87,9%** | **130 m** |
+| 2,0 | 87,7% | 129 m |
+| 8,0 | 87,7% | 130 m |
+
+Penalizar não melhora nada, e tratar drenagem como atrativo piora bastante. A
+melhor política medida é a que já era o padrão: desligada. O fator permanece
+disponível para restrições reais que o usuário queira impor — cerca, área
+vedada, propriedade privada — e não como constante calibrada.
+
+## 9. Rotas com múltiplos destinos, e o que isso provou
+
+A limitação declarada na seção 5b.2 — o plugin perde para a linha reta na
+travessia Marins–Itaguaré porque modela acesso e não travessia de cumes — era
+uma hipótese sobre a causa. Com destinos intermediários implementados, ela pôde
+ser testada: se a explicação estivesse certa, declarar os cumes deveria
+recuperar a concordância; se fosse defeito do modelo, não deveria.
+
+| | km | <60 m | <150 m | <250 m | <500 m | desvio mediano | cume | subida |
+|---|---|---|---|---|---|---|---|---|
+| Linha reta (controle) | 8,91 | 7,4% | 19,3% | 25,3% | 42,5% | 643 m | — | — |
+| Plugin, só origem e destino | 11,01 | 0,7% | 1,7% | 2,7% | 6,8% | 1.860 m | 1.679 m | 427 m |
+| Plugin + Marins | 12,45 | 16,3% | 27,4% | 48,9% | 69,6% | 256 m | 2.383 m | 924 m |
+| Plugin + Marins, Marinzinho | 12,75 | 24,0% | 32,9% | 48,9% | 69,6% | 256 m | 2.383 m | 977 m |
+| **Plugin + os três cumes** | 14,17 | **39,9%** | **54,2%** | **73,0%** | **97,6%** | **114 m** | 2.383 m | 1.107 m |
+| Trilha real | 21,66 | — | — | — | — | — | 2.398 m | 2.180 m |
+
+O desvio mediano cai de **1.860 m para 114 m** — dezesseis vezes — e a rota passa
+a bater a linha reta com folga (73,0% contra 25,3%). **A hipótese da seção 5b.2
+fica confirmada**: o modelo não errava, o objetivo é que estava subespecificado.
+
+Implementação: `multi_leg_route()` encadeia o mesmo A* entre pontos
+consecutivos, o que é ótimo dada a ordem. `optimise_waypoint_order()` resolve a
+ordem por Held-Karp exato quando pedida — a matriz de custos é assimétrica no
+modo de Tobler, porque subir e descer não custam o mesmo, então o problema é um
+caminho hamiltoniano dirigido, e não o caixeiro-viajante simétrico. Limitado a
+oito pontos intermediários, porque o custo cresce como 2ⁿn².
+
+Na interface: camada de pontos opcional "Destinos intermediários, na ordem de
+visita", e uma caixa para deixar o plugin escolher a ordem.
+
+## 10. O que continua sem validação
 
 Honestidade sobre o que este trabalho *não* resolveu:
 
-- `TERRAIN_SLOWDOWN_MAX = 2,0` foi medido e **não confirmado** (§6c): governa a
-  geometria e não tem valor empírico que o sustente.
-- `CONSTRAINT_PENALTY_FACTOR = 8,0` não é calibrável com estes dados, porque o
-  comportamento que ele modela (evitar drenagem) não ocorre (§6).
+- A **magnitude** de `TERRAIN_SLOWDOWN_MAX` continua indeterminada entre 2,0 e
+  4,0 (§8.3). A existência do termo está validada e o padrão está justificado,
+  mas separar os dois valores exige mais trajetos — o caminho é acumular
+  trilhas, não refinar a estatística sobre as sete que existem.
+- `CONSTRAINT_PENALTY_FACTOR = 8,0` continua sem calibração possível, porque o
+  comportamento que ele modela não ocorre (§6) e impô-lo não melhora a
+  geometria (§8.4). Permanece como intensidade declarada pelo usuário.
 - Não há, neste conjunto, nenhuma trilha cujo objetivo declarado seja
   deslocamento eficiente ponto a ponto. Os trajetos de trabalho se aproximam
   disso e é por isso que a concordância é boa, mas são transectos de

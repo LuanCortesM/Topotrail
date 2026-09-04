@@ -53,7 +53,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.7.0"
+PLUGIN_VERSION = "0.8.0"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -108,13 +108,13 @@ DEFAULT_ROUTE_CONTRAST = 6.0
 #          divide todos os custos pela mesma constante e o caminho escolhido e
 #          bit a bit identico (test_routing_math.py fixa essa invariancia). O
 #          erro aparece so na duracao estimada, que escala por 6/vmax.
-#   decay  Ajuste observado 1,3 a 2,3, abaixo dos 3,5 publicados, mas com
-#          intervalo largo e sujeito a diluicao de regressao: o gradiente vem
-#          de um MDE de 90 m e o erro no preditor achata a estimativa. Usando a
-#          altimetria do GPS em janelas de 360 m o valor sobe para 2,3 +- 0,7,
-#          a 1,7 desvios de 3,5. Nao ha base para rejeitar 3,5, e este e o
-#          parametro que de fato governa a geometria da rota -- entre 1,3 e 3,5
-#          as rotas compartilham apenas 9% das celulas. Fica no valor publicado.
+#   decay  Contra velocidade o ajuste da 1,3 a 2,3, abaixo dos 3,5 publicados,
+#          com intervalo largo e diluicao de regressao. Mas o decay governa a
+#          geometria, entao a medida que vale e a geometrica -- e essa CONFIRMA
+#          o valor publicado: a concordancia com sete trilhas reais sobe
+#          monotonicamente de 72,4% em decay=1,3 para 84,1% em 3,5, e estabiliza
+#          depois. Calibrado contra o objetivo certo, o 3,5 de Tobler se
+#          sustenta. Fica no valor publicado, agora por evidencia.
 #   otimo  Ajuste em 0,00 contra os 0,05 publicados: nenhuma vantagem de
 #          descida suave foi detectada. Evidencia fraca, amostra pequena em
 #          declive negativo.
@@ -138,21 +138,26 @@ FIELD_SURVEY_SPEED_KMH = 2.4
 # 1 nao retarda nada (Tobler puro); adequabilidade 0 multiplica o tempo por
 # 1 + este valor.
 #
-# MEDIDO E NAO CONFIRMADO. Ajustando o coeficiente contra 270 janelas de campo
-# na caatinga, o valor sai em -0,32 +- 0,18 -- indistinguivel de zero e de sinal
-# trocado -- e a correlacao entre adequabilidade e log da velocidade e -0,064.
-# Acrescentar o termo eleva o R2 de 0,024 para 0,034. Como *previsao de tempo*,
-# esta constante nao tem apoio empirico nenhum: a adequabilidade derivada do MDE
-# nao antecipa o ritmo de ninguem.
+# CALIBRADO CONTRA GEOMETRIA. Duas medicoes, e a ordem entre elas importa.
 #
-# Ela nao foi removida porque o papel dela na rota nao e prever tempo, e exprimir
-# preferencia: caminhar por terreno mais suave e preferivel por risco, por
-# esforco e por erosao, mesmo que o cronometro nao registre diferenca. Mas isso
-# e uma escolha de projeto, nao uma quantidade medida, e o nome "slowdown"
-# prometia a segunda coisa. O efeito sobre a geometria e grande -- entre 0 e 2,0
-# as rotas compartilham 45% das celulas -- entao esta e a maior alavanca ainda
-# nao calibrada do modelo, e quem publicar numeros do plugin deve declarar o
-# valor usado. Ver docs/VALIDACAO.md, secao 7.
+# Contra *velocidade*, o coeficiente sai em -0,32 +- 0,18: indistinguivel de
+# zero e de sinal trocado. Isso parecia condenar a constante, mas a pergunta
+# estava errada -- prever tempo nunca foi funcao dela. A funcao e escolher por
+# onde a rota passa, e e contra isso que ela tem de ser medida.
+#
+# Contra a *geometria* de sete trajetos reais (concordancia de Goodchild-Hunter
+# a 250 m), o termo se sustenta com folga:
+#
+#     SLOWDOWN   0,0    0,5    1,0    2,0    4,0
+#     concord.  72,0%  74,0%  83,5%  84,1%  87,9%
+#
+# Desligar o termo custa 12 pontos de concordancia. A existencia dele esta
+# validada. Ja a magnitude nao: a validacao cruzada leave-one-out da 83,5% para
+# o melhor valor escolhido nos outros seis trajetos, contra 84,1% do padrao --
+# o ganho aparente de 4,0 nao generaliza, que e a assinatura classica de
+# superajuste com sete curvas. Entao 2,0 fica, agora por evidencia e nao por
+# arbitrio, e o que falta para separar 2,0 de 4,0 sao mais trilhas, nao mais
+# analise. Ver docs/VALIDACAO.md, secao 8.
 TERRAIN_SLOWDOWN_MAX = 2.0
 
 # ATENCAO ao usar cursos d'agua como restricao em paisagem sazonalmente seca.
@@ -168,10 +173,18 @@ TERRAIN_SLOWDOWN_MAX = 2.0
 # O que fazer com celulas restritas (cursos d'agua, camada vetorial do usuario).
 CONSTRAINT_AVOID = 0        # exclusao dura
 CONSTRAINT_PENALISE = 1     # encarece sem proibir
-# Nao calibrado: nao existe, nos dados disponiveis, comportamento de evitacao a
-# partir do qual estimar este fator. Fica como intensidade declarada pelo
-# usuario, nao como constante medida.
+# Nao ha evitacao a calibrar, e penalizar tambem nao ajuda a geometria: com as
+# sete trilhas reais, a concordancia e 87,9% sem penalidade, 87,7% com fator 2,0
+# e 87,7% com fator 8,0. Tratar drenagem como ATRATIVO e claramente pior (69,4%
+# com fator 0,5). Ou seja, a melhor politica medida e a que ja esta no padrao:
+# desligada. O fator permanece como intensidade declarada pelo usuario para
+# quando houver uma restricao real a impor (cerca, area vedada, propriedade
+# privada), nao como constante medida.
 CONSTRAINT_PENALTY_FACTOR = 8.0
+
+# Teto de pontos intermediarios para a otimizacao exata de ordem. O custo e
+# 2^n * n^2 em tempo e n^2 execucoes do A* para montar a matriz de pares.
+MAX_OPTIMISED_WAYPOINTS = 8
 
 # Sentido de um criterio raster fornecido pelo usuario: valores altos podem ser
 # bons (cobertura vegetal densa que dá sombra) ou ruins (pedregosidade).
@@ -1519,6 +1532,49 @@ def transform_point_to_raster(point_path, raster_proj):
     raise Exception(f"Nenhuma geometria de ponto encontrada em: {point_path}")
 
 
+def transform_points_to_raster(point_path, raster_proj):
+    """Todos os pontos do arquivo, na ordem das feicoes, reprojetados.
+
+    A ordem importa: e ela que define a sequencia da travessia. O QGIS preserva
+    a ordem de insercao numa camada de pontos desenhada a mao, entao desenhar
+    Marins, Marinzinho e Itaguare nessa ordem produz exatamente essa rota. Quem
+    quiser outra ordem pode reordenar a camada ou pedir a otimizacao.
+    """
+    datasource = ogr.Open(point_path)
+    if datasource is None:
+        raise Exception(f"Nao foi possivel abrir a camada de pontos: {point_path}")
+
+    raster_srs = osr.SpatialReference()
+    raster_srs.ImportFromWkt(raster_proj) if raster_proj else raster_srs.ImportFromEPSG(4326)
+    raster_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+
+    points = []
+    for layer_index in range(datasource.GetLayerCount()):
+        layer = datasource.GetLayerByIndex(layer_index)
+        source_srs = layer.GetSpatialRef()
+        transform = None
+        if source_srs is not None and not source_srs.IsSame(raster_srs):
+            source_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+            transform = osr.CoordinateTransformation(source_srs, raster_srs)
+        for feature in layer:
+            geometry = feature.GetGeometryRef()
+            if geometry is None:
+                continue
+            geom = geometry.Clone()
+            if transform is not None:
+                geom.Transform(transform)
+            if ogr.GT_Flatten(geom.GetGeometryType()) == ogr.wkbPoint:
+                points.append((float(geom.GetX()), float(geom.GetY())))
+            else:
+                for index in range(geom.GetGeometryCount()):
+                    sub = geom.GetGeometryRef(index)
+                    if sub and ogr.GT_Flatten(sub.GetGeometryType()) == ogr.wkbPoint:
+                        points.append((float(sub.GetX()), float(sub.GetY())))
+    if not points:
+        raise Exception(f"Nenhum ponto encontrado em: {point_path}")
+    return points
+
+
 def world_to_pixel(transform, x, y):
     inv_transform = gdal.InvGeoTransform(transform)
     col = int(round(inv_transform[0] + inv_transform[1] * x + inv_transform[2] * y))
@@ -1679,6 +1735,125 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
     return path, float(dist[end_index])
 
 
+def multi_leg_route(cost_array, waypoints_rc, elevation=None, pixel_size_m=None,
+                    anisotropic=False, optimise_order=False, feedback=None):
+    """Rota otima passando por uma sequencia de pontos, na ordem dada.
+
+    Uma travessia raramente e um par origem-destino. "Subir o Marins, depois o
+    Marinzinho, depois o Itaguare e descer" sao quatro objetivos encadeados, e
+    pedir isso a um algoritmo de menor custo entre dois pontos da a resposta
+    errada: ele contorna os cumes, porque o cume e exatamente o lugar caro.
+
+    Cada trecho e resolvido pelo mesmo A* de sempre, e o resultado e a
+    concatenacao. Isso e otimo *dada a ordem*: o caminho de menor custo que
+    visita os pontos naquela sequencia. Nao e o mesmo que o melhor circuito
+    possivel -- para isso existe `optimise_order`.
+
+    Devolve (celulas, custo_total, custos_por_trecho).
+    """
+    if len(waypoints_rc) < 2:
+        raise ValueError("Uma rota precisa de pelo menos dois pontos.")
+
+    if optimise_order and len(waypoints_rc) > 3:
+        waypoints_rc = optimise_waypoint_order(
+            cost_array, waypoints_rc, elevation, pixel_size_m, anisotropic, feedback)
+
+    cells, leg_costs = [], []
+    for index in range(len(waypoints_rc) - 1):
+        start, end = waypoints_rc[index], waypoints_rc[index + 1]
+        if tuple(start) == tuple(end):
+            raise Exception(
+                "Os pontos {} e {} caem na mesma celula do raster. Use pontos mais "
+                "afastados ou um MDE de maior resolucao.".format(index + 1, index + 2))
+        leg, cost = least_cost_path(cost_array, tuple(start), tuple(end),
+                                    elevation=elevation, pixel_size_m=pixel_size_m,
+                                    anisotropic=anisotropic)
+        leg_costs.append(float(cost))
+        # o primeiro ponto de cada trecho repete o ultimo do anterior
+        cells.extend(leg if index == 0 else leg[1:])
+        if feedback:
+            feedback.pushInfo(
+                "  trecho {} de {}: {} celulas, custo {:.4f}".format(
+                    index + 1, len(waypoints_rc) - 1, len(leg), cost))
+    return cells, float(sum(leg_costs)), leg_costs
+
+
+def optimise_waypoint_order(cost_array, waypoints_rc, elevation=None,
+                            pixel_size_m=None, anisotropic=False, feedback=None):
+    """Melhor ordem de visita, mantendo fixos o primeiro e o ultimo ponto.
+
+    Held-Karp sobre a matriz de custos entre pares. O custo e assimetrico no
+    modelo de Tobler -- subir e descer nao custam o mesmo -- entao a matriz nao
+    e simetrica e o problema e um caminho hamiltoniano dirigido, resolvido
+    exatamente. O numero de pontos intermediarios e limitado porque o custo
+    cresce como 2^n * n^2 em tempo e a matriz exige n^2 execucoes do A*.
+    """
+    middle = list(range(1, len(waypoints_rc) - 1))
+    if len(middle) > MAX_OPTIMISED_WAYPOINTS:
+        raise ValueError(
+            "A otimizacao de ordem aceita ate {} pontos intermediarios; foram dados "
+            "{}. Com mais que isso, informe a ordem desejada e desligue a "
+            "otimizacao.".format(MAX_OPTIMISED_WAYPOINTS, len(middle)))
+
+    n = len(waypoints_rc)
+    if feedback:
+        feedback.pushInfo(
+            "Otimizando a ordem de {} pontos intermediarios ({} trechos a calcular)."
+            .format(len(middle), n * (n - 1)))
+
+    pair = {}
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            _, cost = least_cost_path(cost_array, tuple(waypoints_rc[i]),
+                                      tuple(waypoints_rc[j]), elevation=elevation,
+                                      pixel_size_m=pixel_size_m, anisotropic=anisotropic)
+            pair[(i, j)] = float(cost)
+
+    last = n - 1
+    size = len(middle)
+    best = {}
+    for position, node in enumerate(middle):
+        best[(1 << position, position)] = (pair[(0, node)], None)
+    for mask in range(1 << size):
+        for position in range(size):
+            if not mask & (1 << position):
+                continue
+            state = best.get((mask, position))
+            if state is None:
+                continue
+            for nxt in range(size):
+                if mask & (1 << nxt):
+                    continue
+                total = state[0] + pair[(middle[position], middle[nxt])]
+                key = (mask | (1 << nxt), nxt)
+                if key not in best or total < best[key][0]:
+                    best[key] = (total, (mask, position))
+
+    full = (1 << size) - 1
+    end_state = min(((best[(full, p)][0] + pair[(middle[p], last)], p)
+                     for p in range(size) if (full, p) in best), default=None)
+    if end_state is None:
+        return waypoints_rc
+    order, mask, position = [], full, end_state[1]
+    while position is not None:
+        order.append(middle[position])
+        previous = best[(mask, position)][1]
+        if previous is None:
+            break
+        mask, position = previous
+    order.reverse()
+
+    ordered = [waypoints_rc[0]] + [waypoints_rc[i] for i in order] + [waypoints_rc[last]]
+    if feedback:
+        original = sum(pair[(i, i + 1)] for i in range(n - 1))
+        feedback.pushInfo(
+            "  ordem informada: custo {:.4f}; melhor ordem: custo {:.4f} ({:+.1f}%)"
+            .format(original, end_state[0], 100.0 * (end_state[0] / original - 1.0)))
+    return ordered
+
+
 def save_access_route(
     score_array,
     transform,
@@ -1695,6 +1870,8 @@ def save_access_route(
     cost_model=ROUTE_COST_INVERSE,
     contrast=DEFAULT_ROUTE_CONTRAST,
     penalty_mask=None,
+    via_path=None,
+    optimise_order=False,
 ):
     """Generate least-cost route and metric corridor files.
 
@@ -1716,18 +1893,28 @@ def save_access_route(
 
     start_xy = transform_point_to_raster(start_path, proj)
     end_xy = transform_point_to_raster(end_path, proj)
-    start_row, start_col = world_to_pixel(transform, start_xy[0], start_xy[1])
-    end_row, end_col = world_to_pixel(transform, end_xy[0], end_xy[1])
+    via_xy = transform_points_to_raster(via_path, proj) if via_path else []
 
     valid_mask = np.isfinite(score_array)
-    start_row, start_col = nearest_valid_cell(valid_mask, start_row, start_col)
-    end_row, end_col = nearest_valid_cell(valid_mask, end_row, end_col)
+    sequence = []
+    for x, y in [start_xy] + via_xy + [end_xy]:
+        row, col = world_to_pixel(transform, x, y)
+        sequence.append(nearest_valid_cell(valid_mask, row, col))
+    start_row, start_col = sequence[0]
+    end_row, end_col = sequence[-1]
+
+    if via_xy and feedback:
+        feedback.pushInfo(
+            "Rota por {} destino(s) intermediario(s); {} trechos.".format(
+                len(via_xy), len(sequence) - 1))
 
     margin_pixels = meters_to_pixels(transform, score_array.shape, proj, margin_m)
-    row_min = max(0, min(start_row, end_row) - margin_pixels)
-    row_max = min(score_array.shape[0], max(start_row, end_row) + margin_pixels + 1)
-    col_min = max(0, min(start_col, end_col) - margin_pixels)
-    col_max = min(score_array.shape[1], max(start_col, end_col) + margin_pixels + 1)
+    rows_used = [r for r, _ in sequence]
+    cols_used = [c for _, c in sequence]
+    row_min = max(0, min(rows_used) - margin_pixels)
+    row_max = min(score_array.shape[0], max(rows_used) + margin_pixels + 1)
+    col_min = max(0, min(cols_used) - margin_pixels)
+    col_max = min(score_array.shape[1], max(cols_used) + margin_pixels + 1)
 
     score_crop = score_array[row_min:row_max, col_min:col_max]
     if score_crop.size > MAX_ROUTE_CROP_CELLS:
@@ -1778,9 +1965,11 @@ def save_access_route(
         pixel_size_m = float(np.sqrt(max(estimate_pixel_area_m2(
             transform, score_array.shape, proj), 1e-9)))
 
-    path_cells, accumulated_cost = least_cost_path(
-        cost_crop, local_start, local_end,
-        elevation=elevation_crop, pixel_size_m=pixel_size_m, anisotropic=anisotropic)
+    local_sequence = [(r - row_min, c - col_min) for r, c in sequence]
+    path_cells, accumulated_cost, leg_costs = multi_leg_route(
+        cost_crop, local_sequence, elevation=elevation_crop,
+        pixel_size_m=pixel_size_m, anisotropic=anisotropic,
+        optimise_order=optimise_order, feedback=feedback)
     if len(path_cells) < 2:
         raise Exception(
             "O ponto inicial e o ponto final caem na mesma celula do raster. "
@@ -1792,6 +1981,7 @@ def save_access_route(
         "tipo": ["rota_principal"],
         "custo": [accumulated_cost],
         "vertices": [len(coordinates)],
+        "trechos": [len(leg_costs)],
     }
     if anisotropic:
         # No modelo de Tobler o custo acumulado tem unidade: horas.
@@ -1949,6 +2139,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
     WALKABILITY_ZONES = "WALKABILITY_ZONES"
     START_POINT_FILE = "START_POINT_FILE"
     END_POINT_FILE = "END_POINT_FILE"
+    VIA_POINTS_FILE = "VIA_POINTS_FILE"
+    OPTIMISE_ORDER = "OPTIMISE_ORDER"
     ROUTE_BUFFER_M = "ROUTE_BUFFER_M"
     ROUTE_MARGIN_M = "ROUTE_MARGIN_M"
     GENERATE_ZONES = "GENERATE_ZONES"
@@ -2143,6 +2335,23 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 self.tr("Ponto final / destino (opcional)"),
                 behavior=QgsProcessingParameterFile.File,
                 fileFilter="Vetores (*.gpkg *.shp *.kml *.geojson)",
+                optional=True,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterFile(
+                self.VIA_POINTS_FILE,
+                self.tr("Destinos intermediarios, na ordem de visita (opcional)"),
+                behavior=QgsProcessingParameterFile.File,
+                fileFilter="Vetores (*.gpkg *.shp *.kml *.geojson)",
+                optional=True,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.OPTIMISE_ORDER,
+                self.tr("Escolher a melhor ordem de visita (ignora a ordem da camada)"),
+                defaultValue=False,
                 optional=True,
             )
         )
@@ -2379,6 +2588,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         walkability_zones = self.parameterAsBool(parameters, self.WALKABILITY_ZONES, context)
         start_point_file = self.parameterAsFile(parameters, self.START_POINT_FILE, context)
         end_point_file = self.parameterAsFile(parameters, self.END_POINT_FILE, context)
+        via_points_file = self.parameterAsFile(parameters, self.VIA_POINTS_FILE, context)
+        optimise_order = self.parameterAsBool(parameters, self.OPTIMISE_ORDER, context)
         route_buffer_m = self.parameterAsDouble(parameters, self.ROUTE_BUFFER_M, context)
         route_margin_m = self.parameterAsDouble(parameters, self.ROUTE_MARGIN_M, context)
         generate_zones = self.parameterAsBool(parameters, self.GENERATE_ZONES, context)
@@ -2902,6 +3113,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 cost_model=route_cost_model,
                 contrast=route_contrast,
                 penalty_mask=penalty_mask,
+                via_path=via_points_file or None,
+                optimise_order=optimise_order,
             )
             append_diagnostic_log(
                 debug_log_path,
