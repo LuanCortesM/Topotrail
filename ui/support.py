@@ -257,7 +257,7 @@ class TopotrailSupportMixin:
         provider = layer.dataProvider()
         shader = QgsRasterShader()
         ramp = QgsColorRampShader()
-        ramp.setColorRampType(QgsColorRampShader.Interpolated)
+        ramp.setColorRampType(class_enum(QgsColorRampShader, "Type", "Interpolated"))
         ramp.setColorRampItemList([
             QgsColorRampShader.ColorRampItem(0.00, QColor(244, 241, 222, 0), "Baixa"),
             QgsColorRampShader.ColorRampItem(0.62, QColor(255, 245, 210, 0), "Moderada baixa"),
@@ -294,7 +294,7 @@ class TopotrailSupportMixin:
         provider = layer.dataProvider()
         shader = QgsRasterShader()
         ramp = QgsColorRampShader()
-        ramp.setColorRampType(QgsColorRampShader.Interpolated)
+        ramp.setColorRampType(class_enum(QgsColorRampShader, "Type", "Interpolated"))
         ramp.setColorRampItemList([
             QgsColorRampShader.ColorRampItem(0.00, QColor(255, 255, 255, 0), "Baixo"),
             QgsColorRampShader.ColorRampItem(0.35, QColor(255, 250, 220, 0), "Moderado baixo"),

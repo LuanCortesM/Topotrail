@@ -52,7 +52,7 @@ ogr.UseExceptions()
 
 _LOG = logging.getLogger("TopoTrail")
 
-PLUGIN_VERSION = "1.1.1"
+PLUGIN_VERSION = "1.1.2"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser

@@ -45,10 +45,15 @@ def test_no_unscoped_qt_enum_survives(module):
 @pytest.mark.parametrize("module", MODULES, ids=lambda p: p.name)
 def test_no_unscoped_class_enum_survives(module):
     code = _code_without_text(module.read_text(encoding="utf-8"))
-    padrao = (r"\b(QFrame|QPalette|QSizePolicy|QgsProcessingParameterNumber"
-              r"|QgsProcessingParameterFile)\.([A-Z][A-Za-z_]+)")
+    # QgsColorRampShader.Interpolated foi o que o verificador de Qt6 do
+    # repositorio de plugins apontou na 1.1.1 -- em QGIS 4 e
+    # QgsColorRampShader.Type.Interpolated. ColorRampItem e classe aninhada,
+    # nao enum, e fica de fora.
+    padrao = (r"\b(QFrame|QPalette|QSizePolicy|QComboBox|QgsProcessingParameterNumber"
+              r"|QgsProcessingParameterFile|QgsColorRampShader|QgsRasterShader|Qgis)\.([A-Z][A-Za-z_]+)")
     achados = [f"{c}.{v}" for c, v in re.findall(padrao, code)
-               if v not in ("Shape", "ColorRole", "Policy", "Type", "Behavior")]
+               if v not in ("Shape", "ColorRole", "Policy", "Type", "Behavior", "MessageLevel",
+                            "SizeAdjustPolicy", "ColorRampItem")]
     assert not achados, (
         f"{module.name}: enum de classe sem escopo, quebra no QGIS 4: {sorted(set(achados))}")
 
