@@ -100,3 +100,15 @@ def test_repository_and_tracker_point_at_this_project():
 def test_icon_file_exists():
     icon = read_metadata()["general"]["icon"].strip()
     assert (ROOT / icon).is_file(), f"icon declared as {icon!r} but the file is missing"
+
+
+def test_metadata_parses_with_interpolation_as_plugins_qgis_org_does():
+    """plugins.qgis.org le metadata.txt com ConfigParser COM interpolacao: um '%'
+    solto ("48%") derruba o upload inteiro com "'%' must be followed by '%' or '('".
+    Aconteceu na primeira tentativa de publicar a 1.1.0."""
+    import configparser
+    text = (ROOT / "metadata.txt").read_text(encoding="utf-8")
+    assert "%" not in text, "use 'percent' em vez de '%' no metadata.txt"
+    parser = configparser.ConfigParser()          # interpolacao ligada, como no servidor
+    parser.read_string(text)
+    assert parser["general"]["version"]
