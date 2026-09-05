@@ -487,7 +487,7 @@ class _RasterChip(QWidget):
     def _pick(self):
         path, _ = QFileDialog.getOpenFileName(
             self, self.dialog.t("dem"), "",
-            "GeoTIFF (*.tif *.tiff);;Todos (*)")
+            "GeoTIFF (*.tif *.tiff);;" + self.dialog.t("filter_all"))
         if path:
             self.set_path(path)
 
@@ -960,9 +960,9 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         inner.addWidget(self._help_label("own_help"))
 
         self.own_section = _Section()
-        self.slope_file = _FileRow("GeoTIFF (*.tif *.tiff)", "Declividade")
-        self.curvh_file = _FileRow("GeoTIFF (*.tif *.tiff)", "Curvatura H")
-        self.curvv_file = _FileRow("GeoTIFF (*.tif *.tiff)", "Curvatura V")
+        self.slope_file = _FileRow("GeoTIFF (*.tif *.tiff)", self.t("slope"))
+        self.curvh_file = _FileRow("GeoTIFF (*.tif *.tiff)", self.t("curvh"))
+        self.curvv_file = _FileRow("GeoTIFF (*.tif *.tiff)", self.t("curvv"))
         self.slope_unit = QComboBox()
         form = self.own_section.add_form([
             (self.t("slope"), self.slope_file),
@@ -1043,11 +1043,15 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         # onde a pessoa acabou de dizer que quer rota, e nao num bloco solto
         # mais abaixo.
         body = self.want_route.body_layout
-        self.start_file = _FileRow("Vetores (*.gpkg *.shp *.kml *.geojson)", "Origem")
-        self.end_file = _FileRow("Vetores (*.gpkg *.shp *.kml *.geojson)", "Destino")
-        self.via_file = _FileRow("Vetores (*.gpkg *.shp *.kml *.geojson)", "Waypoints")
+        self.start_file = _FileRow(self.t("filter_vectors"), self.t("start"))
+        self.end_file = _FileRow(self.t("filter_vectors"), self.t("end"))
+        self.via_file = _FileRow(self.t("filter_vectors"), self.t("via"))
         self.start_coord = QLineEdit(); self.start_coord.setPlaceholderText("X, Y")
         self.end_coord = QLineEdit(); self.end_coord.setPlaceholderText("X, Y")
+        # Em que CRS? No do projeto -- e isso tem de estar escrito em algum
+        # lugar: quem digitava lon/lat num projeto UTM via a rota falhar longe.
+        self._bind(self.start_coord, "coord_help", "setToolTip")
+        self._bind(self.end_coord, "coord_help", "setToolTip")
         self.pick_start = QPushButton(); self.pick_end = QPushButton()
         self._bind(self.pick_start, "pick"); self._bind(self.pick_end, "pick")
         self.pick_start.clicked.connect(lambda: self.start_map_pick("start"))
@@ -1162,7 +1166,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         card, inner = _card(self.t("extra_box"), "plus-layer")
         self._bind(card._title_label, "extra_box")
         inner.addWidget(self._help_label("extra_help"))
-        self.extra_file = _FileRow("GeoTIFF (*.tif *.tiff)", "Criterio adicional")
+        self.extra_file = _FileRow("GeoTIFF (*.tif *.tiff)", self.t("extra_box"))
         self.extra_weight = _spin(0, 100, 0.0)
         self.extra_direction = QComboBox()
         inner.addWidget(self._label("extra_layer")); inner.addWidget(self.extra_file)
@@ -1176,7 +1180,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         card, inner = _card(self.t("cons_box"), "shield")
         self._bind(card._title_label, "cons_box")
         inner.addWidget(self._help_label("cons_help"))
-        self.constraint_file = _FileRow("Vetores (*.gpkg *.shp *.kml *.geojson)", "Restricao")
+        self.constraint_file = _FileRow(self.t("filter_vectors"), self.t("cons_box"))
         self.constraint_buffer = _spin(0, 100000, 30.0, 0, 5, " m")
         self.constraint_mode = QComboBox()
         inner.addWidget(self._label("cons_layer")); inner.addWidget(self.constraint_file)
@@ -1256,12 +1260,19 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             box.addItems([self.t(key) for key in keys])
             box.setCurrentIndex(max(current, 0))
             box.blockSignals(False)
+            # Largura acompanha o idioma: por padrao o Qt congela a largura no
+            # primeiro show, e "Mauvaises (plus bas est mieux)" saia cortado.
+            if isinstance(box, QComboBox):
+                box.setSizeAdjustPolicy(class_enum(QComboBox, "SizeAdjustPolicy", "AdjustToContents"))
 
         fill(self.vertical_unit, ["unit_metres", "unit_feet"])
         fill(self.slope_unit, ["slope_percent", "slope_degrees"])
         fill(self.cost_model, ["cost_inverse", "cost_exponential", "cost_tobler"])
-        if self.cost_model.currentIndex() == 0:
+        if not getattr(self, "_cost_initialised", False):
+            # Tobler e o padrao, fixado UMA vez: refazer isto a cada troca de
+            # idioma devolvia ao Tobler quem tinha escolhido o modelo inverso.
             self.cost_model.setCurrentIndex(2)
+            self._cost_initialised = True
         fill(self.extra_direction, ["dir_low", "dir_high"])
         fill(self.constraint_mode, ["cons_avoid", "cons_penalise"])
         # A ordem tem de bater com options= do algoritmo: enum do QGIS viaja
@@ -1586,8 +1597,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         if self.want_route.isChecked():
             route = "• " + self.t("o_route")
             if self.via_file.text():
-                route += (" (com destinos intermediários)" if pt
-                          else " (with intermediate destinations)")
+                route += " " + self.t("summary_via")
             items.append(route)
         self.summary_label.setText("\n".join(items))
 
@@ -1716,7 +1726,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         alg = QgsApplication.processingRegistry().algorithmById("topotrail:topotrail")
         if alg is None:
             self._finish_error(Exception(
-                "O algoritmo topotrail:topotrail nao esta registrado no QGIS."), params)
+                self.t("err_not_registered")), params)
             return
         try:
             from qgis.core import QgsProcessingAlgRunnerTask
@@ -1792,14 +1802,14 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         """
         project = QgsProject.instance()
         rasters = [
-            ("OUTPUT_SCORE_RASTER", "TopoTrail — adequabilidade", self.style_score_layer),
-            ("OUTPUT_RISK_RASTER", "TopoTrail — risco topográfico", self.style_risk_layer),
-            ("OUTPUT_TRANSITABILITY", "TopoTrail — transitabilidade", None),
+            ("OUTPUT_SCORE_RASTER", "TopoTrail — " + self.t("alg_o_score"), self.style_score_layer),
+            ("OUTPUT_RISK_RASTER", "TopoTrail — " + self.t("alg_o_risk"), self.style_risk_layer),
+            ("OUTPUT_TRANSITABILITY", "TopoTrail — " + self.t("alg_o_transit"), None),
         ]
         vectors = [
-            ("OUTPUT_VECTOR", "TopoTrail — zonas", self.style_zone_layer),
-            ("OUTPUT_ROUTE", "TopoTrail — rota", self.style_route_layer),
-            ("OUTPUT_CORRIDOR", "TopoTrail — corredor", self.style_corridor_layer),
+            ("OUTPUT_VECTOR", "TopoTrail — " + self.t("alg_o_zones"), self.style_zone_layer),
+            ("OUTPUT_ROUTE", "TopoTrail — " + self.t("alg_o_route"), self.style_route_layer),
+            ("OUTPUT_CORRIDOR", "TopoTrail — " + self.t("alg_o_corridor"), self.style_corridor_layer),
         ]
         loaded = []
         for key, title, styler in rasters:

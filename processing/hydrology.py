@@ -201,8 +201,15 @@ def wetness_index(accumulated, filled, pixel_size_x, pixel_size_y, valid):
     contour_width = (pixel_size_x + pixel_size_y) / 2.0
     specific_area = (accumulated.astype(np.float64) * cell_area) / contour_width
 
-    surface = np.where(np.isfinite(filled), filled, np.nan)
-    dz_dy, dz_dx = np.gradient(surface, pixel_size_y, pixel_size_x)
+    # Derivada sobre a superficie com nodata preenchido pelo vizinho valido mais
+    # proximo: derivar uma superficie com NaN propagava NaN um anel para dentro
+    # da borda, e nan_to_num no modelo lia esse anel como "o mais umido".
+    _masked_gradient = _terrain_masked_gradient()
+    surface = np.asarray(filled, dtype=np.float64)
+    finite = np.isfinite(surface)
+    dz_dy, dz_dx = _masked_gradient(surface, finite, pixel_size_y, pixel_size_x)
+    dz_dy = np.where(finite, dz_dy, 0.0)
+    dz_dx = np.where(finite, dz_dx, 0.0)
     tan_beta = np.maximum(np.hypot(dz_dx, dz_dy), MIN_TAN_BETA)
 
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -216,6 +223,20 @@ def stream_network(dem_array, transform, min_basin_km2=1.0, feedback=None):
     channels, _twi, metrics = analyse_hydrology(
         dem_array, transform, min_basin_km2, feedback)
     return channels, metrics
+
+
+def _terrain_masked_gradient():
+    """Importa terrain._masked_gradient mesmo quando este modulo e carregado por caminho."""
+    try:
+        from .terrain import _masked_gradient
+        return _masked_gradient
+    except ImportError:
+        import importlib.util, os
+        spec = importlib.util.spec_from_file_location(
+            "_topotrail_terrain", os.path.join(os.path.dirname(os.path.abspath(__file__)), "terrain.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module._masked_gradient
 
 
 def analyse_hydrology(dem_array, transform, min_basin_km2=1.0, feedback=None,

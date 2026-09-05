@@ -11,7 +11,8 @@ otherwise two maps cannot be compared and a field team cannot build an
 intuition that transfers.
 
 Slope sets the class, because slope is what stops a walker first. Two modifiers
-can push a cell one class worse:
+can each push a cell one class worse (a cell that is both rough and wet is
+pushed two classes, never into class 5):
 
 * **ruggedness**, because a boulder field and a smooth grassy slope at the same
   inclination are not the same walk, and slope alone cannot tell them apart;

@@ -49,7 +49,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.13.1"
+PLUGIN_VERSION = "0.14.0"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -403,6 +403,10 @@ class FeatureSet:
             raise Exception(f"Nao foi possivel criar o arquivo vetorial: {path}")
         if layer_name is None:
             layer_name = os.path.splitext(os.path.basename(path))[0]
+        # "gpkg_*" e prefixo reservado do GeoPackage: um arquivo de saida chamado
+        # gpkg_saida.gpkg falhava na criacao da camada.
+        if layer_name.lower().startswith("gpkg"):
+            layer_name = "topotrail_" + layer_name
         geom_type = ogr.wkbUnknown
         kinds = {ogr.GT_Flatten(g.GetGeometryType()) for g in self.geometries}
         if kinds == {ogr.wkbPolygon} or kinds == {ogr.wkbMultiPolygon} or kinds == {ogr.wkbPolygon, ogr.wkbMultiPolygon}:
@@ -497,8 +501,11 @@ def raster_metadata(path):
         "crs": srs_label(srs),
         "is_geographic": bool(srs and srs.IsGeographic()),
         "is_projected": bool(srs and srs.IsProjected()),
-        "pixel_size_x": abs(float(transform[1])),
-        "pixel_size_y": abs(float(transform[5])),
+        # Comprimento real do passo de coluna/linha: numa grade rotacionada os
+        # termos [2] e [4] entram; abs(transform[1]) sozinho subestima.
+        "pixel_size_x": float(np.hypot(transform[1], transform[4])),
+        "pixel_size_y": float(np.hypot(transform[2], transform[5])),
+        "rotated": bool(abs(transform[2]) > 1e-12 or abs(transform[4]) > 1e-12),
         "bounds": bounds,
         "nodata": nodata,
         "y_axis_orientation": "north_up" if transform[5] < 0 else "south_up_or_unknown",
@@ -517,17 +524,54 @@ def raster_center_from_metadata(metadata):
     return float(center_x), float(center_y)
 
 
+def geographic_center_of_raster(metadata):
+    """Centro do raster em longitude/latitude (EPSG:4326), qualquer que seja o CRS."""
+    center_x, center_y = raster_center_from_metadata(metadata)
+    srs = srs_from_projection(metadata.get("projection"))
+    if srs is None or srs.IsGeographic():
+        return center_x, center_y
+    wgs84 = osr.SpatialReference()
+    wgs84.ImportFromEPSG(4326)
+    wgs84.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    lon, lat, _ = osr.CoordinateTransformation(srs, wgs84).TransformPoint(center_x, center_y)
+    return float(lon), float(lat)
+
+
 def automatic_utm_crs_for_geographic_raster(metadata):
-    """Choose an EPSG UTM CRS from a geographic raster center.
+    """Choose an EPSG UTM CRS from the raster center.
 
     Uses longitude to choose zone 1-60 and latitude to choose hemisphere:
-    EPSG:326xx in the north, EPSG:327xx in the south.
+    EPSG:326xx in the north, EPSG:327xx in the south. Works for geographic
+    rasters and, through the raster's own CRS, for projected ones that need a
+    metric working CRS (feet, Web Mercator). Longitude is normalised to
+    [-180, 180) so a 0..360 raster does not land in zone 60.
     """
-    center_x, center_y = raster_center_from_metadata(metadata)
-    utm_zone = int((center_x + 180.0) / 6.0) + 1
+    lon, lat = geographic_center_of_raster(metadata)
+    lon = ((lon + 180.0) % 360.0) - 180.0
+    utm_zone = int((lon + 180.0) / 6.0) + 1
     utm_zone = max(1, min(60, utm_zone))
-    epsg = (32700 if center_y < 0 else 32600) + utm_zone
+    epsg = (32700 if lat < 0 else 32600) + utm_zone
     return f"EPSG:{epsg}"
+
+
+def projected_crs_is_metric(srs):
+    """True when a projected CRS measures distance in metres without gross distortion.
+
+    Two things disqualify a projected CRS as a working CRS: a linear unit other
+    than the metre (US survey foot in State Plane, for instance -- the pixel
+    size would be read as metres and every slope, length and area would be off
+    by 3.28), and the (pseudo-)Mercator family, whose scale grows as 1/cos(lat)
+    -- 8% at 22 degrees, 100% at 60 -- so a "30 m" pixel is not 30 m on the
+    ground. Transverse Mercator (UTM) is fine.
+    Returns (ok, reason).
+    """
+    units = srs.GetLinearUnits() or 1.0
+    if abs(units - 1.0) > 1e-6:
+        return False, f"unidade linear {srs.GetLinearUnitsName() or '?'} ({units:.4f} m)"
+    projection = (srs.GetAttrValue("PROJECTION") or "").lower()
+    if "mercator" in projection and "transverse" not in projection:
+        return False, f"projecao {srs.GetAttrValue('PROJECTION')} (escala varia com a latitude)"
+    return True, ""
 
 
 def copy_raster_with_assigned_crs(input_path, output_path, crs):
@@ -631,7 +675,65 @@ def ensure_projected_working_crs(
     prepared_path = source_path
     reason = "CRS ja projetado"
 
-    if original_srs.IsGeographic():
+    lon_center, lat_center = geographic_center_of_raster(original_metadata)
+    if abs(lat_center) > 84.0:
+        messages.append(
+            "O MDE esta acima de 84 graus de latitude, fora do dominio da UTM; a "
+            "distorcao da zona escolhida pode ser grande. Prefira um CRS polar."
+        )
+        if feedback:
+            feedback.pushWarning(messages[-1])
+
+    metric_ok, metric_reason = (True, "")
+    if original_srs.IsProjected():
+        metric_ok, metric_reason = projected_crs_is_metric(original_srs)
+
+    transform_in = original_metadata["transform"]
+    rotated = abs(transform_in[2]) > 1e-12 or abs(transform_in[4]) > 1e-12
+    px_in, py_in = original_metadata["pixel_size_x"], original_metadata["pixel_size_y"]
+    non_square = abs(px_in - py_in) > 1e-6 * max(px_in, py_in)
+
+    if original_srs.IsProjected() and not metric_ok:
+        # Pes ou Mercator: reprojeta para a UTM automatica como se fosse
+        # geografico. Antes o CRS era mantido e o pixel lido como metros.
+        working_crs = automatic_utm_crs_for_geographic_raster(original_metadata)
+        prepared_path = os.path.join(temp_dir, "dem_trabalho_metrico.tif")
+        reason = f"CRS projetado nao metrico ({metric_reason}) reprojetado para UTM automatica"
+        warp_options = gdal.WarpOptions(
+            dstSRS=working_crs, resampleAlg=gdal.GRA_Bilinear, format="GTiff",
+            creationOptions=["COMPRESS=LZW"],
+            srcNodata=original_metadata.get("nodata"), dstNodata=DEM_FILL_NODATA,
+        )
+        warp_raster_checked(source_path, prepared_path, warp_options, "reprojecao do DEM para CRS metrico")
+        reprojected = True
+        messages.append(
+            f"O CRS do MDE ({srs_label(original_srs)}) nao mede em metros -- {metric_reason}. "
+            f"DEM reprojetado para CRS de trabalho metrico: {working_crs}."
+        )
+        if feedback:
+            feedback.pushWarning(messages[-1])
+    elif original_srs.IsProjected() and (rotated or non_square):
+        # Grade rotacionada ou pixel retangular: o roteamento e a transitabilidade
+        # assumem passo igual nos dois eixos e norte para cima. Reamostra na
+        # mesma CRS para uma grade norte-acima de pixel quadrado (o menor lado).
+        side = float(min(px_in, py_in))
+        prepared_path = os.path.join(temp_dir, "dem_trabalho_quadrado.tif")
+        reason = ("grade rotacionada" if rotated else "pixel retangular") + " reamostrada para pixel quadrado norte-acima"
+        warp_options = gdal.WarpOptions(
+            dstSRS=original_srs.ExportToWkt(), xRes=side, yRes=side,
+            resampleAlg=gdal.GRA_Bilinear, format="GTiff",
+            creationOptions=["COMPRESS=LZW"],
+            srcNodata=original_metadata.get("nodata"), dstNodata=DEM_FILL_NODATA,
+        )
+        warp_raster_checked(source_path, prepared_path, warp_options, "reamostragem do DEM para grade regular")
+        reprojected = True
+        messages.append(
+            "MDE com {} ({:.3g} x {:.3g}); reamostrado para pixel quadrado de {:.3g} m, norte para cima.".format(
+                "grade rotacionada" if rotated else "pixel retangular", px_in, py_in, side)
+        )
+        if feedback:
+            feedback.pushWarning(messages[-1])
+    elif original_srs.IsGeographic():
         working_crs = automatic_utm_crs_for_geographic_raster(original_metadata)
         prepared_path = os.path.join(temp_dir, "dem_trabalho_metrico.tif")
         reason = "CRS geografico reprojetado para UTM automatica"
@@ -892,16 +994,44 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
     # como dependencias, mas nao o geopandas. Com o import de geopandas no topo
     # deste modulo, o plugin nao carregava em instalacao padrao de QGIS -- e o
     # OGR ja traz o GEOS, que e o que faz uniao e buffer.
-    datasource_in = ogr.Open(str(layer_source))
-    if datasource_in is None:
-        raise Exception(f"Nao foi possivel abrir a camada de restricao: {layer_source}")
-    layer_in = datasource_in.GetLayer(0)
-    source_srs = layer_in.GetSpatialRef()
-    if source_srs is None:
-        raise Exception(
-            "A camada de restricao nao possui CRS definido. Defina o CRS na origem "
-            "do dado antes de usa-la como restricao."
-        )
+    # Aceita um caminho de arquivo OU uma QgsVectorLayer. Reabrir layer.source()
+    # com o OGR quebrava para toda camada que nao e um arquivo puro -- GeoPackage
+    # aberto pelo navegador do QGIS ("...gpkg|layername=x"), camada de memoria,
+    # PostGIS. Com a camada em maos, as geometrias vem pelo proprio QGIS em WKB.
+    source_geometries = []
+    if hasattr(layer_source, "getFeatures"):
+        crs = layer_source.crs()
+        if not crs.isValid():
+            raise Exception(
+                "A camada de restricao nao possui CRS definido. Defina o CRS na origem "
+                "do dado antes de usa-la como restricao."
+            )
+        source_srs = osr.SpatialReference()
+        source_srs.ImportFromWkt(crs.toWkt())
+        for qgs_feature in layer_source.getFeatures():
+            qgs_geometry = qgs_feature.geometry()
+            if qgs_geometry is None or qgs_geometry.isEmpty():
+                continue
+            geometry = ogr.CreateGeometryFromWkb(bytes(qgs_geometry.asWkb()))
+            if geometry is not None:
+                source_geometries.append(geometry)
+        layer_source = layer_source.source()
+    else:
+        datasource_in = ogr.Open(str(layer_source))
+        if datasource_in is None:
+            raise Exception(f"Nao foi possivel abrir a camada de restricao: {layer_source}")
+        layer_in = datasource_in.GetLayer(0)
+        source_srs = layer_in.GetSpatialRef()
+        if source_srs is None:
+            raise Exception(
+                "A camada de restricao nao possui CRS definido. Defina o CRS na origem "
+                "do dado antes de usa-la como restricao."
+            )
+        for feature_in in layer_in:
+            geometry = feature_in.GetGeometryRef()
+            if geometry is not None and not geometry.IsEmpty():
+                source_geometries.append(geometry.Clone())
+        datasource_in = None
 
     target_srs = osr.SpatialReference()
     if proj:
@@ -922,17 +1052,12 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
     # Uniao acumulada: o equivalente ao unary_union, feito pelo GEOS via OGR.
     merged = None
     feature_count = 0
-    for feature_in in layer_in:
-        geometry = feature_in.GetGeometryRef()
-        if geometry is None or geometry.IsEmpty():
-            continue
-        geometry = geometry.Clone()
+    for geometry in source_geometries:
         if reproject is not None:
             if geometry.Transform(reproject) != 0:
                 continue
         feature_count += 1
         merged = geometry if merged is None else merged.Union(geometry)
-    datasource_in = None
 
     if merged is None:
         if feedback:
@@ -1634,12 +1759,16 @@ def save_vector(features, output_path, output_format, output_crs, feedback=None)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    if output_crs and output_crs.isValid():
-        target_crs = output_crs.authid()
-        if target_crs:
-            features = features.to_crs(target_crs)
-            if feedback:
-                feedback.pushInfo(f"Resultado reprojetado para {target_crs}")
+    target_crs, target_label = output_crs_target(output_crs)
+    if target_crs and output_format == "KML":
+        # KML e sempre WGS84 por especificacao; o LIBKML reprojeta ao gravar.
+        target_crs = None
+        if feedback:
+            feedback.pushInfo("KML e gravado em EPSG:4326 por definicao do formato; o CRS de saida pedido nao se aplica.")
+    if target_crs:
+        features = features.to_crs(target_crs)
+        if feedback:
+            feedback.pushInfo(f"Resultado reprojetado para {target_label}")
 
     export = FeatureSet(features.geometries, features.attributes, features.crs)
     if output_format == "Shapefile" and "area_m2" in export.columns:
@@ -1675,6 +1804,26 @@ def save_vector(features, output_path, output_format, output_crs, feedback=None)
     return output_path
 
 
+def output_crs_target(output_crs):
+    """(alvo para to_crs, rotulo) a partir de um QgsCoordinateReferenceSystem.
+
+    Usa o WKT, nunca o authid: um CRS personalizado salvo no QGIS tem authid
+    "USER:100000", que o OSR nao conhece (quebrava com "Corrupt data"), e um
+    CRS sem autoridade tem authid vazio -- a saida ficava no CRS de trabalho
+    sem aviso, embora o parametro tivesse sido preenchido.
+    """
+    if not output_crs or not output_crs.isValid():
+        return None, None
+    label = output_crs.authid() or output_crs.description() or "CRS personalizado"
+    try:
+        wkt = output_crs.toWkt()
+    except Exception:
+        wkt = ""
+    if not wkt:
+        return None, None
+    return wkt, label
+
+
 def ensure_output_extension(output_path, output_format):
     extension_map = {
         "Shapefile": ".shp",
@@ -1702,6 +1851,24 @@ def available_output_path(path):
     return candidate
 
 
+_POINTS_WITHOUT_CRS_WARNED = set()
+
+
+def _warn_points_without_crs(point_path):
+    """Aviso unico por arquivo: camada de pontos sem CRS e lida no CRS do MDE."""
+    if point_path in _POINTS_WITHOUT_CRS_WARNED:
+        return
+    _POINTS_WITHOUT_CRS_WARNED.add(point_path)
+    try:
+        from qgis.core import QgsMessageLog, Qgis
+        QgsMessageLog.logMessage(
+            f"Camada de pontos sem CRS definido ({point_path}); as coordenadas foram "
+            "assumidas no CRS de trabalho do MDE.", "TopoTrail",
+            _qgs_enum(Qgis, "MessageLevel", "Warning"))
+    except Exception:
+        pass
+
+
 def transform_point_to_raster(point_path, raster_proj):
     datasource = ogr.Open(point_path)
     if datasource is None:
@@ -1715,6 +1882,10 @@ def transform_point_to_raster(point_path, raster_proj):
         layer = datasource.GetLayerByIndex(layer_index)
         source_srs = layer.GetSpatialRef()
         transform = None
+        if source_srs is None or (source_srs.GetName() or "").lower().startswith("undefined"):
+            # Sem CRS declarado: assume-se o CRS do raster, e diz-se isso.
+            _warn_points_without_crs(point_path)
+            source_srs = None
         if source_srs is not None and not source_srs.IsSame(raster_srs):
             source_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
             transform = osr.CoordinateTransformation(source_srs, raster_srs)
@@ -1758,6 +1929,10 @@ def transform_points_to_raster(point_path, raster_proj):
         layer = datasource.GetLayerByIndex(layer_index)
         source_srs = layer.GetSpatialRef()
         transform = None
+        if source_srs is None or (source_srs.GetName() or "").lower().startswith("undefined"):
+            # Sem CRS declarado: assume-se o CRS do raster, e diz-se isso.
+            _warn_points_without_crs(point_path)
+            source_srs = None
         if source_srs is not None and not source_srs.IsSame(raster_srs):
             source_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
             transform = osr.CoordinateTransformation(source_srs, raster_srs)
@@ -1781,9 +1956,12 @@ def transform_points_to_raster(point_path, raster_proj):
 
 
 def world_to_pixel(transform, x, y):
+    # floor, e nao round: a celula (r, c) cobre [r, r+1) x [c, c+1) em coordenadas
+    # continuas de pixel. round() empurrava um ponto a 0,6 da celula para a
+    # vizinha, e o mesmo ponto dado em dois CRS caia em celulas diferentes.
     inv_transform = gdal.InvGeoTransform(transform)
-    col = int(round(inv_transform[0] + inv_transform[1] * x + inv_transform[2] * y))
-    row = int(round(inv_transform[3] + inv_transform[4] * x + inv_transform[5] * y))
+    col = int(np.floor(inv_transform[0] + inv_transform[1] * x + inv_transform[2] * y))
+    row = int(np.floor(inv_transform[3] + inv_transform[4] * x + inv_transform[5] * y))
     return row, col
 
 
@@ -2102,8 +2280,21 @@ def save_access_route(
 
     valid_mask = np.isfinite(score_array)
     sequence = []
-    for x, y in [start_xy] + via_xy + [end_xy]:
+    rows_total, cols_total = score_array.shape
+    labels = ["inicial"] + [f"intermediario {i + 1}" for i in range(len(via_xy))] + ["final"]
+    for label, (x, y) in zip(labels, [start_xy] + via_xy + [end_xy]):
         row, col = world_to_pixel(transform, x, y)
+        if not (0 <= row < rows_total and 0 <= col < cols_total):
+            # Dizer que o ponto esta FORA do raster, e nao "sem celula valida
+            # proxima": era a mensagem que quem digitava X, Y no CRS errado via.
+            x0, y0 = pixel_to_world(transform, 0, 0)
+            x1, y1 = pixel_to_world(transform, rows_total - 1, cols_total - 1)
+            raise Exception(
+                "O ponto {} ({:.6g}, {:.6g}) esta fora da extensao do MDE "
+                "(x {:.6g} a {:.6g}, y {:.6g} a {:.6g}, no CRS de trabalho). "
+                "Confira o CRS dos pontos: coordenadas digitadas sao lidas no CRS do projeto.".format(
+                    label, x, y, min(x0, x1), max(x0, x1), min(y0, y1), max(y0, y1))
+            )
         sequence.append(nearest_valid_cell(valid_mask, row, col))
     start_row, start_col = sequence[0]
     end_row, end_col = sequence[-1]
@@ -2238,13 +2429,12 @@ def save_access_route(
         corridor = FeatureSet(route.buffer(0).geometries, [corridor_attributes], crs_wkt)
         corridor_area_m2 = None
 
-    if output_crs and output_crs.isValid():
-        target_crs = output_crs.authid()
-        if target_crs:
-            route = route.to_crs(target_crs)
-            corridor = corridor.to_crs(target_crs)
-            if feedback:
-                feedback.pushInfo(f"Rota e corredor reprojetados para {target_crs}")
+    target_crs, target_label = output_crs_target(output_crs)
+    if target_crs:
+        route = route.to_crs(target_crs)
+        corridor = corridor.to_crs(target_crs)
+        if feedback:
+            feedback.pushInfo(f"Rota e corredor reprojetados para {target_label}")
 
     gpkg_driver = ogr.GetDriverByName("GPKG")
     for path in [route_path, corridor_path]:
@@ -2428,9 +2618,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         return "topotrail"
 
     def shortHelpString(self):
-        return self.tr(
-            "Gera zonas potenciais de trilhas por restrições booleanas e combinação linear ponderada."
-        )
+        return self.tr("alg_help")
 
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterRasterLayer(self.INPUT_DEM, self.tr("alg_dem")))
@@ -2580,7 +2768,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 self.START_POINT_FILE,
                 self.tr("alg_start"),
                 behavior=_qgs_enum(QgsProcessingParameterFile, "Behavior", "File"),
-                fileFilter="Vetores (*.gpkg *.shp *.kml *.geojson)",
+                fileFilter=self.tr("filter_vectors"),
                 optional=True,
             )
         )
@@ -2589,7 +2777,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 self.END_POINT_FILE,
                 self.tr("alg_end"),
                 behavior=_qgs_enum(QgsProcessingParameterFile, "Behavior", "File"),
-                fileFilter="Vetores (*.gpkg *.shp *.kml *.geojson)",
+                fileFilter=self.tr("filter_vectors"),
                 optional=True,
             )
         )
@@ -2598,7 +2786,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 self.VIA_POINTS_FILE,
                 self.tr("alg_via"),
                 behavior=_qgs_enum(QgsProcessingParameterFile, "Behavior", "File"),
-                fileFilter="Vetores (*.gpkg *.shp *.kml *.geojson)",
+                fileFilter=self.tr("filter_vectors"),
                 optional=True,
             )
         )
@@ -2800,8 +2988,12 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 continue
             if not layer.crs().isValid():
                 raise Exception(f"O raster {label} não possui CRS definido.")
-            if not os.path.exists(layer.source()):
-                raise Exception(f"Arquivo não encontrado para {label}: {layer.source()}")
+            # gdal.Open, e nao os.path.exists: um MDE dentro de um GeoPackage
+            # ("GPKG:/caminho.gpkg:mde") e valido no QGIS e nao e um caminho.
+            probe = gdal.Open(str(layer.source()))
+            if probe is None:
+                raise Exception(f"O GDAL nao conseguiu abrir a camada {label}: {layer.source()}")
+            probe = None
 
         min_altitude = self.parameterAsDouble(parameters, self.ALT_MIN, context)
         max_altitude = self.parameterAsDouble(parameters, self.ALT_MAX, context)
@@ -3047,7 +3239,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             slope_transform = curvh_transform = curvv_transform = transform
             slope_proj = curvh_proj = curvv_proj = proj
             append_diagnostic_log(debug_log_path, "derivadas_calculadas_do_mde",
-                                  metodo="gradiente central; curvatura Zevenbergen-Thorne",
+                                  metodo="gradiente central; curvaturas geometricas de contorno e perfil (Moore et al. 1991)",
                                   pixel_x=abs(float(transform[1])), pixel_y=abs(float(transform[5])))
         else:
             slope_data, slope_transform, slope_proj = read_raster(prepared_rasters["slope"], feedback)
@@ -3107,15 +3299,18 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 warn_about_width=streams_from_dem)
             append_diagnostic_log(debug_log_path, "drenagem_extraida_do_mde", **stream_metrics)
         if streams_from_dem:
-            if constraint_buffer_m > 0:
-                pixels = max(1, int(round(meters_to_pixels(transform, dem_data.shape, proj, constraint_buffer_m))))
-                channels = ndimage.binary_dilation(
-                    channels, structure=np.ones((3, 3), np.uint8), iterations=pixels)
+            if constraint_buffer_m > 0 and channels.any():
+                # Buffer circular (distancia euclidiana em metros), e nao uma
+                # dilatacao 3x3 repetida, que da um quadrado: 50 m viravam 71 m
+                # na diagonal.
+                px = abs(float(transform[1])); py = abs(float(transform[5]))
+                distance = ndimage.distance_transform_edt(~channels, sampling=(py, px))
+                channels = distance <= float(constraint_buffer_m)
             restricted_mask |= channels
 
         if constraint_layer is not None:
             layer_mask = rasterize_constraint_layer(
-                constraint_layer.source(), constraint_buffer_m, transform,
+                constraint_layer, constraint_buffer_m, transform,
                 dem_data.shape, proj, feedback, debug_log_path)
             if layer_mask is not None:
                 restricted_mask |= layer_mask
@@ -3231,8 +3426,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 if cobertura < 95.0:
                     feedback.pushWarning(
                         "O criterio adicional cobre apenas {:.1f}% da area de estudo. As "
-                        "celulas descobertas ficam sem esse criterio, o que as favorece "
-                        "artificialmente na comparacao.".format(cobertura)
+                        "celulas descobertas sao pontuadas apenas pelos demais criterios, "
+                        "com os pesos renormalizados; compare-as com cautela.".format(cobertura)
                     )
 
         roughness_data = None
@@ -3263,13 +3458,22 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         curvh_component = curvh_weight * curvh_norm
         curvv_component = curvv_weight * curvv_norm
         raw_score = altitude_component + slope_component + curvh_component + curvv_component
-        if wetness_norm is not None:
-            raw_score = raw_score + wetness_weight * np.nan_to_num(wetness_norm)
-        if roughness_norm is not None:
-            raw_score = raw_score + roughness_weight * np.nan_to_num(roughness_norm)
-        if extra_norm is not None:
-            raw_score = raw_score + extra_weight * np.nan_to_num(extra_norm)
-        raw_score = raw_score / total_weight
+        # Criterios que podem nao cobrir toda a grade (raster extra menor, TWI ou
+        # VRM sem valor na borda): a celula descoberta e pontuada so pelos
+        # criterios que TEM, com a soma dos pesos ajustada por celula. Antes,
+        # nan_to_num contava a lacuna como nota zero -- a pior possivel -- e o
+        # aviso ao usuario dizia o contrario ("favorece artificialmente").
+        weight_sum = np.full(raw_score.shape, float(
+            altitude_weight + slope_weight + curvh_weight + curvv_weight), dtype=np.float64)
+        for component, weight in ((wetness_norm, wetness_weight),
+                                  (roughness_norm, roughness_weight),
+                                  (extra_norm, extra_weight)):
+            if component is None:
+                continue
+            covered = np.isfinite(component)
+            raw_score = raw_score + weight * np.where(covered, component, 0.0)
+            weight_sum = weight_sum + np.where(covered, weight, 0.0)
+        raw_score = raw_score / np.maximum(weight_sum, 1e-12)
         zone_score = np.where(zone_constraint_mask, raw_score, np.nan).astype(np.float32)
         route_score = np.where(route_constraint_mask, raw_score, np.nan).astype(np.float32)
         output_score = zone_score if generate_zones else route_score

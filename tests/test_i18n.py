@@ -91,7 +91,7 @@ def test_every_algorithm_label_has_a_key():
     source = (ROOT / "processing" / "algorithm.py").read_text(encoding="utf-8")
     usadas = set(re.findall(r'self\.tr\("([^"]+)"\)', source))
     usadas |= set(re.findall(r'\(\s*self\.[A-Z_]+,\s*"(alg_\w+)"', source))
-    sem_chave = {u for u in usadas if not u.startswith("alg_")}
+    sem_chave = {u for u in usadas if not u.startswith("alg_") and u not in _load(REFERENCE)}
     assert not sem_chave, f"rótulos ainda com texto literal: {sorted(sem_chave)}"
     disponiveis = set(_load(REFERENCE))
     assert not (usadas - disponiveis), (

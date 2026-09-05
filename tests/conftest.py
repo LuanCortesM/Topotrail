@@ -75,6 +75,18 @@ class _SpatialReference:
         return ""
 
 
+def _inv_geotransform(gt):
+    """Inversa da afim 2x3 do GDAL, para testar world_to_pixel sem GDAL."""
+    det = gt[1] * gt[5] - gt[2] * gt[4]
+    if det == 0:
+        return None
+    inv_det = 1.0 / det
+    return (
+        (gt[2] * gt[3] - gt[0] * gt[5]) * inv_det, gt[5] * inv_det, -gt[2] * inv_det,
+        (-gt[1] * gt[3] + gt[0] * gt[4]) * inv_det, -gt[4] * inv_det, gt[1] * inv_det,
+    )
+
+
 def _install_stubs():
     if "tt_algorithm" in sys.modules:
         return
@@ -86,6 +98,7 @@ def _install_stubs():
         VersionInfo=lambda *a: "stub",
         Open=lambda *a, **k: None,
         GetDriverByName=lambda *a: None,
+        InvGeoTransform=_inv_geotransform,
         Warp=lambda *a, **k: None,
         WarpOptions=lambda *a, **k: None,
         Translate=lambda *a, **k: None,

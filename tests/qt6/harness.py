@@ -123,6 +123,13 @@ def main():
                 if widget.width() < widget.sizeHint().width() - 1:
                     problemas.append(
                         f"{code} passo {passo+1}: '{texto[:26]}' cortado")
+            from PyQt6.QtWidgets import QComboBox as _Combo
+            for caixa in dialog.findChildren(_Combo):
+                if not caixa.isVisible() or caixa.count() == 0:
+                    continue
+                if caixa.width() < caixa.sizeHint().width() - 1:
+                    problemas.append(
+                        f"{code} passo {passo+1}: opcao '{caixa.currentText()[:26]}' cortada")
 
     # Depois de passar por todos os idiomas e terminar em japones, nada pode
     # ter ficado em portugues: cada texto escrito uma vez na construcao, e nao

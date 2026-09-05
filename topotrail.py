@@ -23,7 +23,7 @@ class TopotrailProvider(QgsProcessingProvider):
         return "TopoTrail"
 
     def longName(self):
-        return "TopoTrail - Trilhas e Acessos em Unidades de Conservacao"
+        return "TopoTrail - Trails and access routes in natural and protected areas"
 
 
 class TopotrailPlugin:

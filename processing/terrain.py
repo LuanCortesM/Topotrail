@@ -28,15 +28,58 @@ def _metric_spacing(transform):
 
 
 def _filled_for_gradient(dem_array):
-    """Replace invalid cells with the mean so np.gradient does not spread NaN.
+    """Devolve (superficie float64 com NaN, mascara_valida). Mantido pelo nome.
 
-    The invalid cells are masked back out by the caller; filling only keeps a
-    single NaN from contaminating its whole neighbourhood.
+    O preenchimento em si deixou de existir: a derivada e calculada por
+    `_masked_gradient`, que usa diferenca unilateral onde falta um vizinho
+    valido. A versao anterior preenchia o nodata com a MEDIA da cena e
+    derivava sobre isso, e toda celula encostada no nodata saia com
+    (z - media)/(2*px): numa rampa de 30% a 2000 m, 247%; num MDE reprojetado
+    (borda inclinada em toda a volta), centenas de celulas "escarpadas" num
+    relevo sem nada acima de 40%.
     """
     dem = dem_array.astype(np.float64)
     valid = np.isfinite(dem)
-    fill = float(np.nanmean(dem[valid])) if np.any(valid) else 0.0
-    return np.where(valid, dem, fill), valid
+    return dem, valid
+
+
+def _masked_gradient(surface, valid, spacing_y, spacing_x):
+    """Gradiente (dz/dy, dz/dx) que respeita o nodata.
+
+    Central onde os dois vizinhos do eixo sao validos; unilateral (forward ou
+    backward) onde so um e; zero onde nenhum e -- e a mesma regra que o
+    np.gradient aplica na borda do array, estendida a borda do dado. Celulas
+    invalidas saem NaN.
+    """
+    z = np.where(valid, surface, 0.0)
+    result = []
+    for axis, h in ((0, spacing_y), (1, spacing_x)):
+        z_next = np.roll(z, -1, axis=axis); v_next = np.roll(valid, -1, axis=axis)
+        z_prev = np.roll(z, 1, axis=axis); v_prev = np.roll(valid, 1, axis=axis)
+        # np.roll da a volta: a borda do array nao tem vizinho do outro lado.
+        edge_last = np.zeros_like(valid); edge_first = np.zeros_like(valid)
+        if axis == 0:
+            edge_last[-1, :] = True; edge_first[0, :] = True
+        else:
+            edge_last[:, -1] = True; edge_first[:, 0] = True
+        v_next &= ~edge_last
+        v_prev &= ~edge_first
+        both = v_next & v_prev
+        central = (z_next - z_prev) / (2.0 * h)
+        forward = (z_next - z) / h
+        backward = (z - z_prev) / h
+        d = np.where(both, central, np.where(v_next, forward, np.where(v_prev, backward, 0.0)))
+        d = np.where(valid, d, np.nan)
+        result.append(d)
+    return result[0], result[1]
+
+
+def _require_2d(dem_array, what):
+    if dem_array.ndim != 2 or min(dem_array.shape) < 2:
+        raise ValueError(
+            f"O MDE precisa ter pelo menos 2 x 2 celulas para derivar {what}; "
+            f"recebido {tuple(dem_array.shape)}."
+        )
 
 
 def slope_percent_from_dem(dem_array, transform, feedback=None):
@@ -44,9 +87,10 @@ def slope_percent_from_dem(dem_array, transform, feedback=None):
 
     Percentage is TopoTrail's internal unit. A 45 degree slope is 100%.
     """
+    _require_2d(dem_array, "a declividade")
     px, py = _metric_spacing(transform)
     filled, valid = _filled_for_gradient(dem_array)
-    dz_dy, dz_dx = np.gradient(filled, py, px)
+    dz_dy, dz_dx = _masked_gradient(filled, valid, py, px)
     slope = (np.hypot(dz_dx, dz_dy) * 100.0).astype(np.float32)
     slope[~valid] = np.nan
     slope[~np.isfinite(slope)] = np.nan
@@ -63,11 +107,17 @@ def slope_percent_from_dem(dem_array, transform, feedback=None):
 
 
 def curvatures_from_dem(dem_array, transform, feedback=None):
-    """Plan (horizontal) and profile (vertical) curvature, Zevenbergen-Thorne.
+    """Plan (horizontal) and profile (vertical) curvature of the surface.
 
     These are the two curvatures the multicriteria model expects, and they are
     defined relative to the direction of steepest descent rather than to the
-    grid axes:
+    grid axes. The forms used are the geometric contour ("plan") and profile
+    curvatures of Moore, Grayson & Ladson (1991) / Mitasova & Hofierka (1993),
+    evaluated with central-difference partial derivatives: on a bowl
+    z = a(x^2 + y^2) the plan curvature equals 1/r and the profile curvature
+    equals 2a/(1+p)^{3/2}. They are NOT the Zevenbergen-Thorne (1987) quadratic
+    forms, which lack the slope normalisation and use the opposite profile
+    sign; an earlier version of this docstring mis-cited them.
 
     Sign convention, verified against surfaces with known shape in
     `tests/test_terrain_math.py` rather than asserted here:
@@ -89,15 +139,20 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
     a different scale, or the opposite sign convention, produces the same
     result. Flat cells, where the curvature is undefined, are returned as zero.
 
-    Reference: Zevenbergen, L.W. & Thorne, C.R. (1987) Quantitative analysis of
-    land surface topography. Earth Surface Processes and Landforms 12: 47-56.
+    References: Moore, I.D., Grayson, R.B. & Ladson, A.R. (1991) Digital
+    terrain modelling: a review of hydrological, geomorphological, and
+    biological applications. Hydrological Processes 5: 3-30. Mitasova, H. &
+    Hofierka, J. (1993) Interpolation by regularized spline with tension: II.
+    Application to terrain modeling and surface geometry analysis.
+    Mathematical Geology 25: 657-669.
     """
+    _require_2d(dem_array, "as curvaturas")
     px, py = _metric_spacing(transform)
     filled, valid = _filled_for_gradient(dem_array)
 
-    zy, zx = np.gradient(filled, py, px)
-    zyy, zyx = np.gradient(zy, py, px)
-    _, zxx = np.gradient(zx, py, px)
+    zy, zx = _masked_gradient(filled, valid, py, px)
+    zyy, zyx = _masked_gradient(np.where(valid, zy, 0.0), valid, py, px)
+    _, zxx = _masked_gradient(np.where(valid, zx, 0.0), valid, py, px)
 
     p = zx ** 2 + zy ** 2          # squared gradient magnitude
     q = p + 1.0
@@ -207,11 +262,14 @@ def vector_ruggedness(dem_array, transform, feedback=None):
     blocos na mesma inclinacao media -- o TRI nao separa, apesar do que a
     documentacao anterior afirmava.
     """
+    _require_2d(dem_array, "a rugosidade")
     px, py = _metric_spacing(transform)
     filled, valid = _filled_for_gradient(dem_array)
     rows, cols = dem_array.shape
 
-    dz_dy, dz_dx = np.gradient(filled, py, px)
+    dz_dy, dz_dx = _masked_gradient(filled, valid, py, px)
+    dz_dy = np.where(valid, dz_dy, 0.0)
+    dz_dx = np.where(valid, dz_dx, 0.0)
     slope = np.arctan(np.hypot(dz_dx, dz_dy))
     aspect = np.arctan2(-dz_dy, dz_dx)
 

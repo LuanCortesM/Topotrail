@@ -16,8 +16,12 @@ output is a continuous suitability raster. From that raster it also derives
 potential access zones, a suggested least-cost route between an origin and a
 destination, and an access corridor around that route.
 
-Portuguese documentation is kept in [`docs/pt_BR`](docs/pt_BR). A `PT-BR | ENG`
-switch in the interface changes the language of the dialog.
+Portuguese documentation is kept in [`docs/pt_BR`](docs/pt_BR). The interface
+and the Processing parameters are available in six languages — Portuguese,
+English, Spanish, French, Chinese (Simplified) and Japanese — chosen from a
+selector in the window; Portuguese and English are reviewed, the other four are
+community drafts. The run log written to the Processing panel and the
+diagnostic `.log` file are in Portuguese only.
 
 ---
 

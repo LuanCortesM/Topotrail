@@ -17,6 +17,7 @@ chave no meio da tela.
 """
 
 import json
+import re
 import os
 
 I18N_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -29,7 +30,7 @@ LANGUAGES = [
     ("en", "English"),
     ("es", "Español"),
     ("fr", "Français"),
-    ("zh", "中文"),
+    ("zh", "中文（简体）"),
     ("ja", "日本語"),
 ]
 
@@ -103,7 +104,8 @@ def detect():
     for raw in candidates:
         if not raw:
             continue
-        primary = str(raw).replace("-", "_").split("_")[0].lower()
+        # "zh_CN.UTF-8", "pt-BR", "zh.UTF-8", "ca@valencia": so o primeiro pedaco.
+        primary = re.split(r"[_.@\-]", str(raw))[0].lower()
         if primary in LANGUAGE_CODES:
             return primary
     return "en"

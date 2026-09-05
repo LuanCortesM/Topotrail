@@ -165,10 +165,7 @@ class TopotrailSupportMixin:
 
     def start_map_pick(self, target):
         if not self.iface:
-            QMessageBox.warning(self, self.t("err_title"),
-                                "Sem canvas de mapa disponivel."
-                                if self.lang == "pt"
-                                else "No map canvas available.")
+            QMessageBox.warning(self, self.t("err_title"), self.t("err_no_canvas"))
             return
 
         canvas = self.iface.mapCanvas()
@@ -179,8 +176,7 @@ class TopotrailSupportMixin:
         label = self.t("start") if target == "start" else self.t("end")
         QMessageBox.information(
             self, label,
-            ("Clique no mapa para marcar: {}." if self.lang == "pt"
-             else "Click on the map to set: {}.").format(label))
+            self.t("pick_prompt").format(label=label))
 
     def finish_map_pick(self, target, point):
         file_row, coord_edit = self.route_widgets(target)
