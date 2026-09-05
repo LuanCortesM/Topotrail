@@ -49,7 +49,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "0.14.0"
+PLUGIN_VERSION = "1.0.0"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -2105,7 +2105,12 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
                 heapq.heappush(heap, (priority, candidate_dist, next_index))
 
     if not np.isfinite(dist[end_index]):
-        raise Exception("Nao foi possivel conectar o ponto inicial ao ponto final com as restricoes atuais.")
+        raise Exception(
+            "Nao foi possivel conectar os pontos da rota: nao existe caminho de celulas viaveis "
+            "entre eles. Causas comuns: declividade maxima admitida baixa demais para o relevo "
+            "(celulas acima dela sao intransponiveis), camada de restricao no modo 'evitar' "
+            "cercando um dos pontos, ou margem lateral de busca pequena. Aumente a declividade "
+            "maxima, troque a restricao para 'encarecer' ou amplie a margem.")
 
     path = []
     index = end_index
@@ -3298,6 +3303,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 dem_data, transform, stream_min_basin_km2, feedback,
                 warn_about_width=streams_from_dem)
             append_diagnostic_log(debug_log_path, "drenagem_extraida_do_mde", **stream_metrics)
+        stream_mask = np.zeros(dem_data.shape, dtype=bool)
         if streams_from_dem:
             if constraint_buffer_m > 0 and channels.any():
                 # Buffer circular (distancia euclidiana em metros), e nao uma
@@ -3306,8 +3312,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 px = abs(float(transform[1])); py = abs(float(transform[5]))
                 distance = ndimage.distance_transform_edt(~channels, sampling=(py, px))
                 channels = distance <= float(constraint_buffer_m)
-            restricted_mask |= channels
+            stream_mask = channels.astype(bool)
+            restricted_mask |= stream_mask
 
+        layer_mask = None
         if constraint_layer is not None:
             layer_mask = rasterize_constraint_layer(
                 constraint_layer, constraint_buffer_m, transform,
@@ -3315,13 +3323,26 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             if layer_mask is not None:
                 restricted_mask |= layer_mask
 
+        # A rota trata a drenagem SEMPRE como custo (8x), nunca como parede,
+        # mesmo no modo "evitar". Um curso d'agua e uma linha: toda rota que
+        # vai de um vale ao vizinho tem de cruzar um, e uma rede linear
+        # transformada em barreira absoluta retalha a paisagem em ilhas -- a
+        # travessia Marins-Marinzinho-Itaguare falhava com os padroes da janela
+        # exatamente por isso. As ZONAS continuam excluindo a drenagem no modo
+        # "evitar" (nao se planeja area de uso no leito). A camada de restricao
+        # do usuario segue o modo escolhido nos dois casos: cerca e cerca.
         penalty_mask = None
         if restricted_mask.any():
             affected = int((restricted_mask & valid_mask).sum())
             if constraint_mode == CONSTRAINT_AVOID:
                 zone_constraint_mask = zone_constraint_mask & ~restricted_mask
-                route_constraint_mask = route_constraint_mask & ~restricted_mask
-                tratamento = "excluidas"
+                if layer_mask is not None:
+                    route_constraint_mask = route_constraint_mask & ~layer_mask
+                if stream_mask.any():
+                    penalty_mask = stream_mask
+                tratamento = "excluidas das zonas" + (
+                    "; camada excluida da rota, drenagem encarecida em {:.0f}x para a rota".format(CONSTRAINT_PENALTY_FACTOR)
+                    if stream_mask.any() else " e da rota")
             else:
                 penalty_mask = restricted_mask
                 tratamento = f"encarecidas em {CONSTRAINT_PENALTY_FACTOR:.0f}x"
@@ -3335,6 +3356,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 celulas=affected, modo=("evitar" if constraint_mode == CONSTRAINT_AVOID else "encarecer"),
                 buffer_m=float(constraint_buffer_m),
                 fonte_drenagem=bool(streams_from_dem),
+                drenagem_na_rota="encarecida" if stream_mask.any() else None,
                 fonte_camada=bool(constraint_layer is not None),
             )
 

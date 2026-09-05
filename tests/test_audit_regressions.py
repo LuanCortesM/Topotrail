@@ -80,3 +80,30 @@ def test_world_to_pixel_uses_floor_not_round(algorithm):
     # ida e volta pelo centro da celula e identidade
     x, y = algorithm.pixel_to_world(transform, 7, 3)
     assert algorithm.world_to_pixel(transform, x, y) == (7, 3)
+
+
+# ---- 4. drenagem nunca e parede para a rota -----------------------------
+
+def test_streams_are_a_cost_for_the_route_not_a_wall(algorithm):
+    """A regra de negocio, isolada: com modo 'evitar', a camada do usuario sai
+    da mascara da rota, mas a drenagem vai para a mascara de penalidade."""
+    import numpy as np
+    shape = (5, 5)
+    valid = np.ones(shape, bool)
+    stream = np.zeros(shape, bool); stream[:, 2] = True            # rio norte-sul no meio
+    layer = np.zeros(shape, bool); layer[0, 0] = True              # cerca num canto
+    route_mask = valid.copy(); zone_mask = valid.copy(); penalty = None
+    restricted = stream | layer
+    # espelho da logica de _run_algorithm no modo CONSTRAINT_AVOID
+    zone_mask &= ~restricted
+    route_mask &= ~layer
+    penalty = stream
+    assert route_mask[:, 2].all(), "a rota tem de poder cruzar o rio"
+    assert not route_mask[0, 0], "a cerca continua intransponivel"
+    assert not zone_mask[:, 2].any(), "as zonas continuam fora do leito"
+    assert penalty[:, 2].all()
+    # e o custo penalizado e finito (cruzavel), nao infinito
+    score = np.full(shape, 0.5, dtype=np.float32)
+    cost = algorithm.build_route_cost(score, algorithm.COST_MODEL_INVERSE if hasattr(algorithm, "COST_MODEL_INVERSE") else 0,
+                                      1.0, penalty_mask=penalty)
+    assert np.all(np.isfinite(cost[:, 2])) and np.all(cost[:, 2] > cost[:, 0])

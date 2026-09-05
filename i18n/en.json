@@ -165,7 +165,7 @@
   "o_score": "Topographic suitability map",
   "o_score_help": "A 0-to-1 score per cell, combining the criteria from step 3.",
   "o_streams": "Take watercourses into account, extracted from the DEM",
-  "o_streams_help": "Derives drainage from the relief and uses it as a route constraint.",
+  "o_streams_help": "Derives drainage from the relief. The route may cross it at a high cost; zones exclude it.",
   "o_streams_tip": "No hydrography layer needed. Careful in seasonally dry landscapes: a dry bed is often the best walking surface, and in biological survey work drainage is a sampling target — avoiding it can push the route away from what you want to visit.",
   "o_transit": "Transitability map — “where can I walk”",
   "o_transit_help": "Five slope classes, with the legend written into the file.",

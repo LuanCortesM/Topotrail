@@ -87,7 +87,11 @@ Paridade total: 226 (agora 234) chaves em todos os arquivos, sem vazios, todos o
 
 **Ficou documentado, não traduzido:** as ~75 mensagens de exceção e as 78 linhas de log do algoritmo estão em português. O README agora diz isso. Traduzir as exceções é trabalho conhecido para uma versão futura, não bloqueador.
 
-## 4. Veredito
+## 4. Bateria de ponta a ponta (1.0.0)
+
+Depois das correções, o plugin foi exercitado como produto: três regiões reais/extremas, seis idiomas, pela janela e pelo Processing — `docs/BATERIA_TESTES.md`. 14/14 aprovados. A bateria encontrou um último problema de projeto (drenagem como parede absoluta para a rota), corrigido na 1.0.0.
+
+## 5. Veredito
 
 Depois da 0.14.0: **a matemática é correta e agora também nas bordas; as regras geográficas cobrem os casos que um usuário fora do Brasil vai trazer (pés, Mercator, grades irregulares, CRS personalizado, GeoPackage); os seis idiomas são funcionais na janela, no Processing e nos produtos.** A suíte tem 230 testes, todos verdes, mais o harness Qt6 nos seis idiomas e a corrida integrada em QGIS headless sem geopandas.
 

@@ -165,7 +165,7 @@
   "o_score": "Carte d'aptitude topographique",
   "o_score_help": "Un indice de 0 à 1 par cellule, combinant les critères de l'étape 3.",
   "o_streams": "Tenir compte des cours d'eau, extraits du MNT",
-  "o_streams_help": "Dérive le drainage du relief et l'utilise comme contrainte de l'itinéraire.",
+  "o_streams_help": "Dérive le réseau de drainage du relief. L'itinéraire peut le traverser à coût élevé ; les zones l'excluent.",
   "o_streams_tip": "Aucune couche d'hydrographie nécessaire. Prudence en paysage saisonnièrement sec : le lit à sec est souvent la meilleure surface de marche, et en inventaire biologique le drainage est une cible d'échantillonnage — l'éviter peut éloigner l'itinéraire de ce que vous voulez justement visiter.",
   "o_transit": "Carte de praticabilité — « où peut-on marcher »",
   "o_transit_help": "Cinq classes de pente, avec la légende inscrite dans le fichier.",

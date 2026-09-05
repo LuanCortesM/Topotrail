@@ -165,7 +165,7 @@
   "o_score": "Mapa de aptitud topográfica",
   "o_score_help": "Índice de 0 a 1 por celda, combinando los criterios del paso 3.",
   "o_streams": "Tener en cuenta los cursos de agua, extraídos del MDE",
-  "o_streams_help": "Deriva el drenaje del relieve y lo usa como restricción de la ruta.",
+  "o_streams_help": "Deriva el drenaje del relieve. La ruta puede cruzarlo a un costo alto; las zonas lo excluyen.",
   "o_streams_tip": "No necesita capa de hidrografía. Cuidado en paisajes estacionalmente secos: el lecho seco suele ser la mejor superficie para caminar, y en trabajo de muestreo biológico el drenaje es un objetivo — evitarlo puede alejar la ruta justo de lo que se quiere visitar.",
   "o_transit": "Mapa de transitabilidad — «dónde se puede andar»",
   "o_transit_help": "Cinco clases de pendiente, con la leyenda incorporada al archivo.",

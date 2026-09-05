@@ -165,7 +165,7 @@
   "o_score": "Mapa de adequabilidade topográfica",
   "o_score_help": "Nota de 0 a 1 por célula, combinando os critérios escolhidos no passo 3.",
   "o_streams": "Levar cursos d'água em conta, extraídos do próprio MDE",
-  "o_streams_help": "Deriva a drenagem do relevo e a usa como restrição da rota.",
+  "o_streams_help": "Deriva a drenagem do relevo. A rota pode cruzá-la, a custo alto; as zonas a excluem.",
   "o_streams_tip": "Não precisa de camada de hidrografia. Cuidado em paisagem sazonalmente seca: o leito seco costuma ser a melhor superfície de caminhada, e em levantamento biológico a drenagem é alvo de amostragem — evitá-la pode afastar a rota do que você quer visitar.",
   "o_transit": "Mapa de transitabilidade — “onde dá para andar”",
   "o_transit_help": "Cinco classes de declividade, com a legenda gravada no arquivo.",
