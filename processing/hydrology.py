@@ -240,13 +240,16 @@ def _terrain_masked_gradient():
 
 
 def analyse_hydrology(dem_array, transform, min_basin_km2=1.0, feedback=None,
-                      warn_about_width=True):
+                      warn_about_width=True, return_basin_area=False):
     """Rede de drenagem e indice de umidade, numa unica passagem.
 
-    Devolve (canais, twi, metricas). `min_basin_km2` e a area de contribuicao a
-    partir da qual uma celula e considerada canal. Grades acima de
-    MAX_HYDROLOGY_CELLS sao reamostradas por um fator inteiro para o calculo e
-    a mascara e devolvida na resolucao original.
+    Devolve (canais, twi, metricas) -- ou (canais, twi, bacia_km2, metricas)
+    com `return_basin_area=True`, onde bacia_km2 e a area de contribuicao de
+    cada celula, o que permite graduar a travessia de um curso d'agua pelo
+    tamanho dele. `min_basin_km2` e a area de contribuicao a partir da qual uma
+    celula e considerada canal. Grades acima de MAX_HYDROLOGY_CELLS sao
+    reamostradas por um fator inteiro para o calculo e a mascara e devolvida na
+    resolucao original.
     """
     pixel_size_x = abs(float(transform[1]))
     pixel_size_y = abs(float(transform[5]))
@@ -277,7 +280,8 @@ def analyse_hydrology(dem_array, transform, min_basin_km2=1.0, feedback=None,
     twi = wetness_index(accumulated, filled, work_px, work_py, valid)
 
     pixel_area_km2 = (work_px * work_py) / 1e6
-    channels = valid & ((accumulated * pixel_area_km2) >= float(min_basin_km2))
+    basin_km2 = np.where(valid, accumulated * pixel_area_km2, np.nan).astype(np.float32)
+    channels = valid & (basin_km2 >= float(min_basin_km2))
 
     # Densidade de drenagem: cada celula de canal contribui aproximadamente o
     # comprimento do seu passo a jusante. Serve para aferir o limiar escolhido.
@@ -320,6 +324,7 @@ def analyse_hydrology(dem_array, transform, min_basin_km2=1.0, feedback=None,
             return grown
         channels = expand(channels, False)
         twi = expand(twi, np.nan)
+        basin_km2 = expand(basin_km2, np.nan)
 
     if feedback:
         density = metrics["densidade_drenagem_km_por_km2"]
@@ -343,4 +348,6 @@ def analyse_hydrology(dem_array, transform, min_basin_km2=1.0, feedback=None,
                 "demais aumente o limiar de area de contribuicao; se parecer esparsa "
                 "demais, reduza.".format(density)
             )
+    if return_basin_area:
+        return channels, twi, basin_km2, metrics
     return channels, twi, metrics

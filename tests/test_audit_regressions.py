@@ -107,3 +107,50 @@ def test_streams_are_a_cost_for_the_route_not_a_wall(algorithm):
     cost = algorithm.build_route_cost(score, algorithm.COST_MODEL_INVERSE if hasattr(algorithm, "COST_MODEL_INVERSE") else 0,
                                       1.0, penalty_mask=penalty)
     assert np.all(np.isfinite(cost[:, 2])) and np.all(cost[:, 2] > cost[:, 0])
+
+
+# ---- 5. travessia graduada de cursos d'agua ------------------------------
+
+def test_stream_crossing_factors_grade_by_basin_area(algorithm):
+    import numpy as np
+    shape = (7, 9)
+    axis = np.zeros(shape, bool); axis[:, 2] = True; axis[:, 6] = True
+    basin = np.full(shape, np.nan, np.float32)
+    basin[:, 2] = 1.5      # corrego de cabeceira
+    basin[:, 6] = 80.0     # rio
+    faixa = axis.copy(); faixa[:, 1] = True; faixa[:, 3] = True; faixa[:, 5] = True; faixa[:, 7] = True
+    factors, area, classes = algorithm.stream_crossing_factors(
+        faixa, basin, 50.0, (0, 10.0, 0, 0, 0, -10.0), channel_axis=axis)
+    assert np.all(factors[:, 0] == 1.0) and np.all(factors[:, 4] == 1.0) and np.all(factors[:, 8] == 1.0)
+    assert np.all(factors[:, 1:4] == 2.0), factors[0]          # faixa herda a area do eixo
+    assert np.all(~np.isfinite(factors[:, 5:8]))               # rio acima do teto: barreira
+    assert np.all(classes[:, 1:4] == 0) and np.all(classes[:, 5:8] == len(algorithm.FORD_CLASSES))
+    assert abs(float(area[3, 1]) - 1.5) < 1e-6 and abs(float(area[3, 7]) - 80.0) < 1e-6
+    # subindo o teto, o rio vira "rio pequeno" com fator 8, cruzavel
+    factors2, _, classes2 = algorithm.stream_crossing_factors(
+        faixa, basin, 500.0, (0, 10.0, 0, 0, 0, -10.0), channel_axis=axis)
+    assert np.all(factors2[:, 5:8] == 8.0) and np.all(classes2[:, 5:8] == 2)
+
+
+def test_detect_stream_crossings_counts_runs_not_cells(algorithm):
+    import numpy as np
+    shape = (5, 12)
+    faixa = np.zeros(shape, bool); faixa[:, 3:5] = True; faixa[:, 9] = True
+    area = np.where(faixa, 2.5, np.nan).astype(np.float32); area[:, 9] = 12.0
+    classes = np.where(faixa, 1, -1).astype(np.int8); classes[:, 9] = 2
+    path = [(2, c) for c in range(12)]
+    crossings = algorithm.detect_stream_crossings(path, faixa, area, classes)
+    assert len(crossings) == 2
+    assert crossings[0]["entrada"] == (2, 3) and crossings[0]["celulas"] == 2 and crossings[0]["classe"] == 1
+    assert crossings[1]["entrada"] == (2, 9) and abs(crossings[1]["area_km2"] - 12.0) < 1e-6 and crossings[1]["classe"] == 2
+    # rota que nao toca a faixa: nenhuma travessia
+    assert algorithm.detect_stream_crossings([(0, 0), (0, 1)], faixa, area, classes) == []
+
+
+def test_build_route_cost_accepts_factor_arrays_with_barriers(algorithm):
+    import numpy as np
+    score = np.full((3, 3), 0.5, np.float32)
+    factor = np.ones((3, 3)); factor[:, 1] = 4.0; factor[0, 1] = np.inf
+    cost = algorithm.build_route_cost(score, 0, 1.0, penalty_mask=factor)
+    assert abs(cost[1, 1] / cost[1, 0] - 4.0) < 1e-9
+    assert not np.isfinite(cost[0, 1])

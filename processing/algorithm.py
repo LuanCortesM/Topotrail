@@ -49,7 +49,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "1.0.0"
+PLUGIN_VERSION = "1.1.0"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -177,6 +177,24 @@ CONSTRAINT_PENALISE = 1     # encarece sem proibir
 # quando houver uma restricao real a impor (cerca, area vedada, propriedade
 # privada), nao como constante medida.
 CONSTRAINT_PENALTY_FACTOR = 8.0
+
+# Travessia de cursos d'agua, graduada pelo tamanho do curso. O MDE nao sabe
+# vazao nem estacao; sabe a AREA DE CONTRIBUICAO de cada celula de canal, e a
+# geometria hidraulica liga uma coisa a outra: largura e vazao de canal crescem
+# com a area de drenagem em lei de potencia (Leopold & Maddock 1953, USGS Prof.
+# Paper 252; Faustini, Kaufmann & Herlihy 2009, Geomorphology 108:292-311,
+# largura de margens plenas W ~ A^0.5 em rios vadeaveis dos EUA). Um corrego de
+# cabeceira de 1 km2 se passa a pe; um rio de 100 km2, nao se presume. As
+# classes abaixo sao um proxy declarado, nao uma medida de seguranca: cada
+# travessia sai listada num arquivo proprio para ser conferida em campo, e o
+# aviso diz que profundidade e corrente mudam com a chuva.
+FORD_CLASSES = (
+    # (area maxima km2, fator de custo na travessia, chave do rotulo)
+    (2.0, 2.0, "ford_headwater"),
+    (10.0, 4.0, "ford_stream"),
+    (float("inf"), 8.0, "ford_river_small"),   # ate o teto vadeavel do usuario
+)
+DEFAULT_STREAM_FORD_MAX_KM2 = 50.0            # acima disto: barreira para a rota
 
 # Teto de pontos intermediarios para a otimizacao exata de ordem. O custo e
 # 2^n * n^2 em tempo e n^2 execucoes do A* para montar a matriz de pares.
@@ -1124,12 +1142,21 @@ def build_route_cost(score_array, cost_model, contrast, penalty_mask=None, feedb
     da rota de 0,810 para 0,848, ao custo de 14% de comprimento.
     """
     finite = np.isfinite(score_array)
+    # penalty_mask pode ser booleano (fator fixo de 8x) ou um array de fatores
+    # reais -- 1 onde nao ha restricao, 2/4/8 nas travessias de cursos d'agua
+    # por tamanho, inf onde a travessia nao e presumida.
+    factor = None
+    if penalty_mask is not None:
+        if penalty_mask.dtype == bool:
+            factor = np.where(penalty_mask, CONSTRAINT_PENALTY_FACTOR, 1.0)
+        else:
+            factor = np.asarray(penalty_mask, dtype=np.float64)
     if cost_model == ROUTE_COST_TOBLER:
         # Aqui o array nao e custo: e um fator de retardo adimensional, aplicado
         # sobre o tempo que a funcao de Tobler calcula para cada passo.
         cost = np.where(finite, 1.0 + TERRAIN_SLOWDOWN_MAX * (1.0 - score_array), np.inf)
-        if penalty_mask is not None:
-            cost = np.where(penalty_mask & finite, cost * CONSTRAINT_PENALTY_FACTOR, cost)
+        if factor is not None:
+            cost = np.where(finite, cost * factor, cost)
         if feedback:
             usable = cost[np.isfinite(cost)]
             if usable.size:
@@ -1143,8 +1170,8 @@ def build_route_cost(score_array, cost_model, contrast, penalty_mask=None, feedb
     else:
         cost = np.where(finite, 1.0 / (score_array + ROUTE_COST_EPSILON), np.inf)
 
-    if penalty_mask is not None:
-        cost = np.where(penalty_mask & finite, cost * CONSTRAINT_PENALTY_FACTOR, cost)
+    if factor is not None:
+        cost = np.where(finite, cost * factor, cost)
 
     if feedback:
         usable = cost[np.isfinite(cost)]
@@ -1158,6 +1185,84 @@ def build_route_cost(score_array, cost_model, contrast, penalty_mask=None, feedb
             )
     return cost
 
+
+
+def stream_crossing_factors(stream_mask, basin_km2, ford_max_km2, transform, channel_axis=None):
+    """Fator de custo por celula para atravessar a drenagem, pelo tamanho do curso.
+
+    Cada celula da faixa de drenagem recebe a area de contribuicao do canal mais
+    proximo (a faixa vem de um buffer; so o eixo tem area). Classes em
+    FORD_CLASSES; acima de `ford_max_km2` o fator e infinito (barreira).
+    Devolve (fatores float64 com 1.0 fora da faixa, area_km2_na_faixa, classe_idx
+    int8 com -1 fora, len(FORD_CLASSES) para barreira).
+    """
+    factors = np.ones(stream_mask.shape, dtype=np.float64)
+    classes = np.full(stream_mask.shape, -1, dtype=np.int8)
+    area = np.full(stream_mask.shape, np.nan, dtype=np.float32)
+    if not stream_mask.any() or basin_km2 is None:
+        return factors, area, classes
+    # A area vem do EIXO do canal (antes do buffer): as celulas da faixa
+    # herdam a area do eixo mais proximo. Sem isso, uma celula de margem com
+    # 0,02 km2 de bacia propria era classificada como "corrego" ao lado de um rio.
+    axis = channel_axis if channel_axis is not None else stream_mask
+    channel = np.isfinite(basin_km2) & (basin_km2 > 0) & axis
+    if not channel.any():
+        channel = stream_mask
+        source_area = np.where(stream_mask, np.nan_to_num(basin_km2, nan=0.0), 0.0)
+    else:
+        source_area = np.where(channel, basin_km2, 0.0)
+    px = abs(float(transform[1])); py = abs(float(transform[5]))
+    _, (rr, cc) = ndimage.distance_transform_edt(~channel, sampling=(py, px), return_indices=True)
+    nearest_area = source_area[rr, cc]
+    area = np.where(stream_mask, nearest_area, np.nan).astype(np.float32)
+    inside = stream_mask
+    for index, (limit, factor, _key) in enumerate(FORD_CLASSES):
+        band = inside & (classes == -1) & (nearest_area < min(limit, float(ford_max_km2)))
+        factors[band] = factor
+        classes[band] = index
+    barrier = inside & (classes == -1)
+    factors[barrier] = np.inf
+    classes[barrier] = len(FORD_CLASSES)
+    return factors, area, classes
+
+
+def detect_stream_crossings(path_cells, stream_mask, crossing_area, crossing_class):
+    """Travessias ao longo da rota: uma por sequencia continua de celulas na faixa.
+
+    Devolve lista de dicts com a celula (linha, coluna) de entrada, a area de
+    contribuicao maxima e a pior classe encontradas na sequencia.
+    """
+    crossings = []
+    run = None
+    for cell in list(path_cells) + [None]:
+        on = False
+        if cell is not None:
+            row, col = cell
+            if 0 <= row < stream_mask.shape[0] and 0 <= col < stream_mask.shape[1]:
+                on = bool(stream_mask[row, col])
+        if on:
+            a = float(crossing_area[row, col]) if np.isfinite(crossing_area[row, col]) else 0.0
+            k = int(crossing_class[row, col])
+            if run is None:
+                run = {"entrada": (row, col), "area_km2": a, "classe": k, "celulas": 1}
+            else:
+                run["area_km2"] = max(run["area_km2"], a); run["classe"] = max(run["classe"], k); run["celulas"] += 1
+        elif run is not None:
+            crossings.append(run); run = None
+    return crossings
+
+
+def _ford_labels():
+    """Rotulos das classes de travessia no idioma do algoritmo."""
+    keys = [key for _limit, _factor, key in FORD_CLASSES] + ["ford_river"]
+    fallback = {"ford_headwater": "corrego de cabeceira (< 2 km2)", "ford_stream": "riacho (2-10 km2)",
+                "ford_river_small": "rio pequeno (vau depende da estacao)", "ford_river": "rio (travessia nao presumida)"}
+    try:
+        from ..ui import i18n
+        language = _algorithm_language()
+        return [i18n.text(language, key) for key in keys]
+    except Exception:
+        return [fallback[key] for key in keys]
 
 
 def report_model_discrimination(slope_data, zone_score, valid_mask, slope_score_max,
@@ -2109,8 +2214,9 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
             "Nao foi possivel conectar os pontos da rota: nao existe caminho de celulas viaveis "
             "entre eles. Causas comuns: declividade maxima admitida baixa demais para o relevo "
             "(celulas acima dela sao intransponiveis), camada de restricao no modo 'evitar' "
-            "cercando um dos pontos, ou margem lateral de busca pequena. Aumente a declividade "
-            "maxima, troque a restricao para 'encarecer' ou amplie a margem.")
+            "cercando um dos pontos, cursos d'agua acima do teto vadeavel separando os pontos, "
+            "ou margem lateral de busca pequena. Aumente a declividade maxima, troque a restricao "
+            "para 'encarecer', eleve a maior bacia atravessavel a vau ou amplie a margem.")
 
     path = []
     index = end_index
@@ -2260,6 +2366,9 @@ def save_access_route(
     penalty_mask=None,
     via_path=None,
     optimise_order=False,
+    stream_mask=None,
+    stream_area=None,
+    stream_class=None,
 ):
     """Generate least-cost route and metric corridor files.
 
@@ -2460,6 +2569,52 @@ def save_access_route(
     route.to_file(route_path, driver="GPKG", layer_name="rota")
     corridor.to_file(corridor_path, driver="GPKG", layer_name="corredor")
 
+    # Travessias de cursos d'agua: um ponto por cruzamento, com o tamanho do
+    # curso e a classe. E a parte que protege o usuario: a rota pode cruzar a
+    # drenagem, mas cada cruzamento fica listado para ser conferido em campo.
+    crossings_path = None
+    crossings = []
+    if stream_mask is not None and stream_area is not None and stream_class is not None:
+        global_cells = [(row + row_min, col + col_min) for row, col in path_cells]
+        crossings = detect_stream_crossings(global_cells, stream_mask, stream_area, stream_class)
+        if crossings:
+            labels = _ford_labels()
+            factors = [factor for _limit, factor, _key in FORD_CLASSES] + [float("inf")]
+            geometries, attributes = [], []
+            for number, item in enumerate(crossings, start=1):
+                x, y = pixel_to_world(transform, *item["entrada"])
+                point = ogr.Geometry(ogr.wkbPoint); point.AddPoint_2D(float(x), float(y))
+                geometries.append(point)
+                k = min(item["classe"], len(labels) - 1)
+                attributes.append({
+                    "n": number,
+                    "bacia_km2": round(float(item["area_km2"]), 3),
+                    "classe": labels[k],
+                    "fator_custo": (None if not np.isfinite(factors[k]) else float(factors[k])),
+                    "extensao_na_faixa_m": round(int(item["celulas"]) * float(pixel_size_m or abs(transform[1])), 1),
+                    "aviso": ("Estimado so pelo relevo (area de contribuicao). Profundidade e "
+                              "corrente variam com a estacao e a chuva: confira em campo antes de usar."),
+                })
+            crossings_set = FeatureSet(geometries, attributes, crs_wkt)
+            if target_crs:
+                crossings_set = crossings_set.to_crs(target_crs)
+            crossings_path = f"{base_path}_travessias.gpkg"
+            if gpkg_driver and os.path.exists(crossings_path):
+                try:
+                    gpkg_driver.DeleteDataSource(crossings_path)
+                except RuntimeError:
+                    crossings_path = available_output_path(crossings_path)
+            crossings_set.to_file(crossings_path, driver="GPKG", layer_name="travessias")
+            if feedback:
+                feedback.pushInfo(
+                    "A rota cruza {} curso(s) d'agua: {}. Travessias salvas em {}. "
+                    "Confira cada uma em campo: o MDE nao conhece vazao nem estacao.".format(
+                        len(crossings),
+                        "; ".join("#{} {} ({:.1f} km2)".format(a["n"], a["classe"], a["bacia_km2"]) for a in attributes),
+                        crossings_path))
+        elif feedback:
+            feedback.pushInfo("A rota nao cruza nenhum curso d'agua da rede extraida.")
+
     if feedback:
         length = route_length_m
         feedback.pushInfo(f"Rota de acesso salva: {route_path}")
@@ -2486,9 +2641,10 @@ def save_access_route(
         area_corredor_m2=corridor_area_m2,
         extensao_corredor=corridor.total_bounds(),
         geometrias_corredor=int(len(corridor)),
+        travessias=len(crossings),
     )
 
-    return route_path, corridor_path
+    return route_path, corridor_path, crossings_path
 
 
 def _qgs_enum(cls, group, value):
@@ -2550,6 +2706,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
     SLOPE_UNIT = "SLOPE_UNIT"
     STREAMS_FROM_DEM = "STREAMS_FROM_DEM"
     STREAM_MIN_BASIN_KM2 = "STREAM_MIN_BASIN_KM2"
+    STREAM_FORD_MAX_KM2 = "STREAM_FORD_MAX_KM2"
     CONSTRAINT_LAYER = "CONSTRAINT_LAYER"
     CONSTRAINT_BUFFER_M = "CONSTRAINT_BUFFER_M"
     CONSTRAINT_MODE = "CONSTRAINT_MODE"
@@ -2588,6 +2745,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
     OUTPUT_TRANSITABILITY = "OUTPUT_TRANSITABILITY"
     OUTPUT_ROUTE = "OUTPUT_ROUTE"
     OUTPUT_CORRIDOR = "OUTPUT_CORRIDOR"
+    OUTPUT_CROSSINGS = "OUTPUT_CROSSINGS"
     OUTPUT_DEBUG_LOG = "OUTPUT_DEBUG_LOG"
 
     def tr(self, key):
@@ -2838,6 +2996,15 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             )
         )
         self.addParameter(
+            QgsProcessingParameterNumber(
+                self.STREAM_FORD_MAX_KM2,
+                self.tr("alg_ford_max"),
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
+                defaultValue=DEFAULT_STREAM_FORD_MAX_KM2,
+                minValue=0.1,
+            )
+        )
+        self.addParameter(
             QgsProcessingParameterVectorLayer(
                 self.CONSTRAINT_LAYER,
                 self.tr("alg_conslayer"),
@@ -2952,6 +3119,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addOutput(QgsProcessingOutputRasterLayer(self.OUTPUT_TRANSITABILITY, self.tr("alg_o_transit")))
         self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_ROUTE, self.tr("alg_o_route")))
         self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_CORRIDOR, self.tr("alg_o_corridor")))
+        self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_CROSSINGS, self.tr("alg_o_crossings")))
         self.addOutput(QgsProcessingOutputFile(self.OUTPUT_DEBUG_LOG, self.tr("alg_o_log")))
 
     def processAlgorithm(self, parameters, context, feedback):
@@ -3006,6 +3174,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         vertical_unit = self.parameterAsEnum(parameters, self.VERTICAL_UNIT, context)
         streams_from_dem = self.parameterAsBool(parameters, self.STREAMS_FROM_DEM, context)
         stream_min_basin_km2 = self.parameterAsDouble(parameters, self.STREAM_MIN_BASIN_KM2, context)
+        stream_ford_max_km2 = self.parameterAsDouble(parameters, self.STREAM_FORD_MAX_KM2, context)
+        if stream_ford_max_km2 is None or stream_ford_max_km2 <= 0:
+            stream_ford_max_km2 = DEFAULT_STREAM_FORD_MAX_KM2
         constraint_layer = self.parameterAsVectorLayer(parameters, self.CONSTRAINT_LAYER, context)
         constraint_buffer_m = self.parameterAsDouble(parameters, self.CONSTRAINT_BUFFER_M, context)
         constraint_mode = self.parameterAsEnum(parameters, self.CONSTRAINT_MODE, context)
@@ -3299,12 +3470,14 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         restricted_mask = np.zeros(dem_data.shape, dtype=bool)
         twi_data = None
         if streams_from_dem or wetness_weight > 0:
-            channels, twi_data, stream_metrics = analyse_hydrology(
+            channels, twi_data, basin_km2, stream_metrics = analyse_hydrology(
                 dem_data, transform, stream_min_basin_km2, feedback,
-                warn_about_width=streams_from_dem)
+                warn_about_width=streams_from_dem, return_basin_area=True)
             append_diagnostic_log(debug_log_path, "drenagem_extraida_do_mde", **stream_metrics)
         stream_mask = np.zeros(dem_data.shape, dtype=bool)
+        stream_factor = None; stream_area = None; stream_class = None
         if streams_from_dem:
+            channel_axis = channels.astype(bool).copy()
             if constraint_buffer_m > 0 and channels.any():
                 # Buffer circular (distancia euclidiana em metros), e nao uma
                 # dilatacao 3x3 repetida, que da um quadrado: 50 m viravam 71 m
@@ -3314,6 +3487,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 channels = distance <= float(constraint_buffer_m)
             stream_mask = channels.astype(bool)
             restricted_mask |= stream_mask
+            stream_factor, stream_area, stream_class = stream_crossing_factors(
+                stream_mask, basin_km2, stream_ford_max_km2, transform, channel_axis=channel_axis)
 
         layer_mask = None
         if constraint_layer is not None:
@@ -3331,21 +3506,39 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         # exatamente por isso. As ZONAS continuam excluindo a drenagem no modo
         # "evitar" (nao se planeja area de uso no leito). A camada de restricao
         # do usuario segue o modo escolhido nos dois casos: cerca e cerca.
+        # Fatores de custo para a rota: a drenagem entra graduada pelo tamanho
+        # do curso (2x, 4x, 8x; barreira acima do teto vadeavel), a camada do
+        # usuario entra com 8x no modo "encarecer" ou como barreira no modo
+        # "evitar". Onde os dois coincidem vale o pior.
         penalty_mask = None
+        route_barrier = np.zeros(dem_data.shape, dtype=bool)
         if restricted_mask.any():
             affected = int((restricted_mask & valid_mask).sum())
+            factor = np.ones(dem_data.shape, dtype=np.float64)
+            if stream_factor is not None:
+                factor = np.maximum(factor, stream_factor)
+                route_barrier |= ~np.isfinite(stream_factor)
+            if layer_mask is not None:
+                if constraint_mode == CONSTRAINT_AVOID:
+                    route_barrier |= layer_mask
+                else:
+                    factor = np.where(layer_mask, np.maximum(factor, CONSTRAINT_PENALTY_FACTOR), factor)
+            route_constraint_mask = route_constraint_mask & ~route_barrier
+            factor = np.where(route_barrier, np.inf, factor)
+            if np.any(factor != 1.0):
+                penalty_mask = factor
             if constraint_mode == CONSTRAINT_AVOID:
                 zone_constraint_mask = zone_constraint_mask & ~restricted_mask
-                if layer_mask is not None:
-                    route_constraint_mask = route_constraint_mask & ~layer_mask
-                if stream_mask.any():
-                    penalty_mask = stream_mask
-                tratamento = "excluidas das zonas" + (
-                    "; camada excluida da rota, drenagem encarecida em {:.0f}x para a rota".format(CONSTRAINT_PENALTY_FACTOR)
-                    if stream_mask.any() else " e da rota")
+                tratamento = "excluidas das zonas; para a rota: camada excluida, drenagem graduada pelo tamanho do curso"
             else:
-                penalty_mask = restricted_mask
-                tratamento = f"encarecidas em {CONSTRAINT_PENALTY_FACTOR:.0f}x"
+                tratamento = "encarecidas em {:.0f}x (camada); drenagem graduada pelo tamanho do curso".format(CONSTRAINT_PENALTY_FACTOR)
+            if stream_factor is not None and feedback:
+                labels = _ford_labels()
+                counts = [int(((stream_class == k) & valid_mask).sum()) for k in range(len(FORD_CLASSES) + 1)]
+                feedback.pushInfo(
+                    "Travessia de cursos d'agua por classe de bacia (celulas): " + "; ".join(
+                        "{} = {:,}".format(labels[k], counts[k]) for k in range(len(labels))) +
+                    ". Acima de {:.1f} km2 a travessia a vau nao e presumida.".format(stream_ford_max_km2))
             if feedback:
                 feedback.pushInfo(
                     "Restricoes: {:,} celulas atingidas ({:.2f}% da area valida), {}.".format(
@@ -3356,7 +3549,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 celulas=affected, modo=("evitar" if constraint_mode == CONSTRAINT_AVOID else "encarecer"),
                 buffer_m=float(constraint_buffer_m),
                 fonte_drenagem=bool(streams_from_dem),
-                drenagem_na_rota="encarecida" if stream_mask.any() else None,
+                drenagem_na_rota="graduada por area de bacia" if stream_mask.any() else None,
+                teto_vadeavel_km2=float(stream_ford_max_km2),
+                celulas_barreira_rota=int(route_barrier.sum()),
                 fonte_camada=bool(constraint_layer is not None),
             )
 
@@ -3552,9 +3747,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             # So marca como intransitavel o que o usuario mandou evitar. Se ele
             # escolheu apenas encarecer, dizer "intransitavel" no mapa
             # contradiria a propria escolha dele.
-            blocked_mask=(restricted_mask
-                          if (restricted_mask.any() and constraint_mode == CONSTRAINT_AVOID)
-                          else None),
+            blocked_mask=(route_barrier if route_barrier.any() else None),
             slope_breaks=transitability_breaks, feedback=feedback,
             cell_size_m=abs(float(transform[1])),
             labels=_class_labels(),
@@ -3578,8 +3771,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         append_diagnostic_log(debug_log_path, "raster_risco_topografico_salvo", arquivo=file_diagnostics(risk_path))
         route_path = None
         corridor_path = None
+        crossings_path = None
         if start_point_file and end_point_file:
-            route_path, corridor_path = save_access_route(
+            route_path, corridor_path, crossings_path = save_access_route(
                 route_score,
                 transform,
                 proj,
@@ -3597,12 +3791,15 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 penalty_mask=penalty_mask,
                 via_path=via_points_file or None,
                 optimise_order=optimise_order,
+                stream_mask=stream_mask if stream_mask.any() else None,
+                stream_area=stream_area, stream_class=stream_class,
             )
             append_diagnostic_log(
                 debug_log_path,
                 "rota_e_corredor_salvos",
                 rota=file_diagnostics(route_path),
                 corredor=file_diagnostics(corridor_path),
+                travessias=file_diagnostics(crossings_path) if crossings_path else None,
             )
         gdf = None
         if generate_zones:
@@ -3664,6 +3861,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             result[self.OUTPUT_ROUTE] = route_path
         if corridor_path:
             result[self.OUTPUT_CORRIDOR] = corridor_path
+        if crossings_path:
+            result[self.OUTPUT_CROSSINGS] = crossings_path
         result[self.OUTPUT_DEBUG_LOG] = debug_log_path
         append_diagnostic_log(debug_log_path, "processamento_concluido", outputs=result)
         return result

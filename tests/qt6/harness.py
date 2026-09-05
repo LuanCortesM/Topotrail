@@ -61,7 +61,7 @@ def instalar_shim():
     for nome in ("QgsProcessingFeedback", "QgsProcessingContext", "QgsRasterLayer",
                  "QgsVectorLayer", "QgsApplication", "QgsCoordinateReferenceSystem",
                  "QgsCoordinateTransform", "QgsColorRampShader", "QgsFillSymbol",
-                 "QgsLineSymbol", "QgsRasterShader", "QgsRasterTransparency",
+                 "QgsLineSymbol", "QgsMarkerSymbol", "QgsRasterShader", "QgsRasterTransparency",
                  "QgsSingleBandPseudoColorRenderer"):
         setattr(core, nome, type(nome, (Base,), {}))
     core.QgsSettings = Settings

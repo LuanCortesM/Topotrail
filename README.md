@@ -246,9 +246,34 @@ channels. Report that threshold; the resulting drainage density is logged
 alongside the working cell size so it can be checked against the 1–3 km/km²
 typical of humid mountainous terrain.
 
-Any vector layer can be used the same way, with a buffer — for a legally
-protected riparian strip, an exclusion around a road, or a tenure boundary.
-Restrictions can either exclude cells outright or simply make them expensive.
+The network then enters the model in two different ways, on purpose:
+
+- **Potential zones** exclude the drainage strip — nobody plans a use area in a
+  stream bed.
+- **The route may cross it.** A stream is a line, and every route from one
+  valley to the next has to cross one; a linear network turned into an
+  absolute wall partitions the landscape into islands. Instead, each crossing
+  costs more the larger the stream is, using the **contributing area** of the
+  channel as a proxy for its size (hydraulic geometry: channel width and
+  discharge grow with drainage area — Leopold & Maddock 1953, USGS Professional
+  Paper 252; Faustini, Kaufmann & Herlihy 2009, *Geomorphology* 108:292–311):
+
+  | Contributing area | Class | Cost factor |
+  |---|---|---|
+  | < 2 km² | headwater stream | 2× |
+  | 2–10 km² | stream | 4× |
+  | 10 km² – ceiling | small river, fording depends on the season | 8× |
+  | above the ceiling (*Largest fordable basin*, default 50 km²) | river | barrier |
+
+- **Every crossing is written to its own layer** (`…_travessias.gpkg`): one
+  point per crossing with the contributing area, the class, the cost factor and
+  a warning field. This is the safety valve: the DEM knows the size of the
+  basin, not today's depth or current. Check each crossing in the field, and
+  lower the ceiling if the season or the region calls for it.
+
+Any other vector layer can be used as a constraint, with a buffer — a legally
+protected riparian strip, an exclusion around a road, a tenure boundary. Those
+follow the mode you choose: exclude outright, or make expensive (8×).
 
 ## Bringing in data the DEM does not have
 

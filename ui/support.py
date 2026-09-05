@@ -41,6 +41,7 @@ from qgis.core import (
     QgsColorRampShader,
     QgsFillSymbol,
     QgsLineSymbol,
+    QgsMarkerSymbol,
     QgsProcessingFeedback,
     QgsProject,
     QgsRasterShader,
@@ -351,6 +352,29 @@ class TopotrailSupportMixin:
             "joinstyle": "round",
         })
         layer.renderer().setSymbol(symbol)
+        layer.triggerRepaint()
+
+    def style_crossings_layer(self, layer):
+        """Travessias de cursos d'agua: triangulo de atencao, rotulado com o numero."""
+        symbol = QgsMarkerSymbol.createSimple({
+            "name": "triangle",
+            "color": "255, 196, 0, 255",
+            "outline_color": "120, 60, 0, 255",
+            "outline_width": "0.4",
+            "size": "4.2",
+        })
+        layer.renderer().setSymbol(symbol)
+        try:
+            from qgis.core import QgsPalLayerSettings, QgsVectorLayerSimpleLabeling, QgsTextFormat
+            settings = QgsPalLayerSettings()
+            settings.fieldName = "n"
+            settings.enabled = True
+            fmt = QgsTextFormat(); fmt.setSize(9)
+            settings.setFormat(fmt)
+            layer.setLabelsEnabled(True)
+            layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
+        except Exception:
+            pass
         layer.triggerRepaint()
 
     def style_corridor_layer(self, layer):

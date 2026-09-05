@@ -1,4 +1,4 @@
-# TopoTrail — bateria de testes de ponta a ponta (1.0.0)
+# TopoTrail — bateria de testes de ponta a ponta (1.0.0 → 1.1.0)
 
 Corrida em QGIS 3.34 headless, plugin instalado como o usuário instala, sem geopandas/shapely. Três regiões de relevo muito diferente e casos de robustez; cada caso tem critério de aprovação automático. Script: `validation/bateria_regioes.py`.
 
@@ -39,3 +39,9 @@ Corrida em QGIS 3.34 headless, plugin instalado como o usuário instala, sem geo
 ## O que a bateria encontrou e foi corrigido antes da 1.0.0
 
 Ao percorrer a janela como um usuário (não só o algoritmo), com **os padrões da interface**, a travessia Marins → Marinzinho → Itaguaré **falhava**: 'não foi possível conectar'. Causa: com 'cursos d'água' marcado, a drenagem entrava como **barreira absoluta** (modo 'evitar', faixa de 30 m). Um rio é uma linha — toda rota de um vale ao vizinho tem de cruzar um — e uma rede linear virada parede retalha a paisagem em ilhas. Correção (1.0.0): para a **rota**, a drenagem é sempre custo (8×), cruzável; para as **zonas**, continua excluída no modo 'evitar'; a camada de restrição do usuário segue o modo escolhido (cerca é cerca). Teste de regressão adicionado; a mensagem de 'sem caminho' agora lista as causas prováveis. Depois disso, a janela completa roda a travessia nos seis idiomas e carrega as seis camadas no projeto.
+
+## 1.1.0 — travessias graduadas
+
+Depois da 1.0.0, a regra "drenagem sempre custa 8×" foi refinada: nem todo curso d'água é intransponível, e muitas trilhas atravessam rios rasos ou por pedras. A rota passou a pagar um custo que cresce com o **tamanho do curso**, medido pela área de contribuição do canal — o proxy que a geometria hidráulica oferece (Leopold & Maddock 1953; Faustini et al. 2009): córrego < 2 km² → 2×, riacho 2–10 km² → 4×, rio pequeno até o teto → 8×, acima do teto vadeável (padrão 50 km², parâmetro do usuário) → barreira. **Cada travessia sai num arquivo próprio** (`_travessias.gpkg`) com área, classe, fator e aviso de conferência em campo.
+
+Na travessia Marins → Itaguaré com os padrões da janela, a rota cruza 1–3 cursos, todos córregos/riachos de 1,5–3,7 km²; com o teto em 3 km² ela troca a travessia de um riacho de 3,7 km² por um córrego de 1,5 km²; com o teto em 0,5 km² (nada vadeável) ela não existe e o erro cita o teto. Bateria: 15/15 (caso MQ-A2 novo).

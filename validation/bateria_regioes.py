@@ -149,12 +149,20 @@ else:
     tr, _, _ = raster(r["OUTPUT_TRANSITABILITY"]); tw = tr[np.isfinite(tr) & (tr > 0)]
     classes = {int(c): int((tw == c).sum()) for c in range(1, 6)}
     zones = vec(r["OUTPUT_VECTOR"])
-    ok = all(v < 60 for v in dist.values()) and rt["attrs"]["trechos"] == 4 and ag["250m"]["rota_no_buffer_da_trilha"] > 0.5 and zones["n"] > 0
-    record("MQ-A travessia completa (3 cumes, 6 produtos)", ok, dict(
+    cross = vec(r["OUTPUT_CROSSINGS"]) if r.get("OUTPUT_CROSSINGS") else dict(n=0, attrs={})
+    ok = all(v < 60 for v in dist.values()) and rt["attrs"]["trechos"] == 4 and ag["250m"]["rota_no_buffer_da_trilha"] > 0.5 and zones["n"] > 0 and cross["n"] >= 1 and "bacia_km2" in cross["attrs"]
+    record("MQ-A travessia completa (3 cumes, 7 produtos)", ok, dict(
+        travessias=cross["n"], primeira_travessia={k: cross["attrs"].get(k) for k in ("classe", "bacia_km2", "fator_custo")},
         trechos=rt["attrs"]["trechos"], tempo_h=round(rt["attrs"].get("tempo_h", 0), 2), compr_m=round(rt["attrs"]["compr_m"]),
         ganho_m=round(rt["attrs"].get("ganho_m", 0)), distancia_aos_cumes_m=dist, concordancia_com_trilha_real=ag,
         classes_transitabilidade=classes, zonas=zones["n"], crs_saida=vec(r["OUTPUT_ROUTE"])["wkt"][:40]), s, fb.grep("AVISO")[:4])
     ROUTE_A = r["OUTPUT_ROUTE"]; LEN_A = rt["attrs"]["compr_m"]
+
+# A2. teto vadeavel = 0,5 km2 (nenhum curso da rede e cruzavel): erro claro que cita o teto
+r, fb, e, s = run(base(dem_mq, f"{OUT}/mq_A2.gpkg", f"{B}/inicio.geojson", f"{B}/fim.geojson",
+                       VIA_POINTS_FILE=f"{B}/picos.geojson", STREAMS_FROM_DEM=True, STREAM_FORD_MAX_KM2=0.5, GENERATE_ZONES=False, SLOPE_MAX=55.0))
+record("MQ-A2 nenhum curso vadeavel: a drenagem vira barreira e o erro explica", e is not None and "vadeavel" in str(e),
+       dict(erro=str(e).strip().splitlines()[-1][:220] if e else "rodou sem erro"), s)
 
 # B. cumes em ordem embaralhada + otimizacao -> mesma rota que A
 r, fb, e, s = run(base(dem_mq, f"{OUT}/mq_B.gpkg", f"{B}/inicio.geojson", f"{B}/fim.geojson",

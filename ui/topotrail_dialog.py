@@ -1100,6 +1100,18 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             body.addWidget(holder)
         body.addWidget(self._help_label("margin_help"))
         self.want_route.toggled(self.want_route.body.setVisible)
+
+        # Teto vadeavel: dentro do cartao dos cursos d'agua, porque e ali que a
+        # pergunta aparece -- "e a rota pode cruzar o rio?". Pode, graduada
+        # pelo tamanho do curso, ate esta area de bacia; acima, nao se presume.
+        stream_body = self.want_streams.body_layout
+        self.ford_max = _spin(0.1, 100000, 50.0, 0, 5, " km²")
+        line = QHBoxLayout()
+        line.addWidget(self._label("ford_max")); line.addStretch(1); line.addWidget(self.ford_max)
+        holder = QWidget(); holder.setLayout(line); line.setContentsMargins(0, 0, 0, 0)
+        stream_body.addWidget(holder)
+        stream_body.addWidget(self._help_label("ford_max_help"))
+        self.want_streams.toggled(self.want_streams.body.setVisible)
         for card in optional_cards:
             card.toggled(lambda _value: self._refresh_context())
 
@@ -1669,6 +1681,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             "GENERATE_ZONES": self.want_zones.isChecked(),
             "STREAMS_FROM_DEM": self.want_streams.isChecked(),
             "STREAM_MIN_BASIN_KM2": 1.0,
+            "STREAM_FORD_MAX_KM2": self.ford_max.value(),
             "TRANSITABILITY_BREAKS": ", ".join(f"{value:g}" for value in breaks),
             "OUTPUT_FILE": self.output_edit.text(),
             "OUTPUT_FORMAT": self.output_format.currentIndex(),
@@ -1810,6 +1823,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             ("OUTPUT_VECTOR", "TopoTrail — " + self.t("alg_o_zones"), self.style_zone_layer),
             ("OUTPUT_ROUTE", "TopoTrail — " + self.t("alg_o_route"), self.style_route_layer),
             ("OUTPUT_CORRIDOR", "TopoTrail — " + self.t("alg_o_corridor"), self.style_corridor_layer),
+            ("OUTPUT_CROSSINGS", "TopoTrail — " + self.t("alg_o_crossings"), self.style_crossings_layer),
         ]
         loaded = []
         for key, title, styler in rasters:
