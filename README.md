@@ -8,13 +8,29 @@
 </p>
 
 **A QGIS plugin for preliminary planning of trails, access routes and field
-movement in natural and protected areas.**
+movement in natural and protected areas — from a single DEM.**
 
-TopoTrail models *topographic suitability* from a Digital Elevation Model (DEM),
-slope and terrain curvatures using multicriteria GIS analysis. Its primary
-output is a continuous suitability raster. From that raster it also derives
-potential access zones, a suggested least-cost route between an origin and a
-destination, and an access corridor around that route.
+Give TopoTrail a Digital Elevation Model and it derives slope, curvatures,
+ruggedness, wetness and the drainage network itself, then produces seven
+products in one run:
+
+- a continuous **topographic suitability** raster and its complement, a
+  **relative topographic risk** raster;
+- a **transitability map** in five absolute, field-meaningful slope classes,
+  with the legend written into the GeoTIFF;
+- **potential access zones** as polygons, with area;
+- a **suggested route** between an origin and a destination — optionally
+  through several intermediate destinations, in the order you give or in the
+  exact optimal order — costed as **walking time** (Tobler's anisotropic hiking
+  function, validated against 224 km of field GPS tracks);
+- an **access corridor** around that route;
+- the **watercourse crossings** the route makes, one point each with the size
+  of the stream and a field-check warning.
+
+Version 1.x installs with nothing to `pip install`, runs on QGIS 3.22 through
+QGIS 4, and works anywhere: the working CRS is chosen automatically, the
+defaults were calibrated against real trails, and every constant is documented
+with its evidence.
 
 Portuguese documentation is kept in [`docs/pt_BR`](docs/pt_BR). The interface
 and the Processing parameters are available in six languages — Portuguese,
@@ -122,19 +138,22 @@ print(gdal.__version__, numpy.__version__, scipy.__version__)
 
 ## Quick start
 
-1. Prepare a **DEM** for your area of interest, in a projected CRS if possible.
-2. Derive **slope**, **horizontal curvature** and **vertical curvature** from
-   that DEM — ideally on the same grid, resolution, extent and CRS. See
-   [`docs/USUARIO_TOPOtrail.md`](docs/USUARIO_TOPOtrail.md) for the exact QGIS
-   steps.
-3. Open **TopoTrail** from the toolbar or the `TopoTrail` menu.
-4. Load the four rasters. The CRS of each is shown next to its field.
-5. Set the elevation range and maximum slope for your area. The defaults
-   (0–2600 m, 55) come from the Serra da Mantiqueira and are not meaningful
-   elsewhere.
-6. Optionally set an origin and a destination, by file, by coordinate, or by
-   clicking on the map, to get a route and a corridor.
-7. Choose an output format and file, and run.
+1. Prepare a **DEM** for your area of interest. Any CRS works — geographic DEMs
+   are reprojected to the local UTM zone automatically; a projected CRS in
+   metres is kept.
+2. Open **TopoTrail** from the toolbar or the `TopoTrail` menu. The window is a
+   four-step wizard: *Data → Products → Criteria → Run*.
+3. **Data**: choose the DEM. Slope and curvatures are derived from it; only tick
+   *own rasters* if you have a reason to supply them.
+4. **Products**: the suitability and risk maps are always produced; tick the
+   zones, the transitability map, watercourses and the route as you need. For a
+   route, give an origin and a destination by file, by coordinates in the
+   project CRS, or by clicking on the map — and, if you like, a point layer of
+   intermediate destinations.
+5. **Criteria**: the defaults were calibrated against real trails and can be
+   left alone. Check the altitude range for your area.
+6. **Run**: choose an output file and format. The results are loaded into the
+   project, styled.
 
 The plugin is also available as a Processing algorithm (`topotrail:topotrail`),
 so it can be scripted or placed in a model.
@@ -145,21 +164,28 @@ so it can be scripted or placed in a model.
 
 - A Digital Elevation Model. **That is the only requirement.**
 - Optionally, your own slope and curvature rasters, if you would rather control
-  how they are derived. Say so with the slope unit parameter, and give them the
-  DEM's grid.
+  how they are derived (say so with the slope unit parameter; grids that differ
+  from the DEM are aligned to it).
+- Optionally, any raster as an extra weighted criterion — stoniness, vegetation
+  cover, a cost surface.
 - Optionally, a vector layer to keep away from — hydrography, roads, tenure
-  boundaries, anything.
-- Optionally, an origin and a destination, as point layers, as coordinates in
-  the project CRS, or picked from the map canvas.
+  boundaries, anything — excluded outright or made expensive.
+- Optionally, an origin and a destination (point layers, coordinates in the
+  project CRS, or picked from the map canvas), and a point layer of intermediate
+  destinations.
 
 **Outputs**
 
-- Continuous topographic suitability raster
-- Vector layer of potential trail and access zones
-- Suggested access route, when origin and destination are given
-- Access corridor around that route
-- Relative topographic risk raster
-- Technical diagnostic log
+| Product | File | Notes |
+|---|---|---|
+| Continuous topographic suitability | `…_adequabilidade.tif` | 0–1 per cell |
+| Relative topographic risk | `…_risco_topografico.tif` | 0–1 per cell |
+| Transitability classes | `…_transitabilidade.tif` | 5 classes, legend and colours in the file, in the active language |
+| Potential access zones | `….gpkg` / `.shp` / `.kml` | polygons with `area_m2`, `area_ha` |
+| Suggested route | `…_rota.gpkg` | `compr_m`, `tempo_h` (Tobler), altitudes, number of legs |
+| Access corridor | `…_corredor.gpkg` | buffer of the route, in metres |
+| Watercourse crossings | `…_travessias.gpkg` | one point per crossing: basin area, class, cost factor, warning |
+| Diagnostic log | `…_diagnostico_topotrail.log` | one JSON record per step, for reproducibility |
 
 ## Working outside the area it was built for
 
@@ -548,29 +574,27 @@ and every parameter used.
 
 ## Changelog
 
-### 0.5.1
+The full, per-version changelog lives in [`metadata.txt`](metadata.txt) and is
+what the QGIS plugin repository shows. In short:
 
-- QGIS 4 / Qt6 compatibility improved while preserving QGIS 3.22+ support.
-- Responsive interface for small screens, high-DPI scaling, horizontal scrolling
-  and dark/light QGIS themes.
-- The plugin metadata no longer marks the plugin as experimental.
-- Interface text encoding corrected: accented Portuguese strings that had been
-  re-encoded as Latin-1 now display correctly.
-- Repository: continuous integration, automated consistency tests, contribution
-  guidelines, issue templates and citation metadata added.
-
-### 0.5.0
-
-- English documentation promoted to primary for publication and external review.
-- Portuguese reference copies preserved in `docs/pt_BR`.
-- `PT-BR | ENG` language switch added to the interface.
-- Legacy incomplete helper code removed from the active plugin tree.
-- The validated suitability, relative-risk, route and corridor workflow was
-  preserved.
-
-### 0.4.0
-
-- Initial public beta.
+- **1.1.x** — Graded river crossings by contributing area, with a crossings
+  layer; repository-scanner hygiene (Bandit, Flake8, Qt6 enum check).
+- **1.0.0** — First stable release after an end-to-end battery on three regions;
+  watercourses stop being an absolute wall for the route.
+- **0.14** — Adversarial audit of mathematics, geography and languages: 26
+  findings fixed (NoData-edge slopes, non-metric CRSs, rotated grids, custom
+  output CRSs, untranslated Processing help, among others).
+- **0.13** — Zero external dependencies (GDAL/OGR replaces geopandas/shapely);
+  interface type scale and language bindings fixed.
+- **0.12** — QGIS 4 / Qt6 verified by building the window under PyQt6.
+- **0.10–0.11** — Six languages; redesigned four-step wizard.
+- **0.8** — Multiple destinations, with exact optimal ordering.
+- **0.7** — First empirical validation against 224 km of field GPS tracks;
+  route constants calibrated on route geometry.
+- **0.6** — Only the DEM is required; watercourses, wetness, ruggedness and
+  transitability derived from it; Tobler walking time.
+- **0.5** — English documentation; QGIS 4 groundwork.
+- **0.4** — Initial public beta.
 
 ## Licence
 
