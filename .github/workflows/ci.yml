@@ -28,7 +28,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install development tools
-        run: python -m pip install --upgrade pip ruff pytest bandit flake8
+        # numpy and scipy are what the plugin needs at run time (QGIS ships
+        # them); pyproj only serves the test stubs that stand in for GDAL's OSR.
+        run: python -m pip install --upgrade pip ruff pytest bandit flake8 numpy scipy pyproj
       # PyQt6 is not a dependency of the plugin: it only serves the test that
       # builds the window under Qt6, which is what QGIS 4 uses. If no wheel
       # exists for this interpreter the step is allowed to fail and the test
