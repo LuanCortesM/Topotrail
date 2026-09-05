@@ -3,6 +3,7 @@
 <p>
   <a href="https://github.com/LuanCortesM/Topotrail/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/LuanCortesM/Topotrail/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://plugins.qgis.org/plugins/TopoTrail/"><img alt="QGIS plugin repository" src="https://img.shields.io/badge/QGIS%20plugins-TopoTrail-589632"></a>
+  <a href="https://doi.org/10.5281/zenodo.20295565"><img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.20295565.svg"></a>
   <a href="LICENSE"><img alt="Licence: MIT" src="https://img.shields.io/badge/licence-MIT-blue"></a>
   <img alt="QGIS 3.22+" src="https://img.shields.io/badge/QGIS-3.22%2B-589632">
 </p>
@@ -526,8 +527,28 @@ bug report contains. Participation is governed by the
 
 ## Citing TopoTrail
 
-Citation metadata is in [`CITATION.cff`](CITATION.cff); GitHub renders a
-ready-made citation from it in the sidebar.
+Every release is archived on Zenodo. Cite the version you used:
+
+> Maciel, L. S. C. (2026). *TopoTrail: a QGIS plugin for DEM-based topographic
+> suitability and least-cost route planning* (version 1.1.2) [Computer
+> software]. Zenodo. https://doi.org/10.5281/zenodo.22399472
+
+The concept DOI [10.5281/zenodo.20295565](https://doi.org/10.5281/zenodo.20295565)
+always resolves to the latest archived version. Machine-readable metadata is in
+[`CITATION.cff`](CITATION.cff); GitHub renders a ready-made citation from it in
+the sidebar.
+
+```bibtex
+@software{maciel_topotrail_2026,
+  author    = {Maciel, Luan da Silva Cortes},
+  title     = {TopoTrail: a QGIS plugin for DEM-based topographic suitability and least-cost route planning},
+  version   = {1.1.2},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.22399472},
+  url       = {https://github.com/LuanCortesM/Topotrail}
+}
+```
 
 ## Configuration and security
 
