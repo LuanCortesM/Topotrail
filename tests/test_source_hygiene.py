@@ -191,3 +191,20 @@ def test_stylesheet_font_sizes_are_whole_pixels():
             if pattern.search(line):
                 offenders.append(f"{path.relative_to(ROOT)}:{number}: {line.strip()}")
     assert not offenders, "\n".join(offenders)
+
+
+def test_no_try_except_pass_in_shipped_code():
+    """O repositorio de plugins do QGIS roda o Bandit e BLOQUEIA a versao por
+    B110 (try/except/pass). Aconteceu com a 1.1.0: oito ocorrencias. Toda
+    excecao engolida agora deixa rastro via log_quietly() ou logging."""
+    offenders = []
+    for path in python_files():
+        if "tests" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ExceptHandler):
+                body = node.body
+                if len(body) == 1 and isinstance(body[0], ast.Pass):
+                    offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}")
+    assert not offenders, "except ... : pass em codigo publicado:\n  " + "\n  ".join(offenders)

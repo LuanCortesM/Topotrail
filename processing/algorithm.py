@@ -2,6 +2,7 @@ import os
 import tempfile
 import shutil
 import heapq
+import logging
 import json
 import platform
 import sys
@@ -49,7 +50,9 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 
-PLUGIN_VERSION = "1.1.0"
+_LOG = logging.getLogger("TopoTrail")
+
+PLUGIN_VERSION = "1.1.1"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -1186,7 +1189,6 @@ def build_route_cost(score_array, cost_model, contrast, penalty_mask=None, feedb
     return cost
 
 
-
 def stream_crossing_factors(stream_mask, basin_km2, ford_max_km2, transform, channel_axis=None):
     """Fator de custo por celula para atravessar a drenagem, pelo tamanho do curso.
 
@@ -1211,7 +1213,8 @@ def stream_crossing_factors(stream_mask, basin_km2, ford_max_km2, transform, cha
         source_area = np.where(stream_mask, np.nan_to_num(basin_km2, nan=0.0), 0.0)
     else:
         source_area = np.where(channel, basin_km2, 0.0)
-    px = abs(float(transform[1])); py = abs(float(transform[5]))
+    px = abs(float(transform[1]))
+    py = abs(float(transform[5]))
     _, (rr, cc) = ndimage.distance_transform_edt(~channel, sampling=(py, px), return_indices=True)
     nearest_area = source_area[rr, cc]
     area = np.where(stream_mask, nearest_area, np.nan).astype(np.float32)
@@ -1246,9 +1249,12 @@ def detect_stream_crossings(path_cells, stream_mask, crossing_area, crossing_cla
             if run is None:
                 run = {"entrada": (row, col), "area_km2": a, "classe": k, "celulas": 1}
             else:
-                run["area_km2"] = max(run["area_km2"], a); run["classe"] = max(run["classe"], k); run["celulas"] += 1
+                run["area_km2"] = max(run["area_km2"], a)
+                run["classe"] = max(run["classe"], k)
+                run["celulas"] += 1
         elif run is not None:
-            crossings.append(run); run = None
+            crossings.append(run)
+            run = None
     return crossings
 
 
@@ -1970,8 +1976,8 @@ def _warn_points_without_crs(point_path):
             f"Camada de pontos sem CRS definido ({point_path}); as coordenadas foram "
             "assumidas no CRS de trabalho do MDE.", "TopoTrail",
             _qgs_enum(Qgis, "MessageLevel", "Warning"))
-    except Exception:
-        pass
+    except Exception as exc:  # fora do QGIS (testes): registra no logging do Python
+        _LOG.debug("aviso de CRS nao pode ir ao QgsMessageLog: %s", exc)
 
 
 def transform_point_to_raster(point_path, raster_proj):
@@ -2454,8 +2460,6 @@ def save_access_route(
         celulas_bloqueadas=int(np.sum(~np.isfinite(cost_crop))),
         celulas_navegaveis=int(finite_costs.size),
     )
-    local_start = (start_row - row_min, start_col - col_min)
-    local_end = (end_row - row_min, end_col - col_min)
 
     if feedback:
         feedback.pushInfo(
@@ -2583,7 +2587,8 @@ def save_access_route(
             geometries, attributes = [], []
             for number, item in enumerate(crossings, start=1):
                 x, y = pixel_to_world(transform, *item["entrada"])
-                point = ogr.Geometry(ogr.wkbPoint); point.AddPoint_2D(float(x), float(y))
+                point = ogr.Geometry(ogr.wkbPoint)
+                point.AddPoint_2D(float(x), float(y))
                 geometries.append(point)
                 k = min(item["classe"], len(labels) - 1)
                 attributes.append({
@@ -3252,7 +3257,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 "altitude_min_m": min_altitude,
                 "altitude_max_m": max_altitude,
                 "declividade_unidade_entrada": "graus" if slope_unit == SLOPE_UNIT_DEGREES else "porcentagem",
-            "declividade_max_abs_pct": max_slope,
+                "declividade_max_abs_pct": max_slope,
                 "declividade_custo_max_pct": slope_score_max,
                 "threshold": threshold,
                 "percentil_automatico": auto_percentile,
@@ -3475,14 +3480,17 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 warn_about_width=streams_from_dem, return_basin_area=True)
             append_diagnostic_log(debug_log_path, "drenagem_extraida_do_mde", **stream_metrics)
         stream_mask = np.zeros(dem_data.shape, dtype=bool)
-        stream_factor = None; stream_area = None; stream_class = None
+        stream_factor = None
+        stream_area = None
+        stream_class = None
         if streams_from_dem:
             channel_axis = channels.astype(bool).copy()
             if constraint_buffer_m > 0 and channels.any():
                 # Buffer circular (distancia euclidiana em metros), e nao uma
                 # dilatacao 3x3 repetida, que da um quadrado: 50 m viravam 71 m
                 # na diagonal.
-                px = abs(float(transform[1])); py = abs(float(transform[5]))
+                px = abs(float(transform[1]))
+                py = abs(float(transform[5]))
                 distance = ndimage.distance_transform_edt(~channels, sampling=(py, px))
                 channels = distance <= float(constraint_buffer_m)
             stream_mask = channels.astype(bool)

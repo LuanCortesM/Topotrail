@@ -17,8 +17,11 @@ chave no meio da tela.
 """
 
 import json
+import logging
 import re
 import os
+
+_LOG = logging.getLogger("TopoTrail")
 
 I18N_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "i18n")
@@ -89,16 +92,16 @@ def detect():
         if settings.value("locale/overrideFlag", False, type=bool):
             candidates.append(settings.value("locale/userLocale", "") or "")
         candidates.append(settings.value("locale/globalLocale", "") or "")
-    except Exception:
-        pass
+    except Exception as exc:  # sem QGIS (testes, scripts): segue para o locale do sistema
+        _LOG.debug("QgsSettings indisponivel para detectar idioma: %s", exc)
     try:
         # getlocale() e nao getdefaultlocale(): a segunda esta depreciada e sai
         # no Python 3.15, e um plugin de QGIS costuma sobreviver a mais de uma
         # versao do interpretador.
         import locale
         candidates.append((locale.getlocale()[0] or ""))
-    except Exception:
-        pass
+    except Exception as exc:
+        _LOG.debug("locale do sistema indisponivel: %s", exc)
     candidates.append(os.environ.get("LANG", ""))
 
     for raw in candidates:

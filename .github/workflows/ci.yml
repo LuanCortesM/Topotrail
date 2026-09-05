@@ -28,7 +28,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install development tools
-        run: python -m pip install --upgrade pip ruff pytest
+        run: python -m pip install --upgrade pip ruff pytest bandit flake8
       # PyQt6 is not a dependency of the plugin: it only serves the test that
       # builds the window under Qt6, which is what QGIS 4 uses. If no wheel
       # exists for this interpreter the step is allowed to fail and the test
@@ -40,6 +40,13 @@ jobs:
 
       - name: Lint
         run: ruff check .
+
+      # The same two scanners plugins.qgis.org runs on upload. Bandit findings
+      # of any severity block the version there, so they block here first.
+      - name: Security scan (as plugins.qgis.org does)
+        run: |
+          bandit -q -r processing ui topotrail.py __init__.py topotrail_config.py
+          flake8 --max-line-length=160 --extend-ignore=E203,W503 processing ui topotrail.py __init__.py topotrail_config.py
 
       - name: Byte-compile the plugin
         run: python -m compileall -q processing ui topotrail.py __init__.py topotrail_config.py

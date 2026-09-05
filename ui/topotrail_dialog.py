@@ -16,12 +16,11 @@ abre e entende.
 import os
 import traceback
 
-from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QFont, QFontMetrics, QPixmap
 from qgis.PyQt.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
     QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
-    QProgressBar, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+    QProgressBar, QPushButton, QScrollArea,
     QStackedWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 from qgis.core import (
@@ -34,6 +33,7 @@ from . import icons
 from . import i18n
 from .support import (
     class_enum,
+    log_quietly,
     TopotrailSupportMixin, append_gui_diagnostic_log, qt_enum,
     serialize_processing_params, size_policy,
 )
@@ -54,8 +54,8 @@ def _plugin_version():
             for line in handle:
                 if line.startswith("version="):
                     return line.split("=", 1)[1].strip()
-    except OSError:
-        pass
+    except OSError as exc:
+        log_quietly("leitura de metadata.txt", exc)
     return "?"
 
 # --------------------------------------------------------------------------
@@ -77,6 +77,7 @@ def _plugin_version():
 # que ela vai destoar da metade dos QGIS instalados, e no caso do escuro ainda
 # apagaria as logos institucionais, que tem fundo branco. Entao a paleta e
 # escolhida a partir do tema em vigor, e nao decidida aqui.
+
 
 LIGHT = {
     "ink": "#1a2420", "muted": "#6b7a74", "forest": "#0d452c",
@@ -235,7 +236,8 @@ class OptionCard(QFrame):
             self.glyph, 22, ACCENT if value else MUTED, 1.85))
         self.tick.setPixmap(icons.pixmap("check", 20, ACCENT, 1.9)
                             if value else QPixmap())
-        self.style().unpolish(self); self.style().polish(self)
+        self.style().unpolish(self)
+        self.style().polish(self)
         for callback in self._callbacks:
             callback(value)
 
@@ -667,8 +669,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         try:
             from qgis.core import QgsSettings
             QgsSettings().setValue("TopoTrail/language", code)
-        except Exception:
-            pass
+        except Exception as exc:
+            log_quietly("gravar idioma nas configuracoes", exc)
 
     @staticmethod
     def _remembered_language():
@@ -677,8 +679,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             code = QgsSettings().value("TopoTrail/language", "")
             if code in i18n.LANGUAGE_CODES:
                 return code
-        except Exception:
-            pass
+        except Exception as exc:
+            log_quietly("ler idioma das configuracoes", exc)
         return None
 
     # -- construcao ---------------------------------------------------------
@@ -895,7 +897,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         eyebrow._step_number = step
         row.addWidget(eyebrow)
         row.addStretch(1)
-        holder_top = QWidget(); holder_top.setLayout(row)
+        holder_top = QWidget()
+        holder_top.setLayout(row)
         row.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(holder_top)
 
@@ -996,15 +999,19 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         row.setSpacing(10)
         column = QVBoxLayout()
         column.setSpacing(1)
-        title = QLabel(); title.setObjectName("ttGroupLabel")
+        title = QLabel()
+        title.setObjectName("ttGroupLabel")
         self._bind(title, title_key)
-        subtitle = QLabel(); subtitle.setObjectName("ttGroupSub")
-        column.addWidget(title); column.addWidget(subtitle)
+        subtitle = QLabel()
+        subtitle.setObjectName("ttGroupSub")
+        column.addWidget(title)
+        column.addWidget(subtitle)
         row.addLayout(column, 1)
         holder._subtitle = subtitle
         holder._subtitle_key = subtitle_key
         if chip:
-            badge = QLabel(); badge.setObjectName("ttCountChip")
+            badge = QLabel()
+            badge.setObjectName("ttCountChip")
             row.addWidget(badge, 0, qt_enum("AlignmentFlag", "AlignTop"))
             holder._chip = badge
         else:
@@ -1046,14 +1053,18 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self.start_file = _FileRow(self.t("filter_vectors"), self.t("start"))
         self.end_file = _FileRow(self.t("filter_vectors"), self.t("end"))
         self.via_file = _FileRow(self.t("filter_vectors"), self.t("via"))
-        self.start_coord = QLineEdit(); self.start_coord.setPlaceholderText("X, Y")
-        self.end_coord = QLineEdit(); self.end_coord.setPlaceholderText("X, Y")
+        self.start_coord = QLineEdit()
+        self.start_coord.setPlaceholderText("X, Y")
+        self.end_coord = QLineEdit()
+        self.end_coord.setPlaceholderText("X, Y")
         # Em que CRS? No do projeto -- e isso tem de estar escrito em algum
         # lugar: quem digitava lon/lat num projeto UTM via a rota falhar longe.
         self._bind(self.start_coord, "coord_help", "setToolTip")
         self._bind(self.end_coord, "coord_help", "setToolTip")
-        self.pick_start = QPushButton(); self.pick_end = QPushButton()
-        self._bind(self.pick_start, "pick"); self._bind(self.pick_end, "pick")
+        self.pick_start = QPushButton()
+        self.pick_end = QPushButton()
+        self._bind(self.pick_start, "pick")
+        self._bind(self.pick_end, "pick")
         self.pick_start.clicked.connect(lambda: self.start_map_pick("start"))
         self.pick_end.clicked.connect(lambda: self.start_map_pick("end"))
         for button in (self.pick_start, self.pick_end):
@@ -1094,8 +1105,11 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self.margin_m = _spin(1, 200000, 5000.0, 0, 100, " m")
         for key, widget in (("corridor", self.corridor_m), ("margin", self.margin_m)):
             line = QHBoxLayout()
-            line.addWidget(self._label(key)); line.addStretch(1); line.addWidget(widget)
-            holder = QWidget(); holder.setLayout(line)
+            line.addWidget(self._label(key))
+            line.addStretch(1)
+            line.addWidget(widget)
+            holder = QWidget()
+            holder.setLayout(line)
             line.setContentsMargins(0, 0, 0, 0)
             body.addWidget(holder)
         body.addWidget(self._help_label("margin_help"))
@@ -1107,8 +1121,12 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         stream_body = self.want_streams.body_layout
         self.ford_max = _spin(0.1, 100000, 50.0, 0, 5, " km²")
         line = QHBoxLayout()
-        line.addWidget(self._label("ford_max")); line.addStretch(1); line.addWidget(self.ford_max)
-        holder = QWidget(); holder.setLayout(line); line.setContentsMargins(0, 0, 0, 0)
+        line.addWidget(self._label("ford_max"))
+        line.addStretch(1)
+        line.addWidget(self.ford_max)
+        holder = QWidget()
+        holder.setLayout(line)
+        line.setContentsMargins(0, 0, 0, 0)
         stream_body.addWidget(holder)
         stream_body.addWidget(self._help_label("ford_max_help"))
         self.want_streams.toggled(self.want_streams.body.setVisible)
@@ -1135,8 +1153,10 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
                 ("w_wet", self.w_wet), ("w_rough", self.w_rough))):
             grid.addWidget(self._label(key), index // 2, (index % 2) * 2)
             grid.addWidget(widget, index // 2, (index % 2) * 2 + 1)
-        grid.setColumnStretch(0, 1); grid.setColumnStretch(2, 1)
-        holder = QWidget(); holder.setLayout(grid)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(2, 1)
+        holder = QWidget()
+        holder.setLayout(grid)
         inner.addWidget(holder)
         layout.addWidget(card)
 
@@ -1149,12 +1169,16 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         for key, widget, help_key in (("slope_max", self.slope_max, "slope_max_help"),
                                       ("slope_score", self.slope_score_max, "slope_score_help")):
             line = QHBoxLayout()
-            line.addWidget(self._label(key)); line.addWidget(widget); line.addStretch(1)
+            line.addWidget(self._label(key))
+            line.addWidget(widget)
+            line.addStretch(1)
             inner.addLayout(line)
             inner.addWidget(self._help_label(help_key))
         row = QHBoxLayout()
-        row.addWidget(self._label("alt_min")); row.addWidget(self.alt_min)
-        row.addWidget(self._label("alt_max")); row.addWidget(self.alt_max)
+        row.addWidget(self._label("alt_min"))
+        row.addWidget(self.alt_min)
+        row.addWidget(self._label("alt_max"))
+        row.addWidget(self.alt_max)
         row.addStretch(1)
         inner.addLayout(row)
         layout.addWidget(card)
@@ -1163,15 +1187,19 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self._bind(card._title_label, "zone_box")
         self.percentile = _spin(0.1, 99.9, 75.0, 1, 1)
         self.min_area = _spin(0, 1e6, 50.0, 1, 5, " ha")
-        self.altitude_band = self._check("band"); self.altitude_band.setChecked(True)
+        self.altitude_band = self._check("band")
+        self.altitude_band.setChecked(True)
         self.band_size = _spin(1, 5000, 200.0, 0, 10, " m")
-        inner.addWidget(self._label("percentile")); inner.addWidget(self.percentile)
+        inner.addWidget(self._label("percentile"))
+        inner.addWidget(self.percentile)
         inner.addWidget(self._help_label("percentile_help"))
-        inner.addWidget(self._label("min_area")); inner.addWidget(self.min_area)
+        inner.addWidget(self._label("min_area"))
+        inner.addWidget(self.min_area)
         inner.addWidget(self.altitude_band)
         inner.addWidget(self.band_size)
         self.breaks_edit = QLineEdit("20, 35, 60, 100")
-        inner.addWidget(self._label("breaks")); inner.addWidget(self.breaks_edit)
+        inner.addWidget(self._label("breaks"))
+        inner.addWidget(self.breaks_edit)
         inner.addWidget(self._help_label("breaks_help"))
         layout.addWidget(card)
 
@@ -1181,10 +1209,13 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self.extra_file = _FileRow("GeoTIFF (*.tif *.tiff)", self.t("extra_box"))
         self.extra_weight = _spin(0, 100, 0.0)
         self.extra_direction = QComboBox()
-        inner.addWidget(self._label("extra_layer")); inner.addWidget(self.extra_file)
+        inner.addWidget(self._label("extra_layer"))
+        inner.addWidget(self.extra_file)
         row = QHBoxLayout()
-        row.addWidget(self._label("extra_weight")); row.addWidget(self.extra_weight)
-        row.addWidget(self._label("extra_dir")); row.addWidget(self.extra_direction)
+        row.addWidget(self._label("extra_weight"))
+        row.addWidget(self.extra_weight)
+        row.addWidget(self._label("extra_dir"))
+        row.addWidget(self.extra_direction)
         row.addStretch(1)
         inner.addLayout(row)
         layout.addWidget(card)
@@ -1195,10 +1226,13 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self.constraint_file = _FileRow(self.t("filter_vectors"), self.t("cons_box"))
         self.constraint_buffer = _spin(0, 100000, 30.0, 0, 5, " m")
         self.constraint_mode = QComboBox()
-        inner.addWidget(self._label("cons_layer")); inner.addWidget(self.constraint_file)
+        inner.addWidget(self._label("cons_layer"))
+        inner.addWidget(self.constraint_file)
         row = QHBoxLayout()
-        row.addWidget(self._label("cons_buffer")); row.addWidget(self.constraint_buffer)
-        row.addWidget(self._label("cons_mode")); row.addWidget(self.constraint_mode)
+        row.addWidget(self._label("cons_buffer"))
+        row.addWidget(self.constraint_buffer)
+        row.addWidget(self._label("cons_mode"))
+        row.addWidget(self.constraint_mode)
         row.addStretch(1)
         inner.addLayout(row)
         layout.addWidget(card)
@@ -1217,13 +1251,17 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         button.setFixedWidth(52)
         button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
         button.clicked.connect(self._browse_output)
-        row.addWidget(self.output_edit, 1); row.addWidget(button, 0)
+        row.addWidget(self.output_edit, 1)
+        row.addWidget(button, 0)
         inner.addLayout(row)
         row = QHBoxLayout()
         self.output_format = QComboBox()
-        self.crs_edit = QLineEdit(); self.crs_edit.setPlaceholderText("EPSG:31983")
-        row.addWidget(self._label("fmt")); row.addWidget(self.output_format)
-        row.addWidget(self._label("crs")); row.addWidget(self.crs_edit, 1)
+        self.crs_edit = QLineEdit()
+        self.crs_edit.setPlaceholderText("EPSG:31983")
+        row.addWidget(self._label("fmt"))
+        row.addWidget(self.output_format)
+        row.addWidget(self._label("crs"))
+        row.addWidget(self.crs_edit, 1)
         inner.addLayout(row)
         inner.addWidget(self._help_label("crs_help"))
         layout.addWidget(card)
@@ -1598,7 +1636,6 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self.footer_note.setText(note)
 
     def _refresh_summary(self):
-        pt = self.lang == "pt"
         items = ["• " + self.t("o_score"), "• " + self.t("o_risk")]
         if self.want_zones.isChecked():
             items.append("• " + self.t("o_zones"))
@@ -1732,8 +1769,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         try:
             feedback.pushInfo = self._log_line
             feedback.pushWarning = lambda text: self._log_line("⚠ " + text)
-        except (AttributeError, TypeError):
-            pass
+        except (AttributeError, TypeError) as exc:
+            log_quietly("redirecionar o log do algoritmo para a janela", exc)
         self._feedback = feedback
 
         alg = QgsApplication.processingRegistry().algorithmById("topotrail:topotrail")
@@ -1836,8 +1873,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             if styler:
                 try:
                     styler(layer)
-                except Exception:
-                    pass
+                except Exception as exc:  # estilo e conveniencia; a camada entra sem ele
+                    log_quietly(f"estilo da camada {title}", exc)
             project.addMapLayer(layer)
             loaded.append(layer)
         for key, title, styler in vectors:
@@ -1850,8 +1887,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             if styler:
                 try:
                     styler(layer)
-                except Exception:
-                    pass
+                except Exception as exc:  # estilo e conveniencia; a camada entra sem ele
+                    log_quietly(f"estilo da camada {title}", exc)
             project.addMapLayer(layer)
             loaded.append(layer)
         if loaded and self.iface:

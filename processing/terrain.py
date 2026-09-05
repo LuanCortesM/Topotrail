@@ -54,14 +54,19 @@ def _masked_gradient(surface, valid, spacing_y, spacing_x):
     z = np.where(valid, surface, 0.0)
     result = []
     for axis, h in ((0, spacing_y), (1, spacing_x)):
-        z_next = np.roll(z, -1, axis=axis); v_next = np.roll(valid, -1, axis=axis)
-        z_prev = np.roll(z, 1, axis=axis); v_prev = np.roll(valid, 1, axis=axis)
+        z_next = np.roll(z, -1, axis=axis)
+        v_next = np.roll(valid, -1, axis=axis)
+        z_prev = np.roll(z, 1, axis=axis)
+        v_prev = np.roll(valid, 1, axis=axis)
         # np.roll da a volta: a borda do array nao tem vizinho do outro lado.
-        edge_last = np.zeros_like(valid); edge_first = np.zeros_like(valid)
+        edge_last = np.zeros_like(valid)
+        edge_first = np.zeros_like(valid)
         if axis == 0:
-            edge_last[-1, :] = True; edge_first[0, :] = True
+            edge_last[-1, :] = True
+            edge_first[0, :] = True
         else:
-            edge_last[:, -1] = True; edge_first[:, 0] = True
+            edge_last[:, -1] = True
+            edge_first[:, 0] = True
         v_next &= ~edge_last
         v_prev &= ~edge_first
         both = v_next & v_prev

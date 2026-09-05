@@ -231,7 +231,8 @@ def _terrain_masked_gradient():
         from .terrain import _masked_gradient
         return _masked_gradient
     except ImportError:
-        import importlib.util, os
+        import importlib.util
+        import os
         spec = importlib.util.spec_from_file_location(
             "_topotrail_terrain", os.path.join(os.path.dirname(os.path.abspath(__file__)), "terrain.py"))
         module = importlib.util.module_from_spec(spec)

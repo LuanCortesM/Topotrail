@@ -9,32 +9,11 @@ que ser reescritas junto.
 import json
 import os
 import tempfile
-import traceback
 from datetime import datetime
 
-from qgis.PyQt.QtCore import QSize, Qt
-from qgis.PyQt.QtGui import QColor, QFont, QPalette, QPixmap
-from qgis.PyQt.QtWidgets import (
-    QDialog,
-    QDoubleSpinBox,
-    QFileDialog,
-    QFormLayout,
-    QFrame,
-    QGridLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QPushButton,
-    QCheckBox,
-    QScrollArea,
-    QSizePolicy,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
-    QApplication,
-)
+from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtGui import QColor, QFont, QPalette
+from qgis.PyQt.QtWidgets import QFormLayout, QFrame, QMessageBox, QSizePolicy
 from qgis.core import (
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
@@ -42,16 +21,30 @@ from qgis.core import (
     QgsFillSymbol,
     QgsLineSymbol,
     QgsMarkerSymbol,
-    QgsProcessingFeedback,
     QgsProject,
     QgsRasterShader,
-    QgsRasterLayer,
     QgsRasterTransparency,
     QgsSingleBandPseudoColorRenderer,
-    QgsVectorLayer,
 )
-from qgis.gui import QgsMapToolEmitPoint, QgsProjectionSelectionDialog, QgsProjectionSelectionWidget
-import qgis.processing as processing
+from qgis.gui import QgsMapToolEmitPoint
+
+
+def log_quietly(context, exc):
+    """Registra uma falha nao critica no log do QGIS (ou no logging do Python).
+
+    Substitui os `except: pass` que a analise de seguranca do repositorio de
+    plugins (Bandit B110) recusa: a falha continua nao interrompendo o usuario,
+    mas deixa rastro para quem for depurar.
+    """
+    message = f"TopoTrail: {context} falhou e foi ignorado: {exc}"
+    try:
+        from qgis.core import QgsMessageLog, Qgis
+        level = getattr(getattr(Qgis, "MessageLevel", Qgis), "Info")
+        QgsMessageLog.logMessage(message, "TopoTrail", level)
+    except Exception:
+        import logging
+        logging.getLogger("TopoTrail").debug(message)
+
 
 def qt_enum(enum_group, value):
     """Return Qt enum values in a way that works with both Qt5 and Qt6."""
@@ -151,7 +144,6 @@ def append_gui_diagnostic_log(output_path, event, **data):
     with open(log_path, "a", encoding="utf-8") as log_file:
         log_file.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
     return log_path
-
 
 
 class TopotrailSupportMixin:
@@ -369,12 +361,13 @@ class TopotrailSupportMixin:
             settings = QgsPalLayerSettings()
             settings.fieldName = "n"
             settings.enabled = True
-            fmt = QgsTextFormat(); fmt.setSize(9)
+            fmt = QgsTextFormat()
+            fmt.setSize(9)
             settings.setFormat(fmt)
             layer.setLabelsEnabled(True)
             layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
-        except Exception:
-            pass
+        except Exception as exc:  # rotulo e conveniencia; a camada entra sem ele
+            log_quietly("rotulos das travessias", exc)
         layer.triggerRepaint()
 
     def style_corridor_layer(self, layer):
@@ -392,7 +385,6 @@ class TopotrailSupportMixin:
             try:
                 if os.path.exists(path):
                     os.remove(path)
-            except OSError:
-                pass
+            except OSError as exc:
+                log_quietly(f"remocao do temporario {path}", exc)
         self._temp_point_files = []
-
