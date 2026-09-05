@@ -126,16 +126,29 @@ QGIS_GUARANTEED_MODULES = {"qgis", "osgeo", "numpy", "scipy", "PyQt5", "PyQt6"}
 PLUGIN_MODULES = {"processing", "ui", "topotrail", "topotrail_config", "i18n"}
 
 
-def _stdlib_names():
-    names = set(getattr(sys, "stdlib_module_names", ()))
-    if not names:  # Python < 3.10
-        names = set(sys.builtin_module_names) | {
-            "os", "sys", "json", "math", "re", "heapq", "shutil", "tempfile",
-            "platform", "datetime", "locale", "functools", "itertools",
-            "collections", "pathlib", "typing", "traceback", "subprocess",
-            "unittest", "importlib", "types", "textwrap", "xml", "csv",
-        }
-    return names
+def _is_stdlib(name):
+    """Python < 3.10 nao tem sys.stdlib_module_names: decide pelo caminho do modulo.
+
+    A lista escrita a mao que existia aqui esqueceu `logging` e derrubou o CI
+    em Python 3.9 -- um teste de dependencias nao pode depender de uma lista
+    que alguem precisa lembrar de atualizar.
+    """
+    names = getattr(sys, "stdlib_module_names", None)
+    if names is not None:
+        return name in names
+    if name in sys.builtin_module_names:
+        return True
+    import importlib.util
+    import sysconfig
+    try:
+        spec = importlib.util.find_spec(name)
+    except (ImportError, ValueError):
+        return False
+    origin = getattr(spec, "origin", None) or ""
+    if origin in ("frozen", "built-in"):
+        return True
+    stdlib = sysconfig.get_paths()["stdlib"]
+    return origin.startswith(stdlib) and "site-packages" not in origin
 
 
 def _top_level_imports(path):
@@ -149,13 +162,13 @@ def _top_level_imports(path):
 
 
 def test_shipped_code_imports_only_what_qgis_guarantees():
-    allowed = QGIS_GUARANTEED_MODULES | PLUGIN_MODULES | _stdlib_names()
+    allowed = QGIS_GUARANTEED_MODULES | PLUGIN_MODULES
     shipped = [path for path in python_files() if "tests" not in path.parts]
     offenders = sorted(
         f"{path.relative_to(ROOT)}: {name}"
         for path in shipped
         for name in _top_level_imports(path)
-        if name not in allowed
+        if name not in allowed and not _is_stdlib(name)
     )
     assert not offenders, (
         "Import de biblioteca que o QGIS nao garante em instalacao limpa:\n  "
