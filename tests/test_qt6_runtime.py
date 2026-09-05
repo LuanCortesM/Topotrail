@@ -17,10 +17,21 @@ import pytest
 HARNESS = pathlib.Path(__file__).resolve().parent / "qt6" / "harness.py"
 
 
+PROVA = (
+    "import os; os.environ['QT_QPA_PLATFORM'] = 'offscreen'; "
+    "from PyQt6.QtWidgets import QApplication; QApplication([]); print('QT6_OK')"
+)
+
+
 def _tem_pyqt6(executavel):
-    return subprocess.run(
-        [executavel, "-c", "import PyQt6"],
-        capture_output=True).returncode == 0
+    """Só conta se der para SUBIR um QApplication offscreen nesse interpretador.
+
+    Importar PyQt6 não basta: num runner sem libEGL/libxkbcommon o pacote
+    importa e o plugin de plataforma falha ao carregar -- e aí o harness
+    aborta e o teste acusaria um problema do plugin que é do ambiente.
+    """
+    resultado = subprocess.run([executavel, "-c", PROVA], capture_output=True, text=True)
+    return resultado.returncode == 0 and "QT6_OK" in resultado.stdout
 
 
 def _interpretador():

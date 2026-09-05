@@ -67,7 +67,9 @@ def test_every_enum_the_plugin_asks_for_exists_in_qt6():
     próprio Qt quando não acha o grupo. Só o Qt6 revela o engano. Pulado se
     PyQt6 não estiver instalado.
     """
-    PyQt6 = pytest.importorskip("PyQt6")
+    # QtWidgets, e nao so o pacote: num runner sem libEGL o pacote importa e
+    # o QtGui nao -- e o teste tem de pular, nao quebrar.
+    pytest.importorskip("PyQt6.QtWidgets")
     from PyQt6.QtCore import Qt
     from PyQt6.QtGui import QPalette
     from PyQt6.QtWidgets import QFrame, QSizePolicy
