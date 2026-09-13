@@ -99,10 +99,11 @@ does not attempt to replace the general-purpose implementations:
 | QGIS Least-Cost Path plugins | Route between points on a cost raster | Route only; no suitability model, no zones, no corridor, no provenance log. |
 | `leastcostpath` / `gdistance` (R) | Rich movement modelling, including anisotropy | Requires R and a scripting workflow; the target user here works inside QGIS. |
 
-TopoTrail's route search is **isotropic** — cost depends on the cost surface and
-step length, and does not distinguish uphill from downhill movement between
-adjacent cells. Where a physiological hiking model matters more than the
-suitability model, `r.walk` is the better tool, and TopoTrail's suitability
+TopoTrail's default route search is **anisotropic**: with the walking-time cost
+model the step cost comes from Tobler's hiking function, so climbing 100 m and
+descending the same 100 m do not cost the same. Two isotropic models remain
+available for comparison. Where a physiological hiking model matters more than
+the suitability model, `r.walk` is the better tool, and TopoTrail's suitability
 raster can be fed to it as a cost surface.
 
 ## Installation
@@ -461,17 +462,18 @@ critical review of those choices is in
 - Slope and curvature values change with spatial resolution.
 - Resampling slope and curvature may smooth terrain extremes; prefer
   derivatives already aligned to the DEM.
-- The route model is **isotropic** and does not distinguish directional uphill
-  and downhill cost.
-- The default cost model, `1 / (S + 0.05)`, looks like it spans 20:1 but only
-  does so if suitability spans [0, 1]. In a real scene it does not: on the test
-  area the 5th and 95th percentiles were 0.55 and 0.87, giving an effective
-  contrast near 5:1. The resulting route had a sinuosity of 1.04 — essentially
-  the straight line between origin and destination. The exponential cost model,
-  `exp(k(1 - S))`, keeps the contrast regardless, and `k` becomes an explicit
-  control over how far it is worth deviating to find better ground; at k=6 the
-  same route reached sinuosity 1.19 and raised mean suitability along the route
-  from 0.810 to 0.848, for 14% more length.
+- The route search uses an 8-connected neighbourhood, so a path at 22.5° to the
+  grid axes is up to 8.2% longer than the straight-line distance it represents.
+  Compare route lengths with that in mind.
+- The inverse cost model, `1 / (S + 0.05)`, is available but not the default: the
+  contrast it appears to offer assumes suitability spans [0, 1], and in a real
+  scene it does not. On the Serra da Mantiqueira test scene the 5th and 95th
+  percentiles of suitability were 0.49 and 0.77, so cost between them varies by a
+  factor of 1.5 — too flat to make deviating worthwhile. The exponential model,
+  `exp(k(1 - S))`, keeps the contrast regardless of how compressed the
+  distribution is, and `k` becomes an explicit control over how far it is worth
+  deviating. The walking-time model, which is the default, draws most of its
+  discriminating power from the gradient term rather than from suitability.
 - The drainage network is computed on a grid capped for responsiveness, so a
   channel is never narrower than that working cell. A requested setback smaller
   than the working cell has no practical effect; the plugin says so.

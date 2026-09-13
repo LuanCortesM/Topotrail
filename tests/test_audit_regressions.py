@@ -5,6 +5,8 @@ da correcao no comentario, para que a suite conte a historia.
 """
 
 import numpy as np
+from pathlib import Path
+
 import pytest
 
 from conftest import inclined_plane
@@ -85,28 +87,76 @@ def test_world_to_pixel_uses_floor_not_round(algorithm):
 # ---- 4. drenagem nunca e parede para a rota -----------------------------
 
 def test_streams_are_a_cost_for_the_route_not_a_wall(algorithm):
-    """A regra de negocio, isolada: com modo 'evitar', a camada do usuario sai
-    da mascara da rota, mas a drenagem vai para a mascara de penalidade."""
+    """Chama a regra de verdade, nao uma copia dela.
+
+    Ate a 1.1.2 este teste reimplementava a logica de `_run_algorithm` dentro
+    do proprio corpo e verificava a copia -- isto e, passaria mesmo que alguem
+    devolvesse a drenagem a mascara da rota, que e exatamente a regressao que
+    ele existe para impedir (ver o changelog da 1.0.0: com a drenagem como
+    parede a travessia Marins-Itaguare deixava de existir). A regra foi
+    extraida para `combine_constraints`, e agora o teste chama essa funcao.
+    """
     import numpy as np
     shape = (5, 5)
     valid = np.ones(shape, bool)
-    stream = np.zeros(shape, bool); stream[:, 2] = True            # rio norte-sul no meio
-    layer = np.zeros(shape, bool); layer[0, 0] = True              # cerca num canto
-    route_mask = valid.copy(); zone_mask = valid.copy(); penalty = None
-    restricted = stream | layer
-    # espelho da logica de _run_algorithm no modo CONSTRAINT_AVOID
-    zone_mask &= ~restricted
-    route_mask &= ~layer
-    penalty = stream
+    stream = np.zeros(shape, bool)
+    stream[:, 2] = True                       # rio norte-sul no meio da cena
+    layer = np.zeros(shape, bool)
+    layer[0, 0] = True                        # cerca num canto
+    stream_factor = np.where(stream, 4.0, 1.0)
+
+    route_mask, zone_mask, penalty, barrier, _tratamento = algorithm.combine_constraints(
+        valid.copy(), valid.copy(), valid, layer, stream_factor,
+        algorithm.CONSTRAINT_AVOID)
+
     assert route_mask[:, 2].all(), "a rota tem de poder cruzar o rio"
     assert not route_mask[0, 0], "a cerca continua intransponivel"
     assert not zone_mask[:, 2].any(), "as zonas continuam fora do leito"
-    assert penalty[:, 2].all()
-    # e o custo penalizado e finito (cruzavel), nao infinito
+    assert not barrier[:, 2].any(), "curso vadeavel nao pode virar barreira"
+    assert barrier[0, 0], "a camada em modo evitar e barreira"
+    assert penalty is not None and (penalty[:, 2] == 4.0).all()
+
+    # e o custo do leito e finito (cruzavel) e maior que o do terreno livre
     score = np.full(shape, 0.5, dtype=np.float32)
-    cost = algorithm.build_route_cost(score, algorithm.COST_MODEL_INVERSE if hasattr(algorithm, "COST_MODEL_INVERSE") else 0,
-                                      1.0, penalty_mask=penalty)
-    assert np.all(np.isfinite(cost[:, 2])) and np.all(cost[:, 2] > cost[:, 0])
+    cost = algorithm.build_route_cost(
+        score, algorithm.ROUTE_COST_INVERSE, 1.0, penalty_mask=penalty)
+    assert np.all(np.isfinite(cost[:, 2]))
+    assert np.all(cost[:, 2] > cost[:, 1])
+
+
+def test_a_stream_above_the_fordable_ceiling_is_the_only_stream_that_blocks(algorithm):
+    """O teto vadeavel e a unica coisa que transforma drenagem em barreira."""
+    import numpy as np
+    shape = (5, 5)
+    valid = np.ones(shape, bool)
+    stream_factor = np.ones(shape)
+    stream_factor[:, 2] = np.inf              # rio acima do teto declarado
+    route_mask, _zone, penalty, barrier, _t = algorithm.combine_constraints(
+        valid.copy(), valid.copy(), valid, None, stream_factor,
+        algorithm.CONSTRAINT_AVOID)
+    assert not route_mask[:, 2].any(), "acima do teto a travessia nao e presumida"
+    assert barrier[:, 2].all()
+    assert not np.isfinite(penalty[:, 2]).any()
+
+
+def test_the_route_gain_is_accumulated_climb_not_amplitude(algorithm):
+    """ganho_m soma as subidas; a amplitude ate a cota maxima e outro campo.
+
+    Ate a 1.1.2 o campo chamado `ganho_m` trazia max - inicio. Numa travessia
+    em sobe-e-desce os dois numeros diferem por quase o dobro, e o valor errado
+    chegou a ser citado como ganho acumulado.
+    """
+    altitudes = [1000.0, 1200.0, 1100.0, 1400.0, 1300.0]
+    ganho = sum(max(b - a, 0.0) for a, b in zip(altitudes, altitudes[1:]))
+    perda = sum(max(a - b, 0.0) for a, b in zip(altitudes, altitudes[1:]))
+    assert ganho == 500.0                      # 200 + 300
+    assert perda == 200.0                      # 100 + 100
+    assert max(altitudes) - altitudes[0] == 400.0
+    fonte = (Path(algorithm.__file__).read_text(encoding="utf-8")
+             if hasattr(algorithm, "__file__") else "")
+    if fonte:
+        assert '"desnivel_max_m": max(route_altitudes) - route_altitudes[0]' in fonte
+        assert '"ganho_m": float(sum(max(b - a, 0.0)' in fonte
 
 
 # ---- 5. travessia graduada de cursos d'agua ------------------------------
@@ -154,3 +204,40 @@ def test_build_route_cost_accepts_factor_arrays_with_barriers(algorithm):
     cost = algorithm.build_route_cost(score, 0, 1.0, penalty_mask=factor)
     assert abs(cost[1, 1] / cost[1, 0] - 4.0) < 1e-9
     assert not np.isfinite(cost[0, 1])
+
+
+# ---- 7. o registro de diagnostico descreve a execucao que aconteceu -------
+
+def test_the_log_names_all_three_cost_models(algorithm):
+    """Um enum de tres valores precisa de tres nomes.
+
+    Ate a 1.1.2 o log montava esse texto com um condicional de duas vias: o
+    modo Tobler, que e o padrao da janela, caia no ramo final e era gravado
+    como modelo inverso.
+    """
+    nomes = {
+        algorithm.cost_model_name(algorithm.ROUTE_COST_INVERSE),
+        algorithm.cost_model_name(algorithm.ROUTE_COST_EXPONENTIAL),
+        algorithm.cost_model_name(algorithm.ROUTE_COST_TOBLER),
+    }
+    assert len(nomes) == 3, nomes
+    assert algorithm.cost_model_name(algorithm.ROUTE_COST_TOBLER) == "tobler"
+
+
+def test_the_log_records_every_weight_that_enters_the_score(algorithm):
+    """Os sete pesos entram no registro, nao quatro.
+
+    A alegacao de reprodutibilidade do plugin depende disto: ate a 1.1.2 o log
+    gravava altitude, declividade e as duas curvaturas, e omitia umidade,
+    rugosidade e o raster extra -- justamente os que distinguem uma execucao
+    da outra em relevo baixo.
+    """
+    fonte = Path(algorithm.__file__).read_text(encoding="utf-8")
+    bloco = fonte[fonte.index('"pesos": {'):]
+    bloco = bloco[:bloco.index("}")]
+    for peso in ("altitude", "declividade", "curvatura_horizontal", "curvatura_vertical",
+                 "umidade", "rugosidade", "raster_extra"):
+        assert f'"{peso}"' in bloco, f"o log nao grava o peso {peso}"
+    for parametro in ('"modelo_de_custo"', '"destinos_intermediarios"',
+                      '"teto_vadeavel_km2"', '"restricao_modo"'):
+        assert parametro in fonte, f"o log nao grava {parametro}"

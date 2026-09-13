@@ -108,8 +108,15 @@ def fill_depressions(dem_array, feedback=None):
             push(heap, (filled[row, col], row, col))
 
     pop = heapq.heappop
+    processadas = 0
+    total = max(1, rows * cols)
     while heap:
         level, row, col = pop(heap)
+        processadas += 1
+        if feedback is not None and processadas % 50000 == 0:
+            if feedback.isCanceled():
+                raise Exception("Extracao da drenagem cancelada pelo usuario.")
+            feedback.setProgress(100.0 * processadas / total)
         for d_row, d_col in NEIGHBOURS:
             n_row, n_col = row + d_row, col + d_col
             if not (0 <= n_row < rows and 0 <= n_col < cols) or closed[n_row, n_col]:

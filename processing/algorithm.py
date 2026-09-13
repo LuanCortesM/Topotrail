@@ -52,7 +52,7 @@ ogr.UseExceptions()
 
 _LOG = logging.getLogger("TopoTrail")
 
-PLUGIN_VERSION = "1.1.2"
+PLUGIN_VERSION = "1.2.0"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -1123,6 +1123,21 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
     return mask
 
 
+def cost_model_name(cost_model):
+    """Nome do modelo de custo para o registro de diagnostico.
+
+    Existe porque ate a 1.1.2 o log montava esse texto com um condicional de
+    duas vias sobre um enum de tres valores: toda execucao no modo Tobler --
+    que e o padrao -- gravava "cost = 1 / (adequabilidade + 0.05)", isto e, o
+    modelo inverso. Quem recebesse o log reproduziria a execucao errada.
+    """
+    if cost_model == ROUTE_COST_TOBLER:
+        return "tobler"
+    if cost_model == ROUTE_COST_EXPONENTIAL:
+        return "exponencial"
+    return "inverso"
+
+
 def build_route_cost(score_array, cost_model, contrast, penalty_mask=None, feedback=None):
     """Converte adequabilidade em custo de deslocamento.
 
@@ -1480,6 +1495,56 @@ def binarize_result(array, threshold, feedback=None):
         )
 
     return binary
+
+
+def combine_constraints(route_mask, zone_mask, valid_mask, layer_mask,
+                        stream_factor, constraint_mode):
+    """Aplica as restricoes as mascaras da rota e das zonas.
+
+    Regra, isolada aqui para poder ser testada sem QGIS (ate a 1.1.2 ela vivia
+    dentro de `_run_algorithm`, e o teste de regressao a reimplementava --
+    isto e, verificava a propria copia, nao o codigo que roda):
+
+    * a camada de restricao do usuario segue o modo escolhido: no modo
+      "evitar" vira barreira para a rota, no modo "encarecer" multiplica o
+      custo por CONSTRAINT_PENALTY_FACTOR;
+    * a drenagem NUNCA e barreira por si: entra como fator graduado pelo
+      tamanho do curso, e so e intransponivel onde o fator ja veio infinito,
+      isto e, acima do teto vadeavel declarado pelo usuario. Um rio e uma
+      linha, e toda rota de um vale ao vizinho precisa cruzar uma;
+    * as zonas, no modo "evitar", excluem tudo o que foi restringido.
+
+    Devolve (route_mask, zone_mask, penalty_mask, route_barrier, tratamento).
+    """
+    restricted = np.zeros(route_mask.shape, dtype=bool)
+    if layer_mask is not None:
+        restricted |= layer_mask
+    if stream_factor is not None:
+        restricted |= stream_factor != 1.0
+    route_barrier = np.zeros(route_mask.shape, dtype=bool)
+    if not restricted.any():
+        return route_mask, zone_mask, None, route_barrier, None
+
+    factor = np.ones(route_mask.shape, dtype=np.float64)
+    if stream_factor is not None:
+        factor = np.maximum(factor, stream_factor)
+        route_barrier |= ~np.isfinite(stream_factor)
+    if layer_mask is not None:
+        if constraint_mode == CONSTRAINT_AVOID:
+            route_barrier |= layer_mask
+        else:
+            factor = np.where(layer_mask, np.maximum(factor, CONSTRAINT_PENALTY_FACTOR), factor)
+    route_mask = route_mask & ~route_barrier
+    factor = np.where(route_barrier, np.inf, factor)
+    penalty_mask = factor if np.any(factor != 1.0) else None
+    if constraint_mode == CONSTRAINT_AVOID:
+        zone_mask = zone_mask & ~restricted
+        tratamento = ("excluidas das zonas; para a rota: camada excluida, "
+                      "drenagem graduada pelo tamanho do curso")
+    else:
+        tratamento = ("encarecidas em {:.0f}x (camada); drenagem graduada pelo "
+                      "tamanho do curso".format(CONSTRAINT_PENALTY_FACTOR))
+    return route_mask, zone_mask, penalty_mask, route_barrier, tratamento
 
 
 def build_walkability_mask(zone_constraint_mask, feedback=None):
@@ -2134,7 +2199,8 @@ def tobler_hours(delta_z, horizontal_m):
 
 
 def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
-                    pixel_size_m=None, anisotropic=False):
+                    pixel_size_m=None, anisotropic=False, feedback=None,
+                    progress_range=None):
     rows, cols = cost_array.shape
     start_index = start_rc[0] * cols + start_rc[1]
     end_index = end_rc[0] * cols + end_rc[1]
@@ -2176,11 +2242,23 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
         (1, 1, np.sqrt(2.0)),
     ]
 
+    expandidas = 0
+    total_celulas = max(1, int(np.isfinite(cost_array).sum()))
     while heap:
         _, current_dist, index = heapq.heappop(heap)
         if visited[index]:
             continue
         visited[index] = True
+        expandidas += 1
+        # Uma cena grande pode levar minutos por trecho. Sem isto o usuario
+        # fica com o QGIS preso e o botao de cancelar sem efeito.
+        if feedback is not None and expandidas % 20000 == 0:
+            if feedback.isCanceled():
+                raise Exception("Calculo da rota cancelado pelo usuario.")
+            if progress_range is not None:
+                inicio, fim = progress_range
+                fracao = min(1.0, expandidas / float(total_celulas))
+                feedback.setProgress(inicio + (fim - inicio) * fracao)
         if index == end_index:
             break
         row = index // cols
@@ -2265,9 +2343,11 @@ def multi_leg_route(cost_array, waypoints_rc, elevation=None, pixel_size_m=None,
             raise Exception(
                 "Os pontos {} e {} caem na mesma celula do raster. Use pontos mais "
                 "afastados ou um MDE de maior resolucao.".format(index + 1, index + 2))
+        passo = 100.0 / max(1, len(waypoints_rc) - 1)
         leg, cost = least_cost_path(cost_array, tuple(start), tuple(end),
                                     elevation=elevation, pixel_size_m=pixel_size_m,
-                                    anisotropic=anisotropic)
+                                    anisotropic=anisotropic, feedback=feedback,
+                                    progress_range=(index * passo, (index + 1) * passo))
         leg_costs.append(float(cost))
         # o primeiro ponto de cada trecho repete o ultimo do anterior
         cells.extend(leg if index == 0 else leg[1:])
@@ -2285,8 +2365,9 @@ def optimise_waypoint_order(cost_array, waypoints_rc, elevation=None,
     Held-Karp sobre a matriz de custos entre pares. O custo e assimetrico no
     modelo de Tobler -- subir e descer nao custam o mesmo -- entao a matriz nao
     e simetrica e o problema e um caminho hamiltoniano dirigido, resolvido
-    exatamente. O numero de pontos intermediarios e limitado porque o custo
-    cresce como 2^n * n^2 em tempo e a matriz exige n^2 execucoes do A*.
+    exatamente. O que limita o numero de pontos intermediarios nao e o custo
+    do DP -- com oito pontos sao ~16 mil operacoes, microssegundos -- e sim a
+    montagem da matriz, que exige da ordem de n^2 execucoes completas do A*.
     """
     middle = list(range(1, len(waypoints_rc) - 1))
     if len(middle) > MAX_OPTIMISED_WAYPOINTS:
@@ -2301,15 +2382,22 @@ def optimise_waypoint_order(cost_array, waypoints_rc, elevation=None,
             "Otimizando a ordem de {} pontos intermediarios ({} trechos a calcular)."
             .format(len(middle), n * (n - 1)))
 
+    # O DP so le os pares que saem da origem, os que ligam pontos
+    # intermediarios e os que chegam ao destino: calcular (i, 0) ou (last, j)
+    # seria jogar fora cerca de um quinto das buscas.
+    necessarios = [(i, j) for i in range(n) for j in range(n)
+                   if i != j and j != 0 and i != n - 1]
     pair = {}
-    for i in range(n):
-        for j in range(n):
-            if i == j:
-                continue
-            _, cost = least_cost_path(cost_array, tuple(waypoints_rc[i]),
-                                      tuple(waypoints_rc[j]), elevation=elevation,
-                                      pixel_size_m=pixel_size_m, anisotropic=anisotropic)
-            pair[(i, j)] = float(cost)
+    for contagem, (i, j) in enumerate(necessarios, start=1):
+        if feedback is not None:
+            if feedback.isCanceled():
+                raise Exception("Otimizacao da ordem cancelada pelo usuario.")
+            feedback.setProgress(100.0 * contagem / len(necessarios))
+        _, cost = least_cost_path(cost_array, tuple(waypoints_rc[i]),
+                                  tuple(waypoints_rc[j]), elevation=elevation,
+                                  pixel_size_m=pixel_size_m, anisotropic=anisotropic,
+                                  feedback=feedback)
+        pair[(i, j)] = float(cost)
 
     last = n - 1
     size = len(middle)
@@ -2380,8 +2468,8 @@ def save_access_route(
 
     Inputs are an adequability raster array in the prepared working grid,
     GeoTransform/projection, point files, output base path, buffer width and
-    search margin in meters. NaN cells are blocked. Cost is computed as
-    1 / (adequability + ROUTE_COST_EPSILON). Route and corridor are written as GeoPackage
+    search margin in meters. NaN cells are blocked. The per-cell cost depends on
+    the chosen model (see build_route_cost). Route and corridor are written as GeoPackage
     files; corridor buffering is done in a metric CRS. Raises clear errors for
     invalid buffer/margin, unreachable endpoints or impossible paths.
     """
@@ -2447,9 +2535,16 @@ def save_access_route(
     append_diagnostic_log(
         log_path,
         "superficie_custo_rota",
-        metodo=(f"cost = exp({contrast:.1f} * (1 - adequabilidade))"
-                if cost_model == ROUTE_COST_EXPONENTIAL
-                else f"cost = 1 / (adequabilidade + {ROUTE_COST_EPSILON})"),
+        metodo=(
+            f"tempo de Tobler x retardo = 1 + {TERRAIN_SLOWDOWN_MAX:.1f} * (1 - adequabilidade)"
+            if cost_model == ROUTE_COST_TOBLER
+            else f"cost = exp({contrast:.1f} * (1 - adequabilidade))"
+            if cost_model == ROUTE_COST_EXPONENTIAL
+            else f"cost = 1 / (adequabilidade + {ROUTE_COST_EPSILON})"),
+        modelo_de_custo=cost_model_name(cost_model),
+        grandeza_do_array=("fator de retardo adimensional (o tempo sai do passo a passo)"
+                           if cost_model == ROUTE_COST_TOBLER else "custo por celula"),
+        contraste_k=(float(contrast) if cost_model == ROUTE_COST_EXPONENTIAL else None),
         contraste_dinamico=(float(np.nanmax(finite_costs) / max(float(np.nanmin(finite_costs)), 1e-9))
                             if finite_costs.size else None),
         restricoes_encarecidas=bool(penalty_crop is not None and penalty_crop.any()),
@@ -2517,7 +2612,16 @@ def save_access_route(
                     "alt_fim_m": route_altitudes[-1],
                     "alt_min_m": min(route_altitudes),
                     "alt_max_m": max(route_altitudes),
-                    "ganho_m": max(route_altitudes) - route_altitudes[0],
+                    # Ganho acumulado: soma das subidas ao longo do tracado. Ate a
+                    # 1.1.2 este campo trazia max - inicio, que e a amplitude ate o
+                    # ponto mais alto, nao o que se sobe caminhando: numa travessia
+                    # em sobe-e-desce os dois diferem por quase o dobro. O valor
+                    # antigo continua disponivel em desnivel_max_m.
+                    "ganho_m": float(sum(max(b - a, 0.0) for a, b
+                                         in zip(route_altitudes, route_altitudes[1:]))),
+                    "perda_m": float(sum(max(a - b, 0.0) for a, b
+                                         in zip(route_altitudes, route_altitudes[1:]))),
+                    "desnivel_max_m": max(route_altitudes) - route_altitudes[0],
                 }
             )
 
@@ -2584,6 +2688,12 @@ def save_access_route(
         if crossings:
             labels = _ford_labels()
             factors = [factor for _limit, factor, _key in FORD_CLASSES] + [float("inf")]
+            # Um passo diagonal percorre raiz de dois celulas: contar celulas e
+            # multiplicar pelo lado subestimaria a extensao em ate 41%. O passo
+            # medio do proprio caminho corrige isso no agregado.
+            passos = [float(np.hypot(b[0] - a[0], b[1] - a[1]))
+                      for a, b in zip(path_cells, path_cells[1:])]
+            passo_medio = float(np.mean(passos)) if passos else 1.0
             geometries, attributes = [], []
             for number, item in enumerate(crossings, start=1):
                 x, y = pixel_to_world(transform, *item["entrada"])
@@ -2596,7 +2706,7 @@ def save_access_route(
                     "bacia_km2": round(float(item["area_km2"]), 3),
                     "classe": labels[k],
                     "fator_custo": (None if not np.isfinite(factors[k]) else float(factors[k])),
-                    "extensao_na_faixa_m": round(int(item["celulas"]) * float(pixel_size_m or abs(transform[1])), 1),
+                    "extensao_na_faixa_m": round(int(item["celulas"]) * passo_medio * float(pixel_size_m or abs(transform[1])), 1),
                     "aviso": ("Estimado so pelo relevo (area de contribuicao). Profundidade e "
                               "corrente variam com a estacao e a chuva: confira em campo antes de usar."),
                 })
@@ -3040,7 +3150,11 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 options=[self.tr("alg_costinv"),
                          self.tr("alg_costexp"),
                          self.tr("alg_costtobler")],
-                defaultValue=ROUTE_COST_INVERSE,
+                # O padrao acompanha a janela em quatro etapas: tempo de
+                # caminhada. Ate a 1.1.2 a caixa de ferramentas do Processing
+                # abria no modelo inverso, que a propria documentacao descreve
+                # como de contraste insuficiente.
+                defaultValue=ROUTE_COST_TOBLER,
             )
         )
         self.addParameter(
@@ -3270,10 +3384,24 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                     "declividade": slope_weight,
                     "curvatura_horizontal": curvh_weight,
                     "curvatura_vertical": curvv_weight,
+                    "umidade": wetness_weight,
+                    "rugosidade": roughness_weight,
+                    "raster_extra": extra_weight,
                 },
                 "gerar_zonas_vetoriais": generate_zones,
-                "corredor_m": route_buffer_m,
+                "corredor_raio_m": route_buffer_m,
                 "margem_busca_m": route_margin_m,
+                "modelo_de_custo": cost_model_name(route_cost_model),
+                "contraste_k": route_contrast,
+                "destinos_intermediarios": file_diagnostics(via_points_file),
+                "otimizar_ordem": optimise_order,
+                "drenagem_do_mde": streams_from_dem,
+                "bacia_min_km2": stream_min_basin_km2,
+                "teto_vadeavel_km2": stream_ford_max_km2,
+                "restricao_modo": ("evitar" if constraint_mode == CONSTRAINT_AVOID else "penalizar"),
+                "restricao_buffer_m": constraint_buffer_m,
+                "derivar_do_mde": derive_from_dem,
+                "unidade_vertical": ("pes" if vertical_unit == VERTICAL_UNIT_FEET else "metros"),
             },
         )
         if bool(start_point_file) != bool(end_point_file):
@@ -3522,24 +3650,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         route_barrier = np.zeros(dem_data.shape, dtype=bool)
         if restricted_mask.any():
             affected = int((restricted_mask & valid_mask).sum())
-            factor = np.ones(dem_data.shape, dtype=np.float64)
-            if stream_factor is not None:
-                factor = np.maximum(factor, stream_factor)
-                route_barrier |= ~np.isfinite(stream_factor)
-            if layer_mask is not None:
-                if constraint_mode == CONSTRAINT_AVOID:
-                    route_barrier |= layer_mask
-                else:
-                    factor = np.where(layer_mask, np.maximum(factor, CONSTRAINT_PENALTY_FACTOR), factor)
-            route_constraint_mask = route_constraint_mask & ~route_barrier
-            factor = np.where(route_barrier, np.inf, factor)
-            if np.any(factor != 1.0):
-                penalty_mask = factor
-            if constraint_mode == CONSTRAINT_AVOID:
-                zone_constraint_mask = zone_constraint_mask & ~restricted_mask
-                tratamento = "excluidas das zonas; para a rota: camada excluida, drenagem graduada pelo tamanho do curso"
-            else:
-                tratamento = "encarecidas em {:.0f}x (camada); drenagem graduada pelo tamanho do curso".format(CONSTRAINT_PENALTY_FACTOR)
+            (route_constraint_mask, zone_constraint_mask, penalty_mask,
+             route_barrier, tratamento) = combine_constraints(
+                route_constraint_mask, zone_constraint_mask, valid_mask,
+                layer_mask, stream_factor, constraint_mode)
             if stream_factor is not None and feedback:
                 labels = _ford_labels()
                 counts = [int(((stream_class == k) & valid_mask).sum()) for k in range(len(FORD_CLASSES) + 1)]

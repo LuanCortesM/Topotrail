@@ -17,6 +17,38 @@ Only NumPy is required; nothing here touches QGIS or GDAL.
 import numpy as np
 
 
+# Acima disto a derivacao de relevo passa a ser um risco para o processo do
+# QGIS, nao so uma espera. Medido nesta implementacao: o pico transitorio e de
+# cerca de 134 bytes por celula, porque o MDE e promovido a float64 e cada
+# gradiente cria varios temporarios de grade cheia. 8 milhoes de celulas ficam
+# em torno de 1 GB (aviso); 40 milhoes passam de 5 GB e derrubam a maioria das
+# maquinas de campo (erro, com instrucao de recortar).
+WARN_TERRAIN_CELLS = 8_000_000
+MAX_TERRAIN_CELLS = 40_000_000
+BYTES_POR_CELULA = 134
+
+
+def check_terrain_size(dem_array, feedback=None):
+    """Avisa ou barra grades cuja derivacao estouraria a memoria do QGIS."""
+    celulas = int(dem_array.size)
+    gb = celulas * BYTES_POR_CELULA / 1e9
+    if celulas > MAX_TERRAIN_CELLS:
+        raise ValueError(
+            "O MDE tem {:,} celulas ({:.0f} x {:.0f}); derivar declividade e "
+            "curvaturas exigiria cerca de {:.1f} GB de memoria transitoria e "
+            "muito provavelmente encerraria o QGIS. Recorte o MDE para a area "
+            "de interesse (Raster > Extrair > Cortar) ou reamostre para uma "
+            "celula maior antes de rodar.".format(
+                celulas, dem_array.shape[1], dem_array.shape[0], gb)
+            .replace(",", "."))
+    if celulas > WARN_TERRAIN_CELLS and feedback:
+        feedback.pushWarning(
+            "MDE grande: {:,} celulas. A derivacao pode usar cerca de {:.1f} GB "
+            "de memoria e levar varios minutos. Recortar a area de interesse "
+            "deixa o resultado igual e a espera menor.".format(celulas, gb)
+            .replace(",", "."))
+
+
 def _metric_spacing(transform):
     pixel_size_x = abs(float(transform[1]))
     pixel_size_y = abs(float(transform[5]))
@@ -79,6 +111,33 @@ def _masked_gradient(surface, valid, spacing_y, spacing_x):
     return result[0], result[1]
 
 
+def _masked_second(surface, valid, h, axis):
+    """Segunda derivada por estencil de tres pontos, respeitando o nodata.
+
+    Onde falta um dos dois vizinhos do eixo a segunda derivada nao e definida
+    por diferencas finitas e sai zero, que e o valor neutro do modelo (a nota
+    de curvatura pontua a proximidade de zero).
+    """
+    z = np.where(valid, surface, 0.0)
+    z_next = np.roll(z, -1, axis=axis)
+    v_next = np.roll(valid, -1, axis=axis)
+    z_prev = np.roll(z, 1, axis=axis)
+    v_prev = np.roll(valid, 1, axis=axis)
+    edge_last = np.zeros_like(valid)
+    edge_first = np.zeros_like(valid)
+    if axis == 0:
+        edge_last[-1, :] = True
+        edge_first[0, :] = True
+    else:
+        edge_last[:, -1] = True
+        edge_first[:, 0] = True
+    v_next &= ~edge_last
+    v_prev &= ~edge_first
+    both = v_next & v_prev
+    second = np.where(both, (z_next - 2.0 * z + z_prev) / (h * h), 0.0)
+    return np.where(valid, second, np.nan)
+
+
 def _require_2d(dem_array, what):
     if dem_array.ndim != 2 or min(dem_array.shape) < 2:
         raise ValueError(
@@ -118,11 +177,14 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
     defined relative to the direction of steepest descent rather than to the
     grid axes. The forms used are the geometric contour ("plan") and profile
     curvatures of Moore, Grayson & Ladson (1991) / Mitasova & Hofierka (1993),
-    evaluated with central-difference partial derivatives: on a bowl
+    evaluated with central differences for the first derivatives and a
+    three-point stencil for the pure second derivatives: on a bowl
     z = a(x^2 + y^2) the plan curvature equals 1/r and the profile curvature
-    equals 2a/(1+p)^{3/2}. They are NOT the Zevenbergen-Thorne (1987) quadratic
-    forms, which lack the slope normalisation and use the opposite profile
-    sign; an earlier version of this docstring mis-cited them.
+    equals 2a/(1+p)^{3/2}. They are not the Zevenbergen-Thorne (1987) forms,
+    which come from fitting a partial quartic to the 3x3 window rather than
+    from the differential definitions, and which use the opposite profile
+    sign. Both are slope-normalised: an earlier version of this docstring
+    claimed ZT was not, which is wrong.
 
     Sign convention, verified against surfaces with known shape in
     `tests/test_terrain_math.py` rather than asserted here:
@@ -156,8 +218,16 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
     filled, valid = _filled_for_gradient(dem_array)
 
     zy, zx = _masked_gradient(filled, valid, py, px)
-    zyy, zyx = _masked_gradient(np.where(valid, zy, 0.0), valid, py, px)
-    _, zxx = _masked_gradient(np.where(valid, zx, 0.0), valid, py, px)
+    # As segundas derivadas puras saem de um estencil de tres pontos, e nao de
+    # duas diferencas centrais encadeadas. Encadear daria (z[i+2] - 2z[i] +
+    # z[i-2])/(4h^2), isto e, uma derivada avaliada no passo 2h, que ignora os
+    # vizinhos imediatos: medido em superficies senoidais, isso preservava 40%
+    # da amplitude verdadeira em formas de quatro celulas contra 81% do
+    # estencil de tres pontos. O termo cruzado continua vindo do gradiente,
+    # porque ali ele ja e avaliado no passo h.
+    _, zyx = _masked_gradient(np.where(valid, zy, 0.0), valid, py, px)
+    zyy = _masked_second(filled, valid, py, 0)
+    zxx = _masked_second(filled, valid, px, 1)
 
     p = zx ** 2 + zy ** 2          # squared gradient magnitude
     q = p + 1.0
@@ -322,6 +392,7 @@ def vector_ruggedness(dem_array, transform, feedback=None):
 
 def derive_terrain(dem_array, transform, feedback=None):
     """Slope (percent) plus both curvatures, from one DEM in a metric CRS."""
+    check_terrain_size(dem_array, feedback)
     slope = slope_percent_from_dem(dem_array, transform, feedback)
     curv_h, curv_v = curvatures_from_dem(dem_array, transform, feedback)
     return slope, curv_h, curv_v

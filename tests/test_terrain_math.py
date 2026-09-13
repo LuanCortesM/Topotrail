@@ -93,9 +93,21 @@ def test_curvature_sign_convention(terrain, transform_10m):
     assert np.nanmean(bowl_profile[ring]) > 0, "a bowl is concave: profile must be positive"
     assert np.nanmean(dome_plan[ring]) < 0
     assert np.nanmean(bowl_plan[ring]) > 0
-    # Inverting the surface inverts both curvatures exactly.
-    assert np.allclose(dome_profile[ring], -bowl_profile[ring], rtol=1e-4, atol=1e-9)
-    assert np.allclose(dome_plan[ring], -bowl_plan[ring], rtol=1e-4, atol=1e-9)
+    # Inverting the surface inverts both curvatures. In float64 the identity is
+    # exact; the float32 surfaces above carry quantisation of about 3e-5 m at
+    # 500 m of elevation, and the three-point second derivative divides by h^2
+    # rather than by 4h^2, so it passes four times more of that noise through
+    # than the lag-2h estimator used until 1.1.2. That is the price of resolving
+    # forms of a few cells, and 2e-4 is what it costs here.
+    assert np.allclose(dome_profile[ring], -bowl_profile[ring], rtol=2e-4, atol=1e-9)
+    assert np.allclose(dome_plan[ring], -bowl_plan[ring], rtol=2e-4, atol=1e-9)
+
+    exact_dome = (500.0 - 0.002 * radius2).astype(np.float64)
+    exact_bowl = (500.0 + 0.002 * radius2).astype(np.float64)
+    exact_dome_plan, exact_dome_profile = terrain.curvatures_from_dem(exact_dome, transform_10m)
+    exact_bowl_plan, exact_bowl_profile = terrain.curvatures_from_dem(exact_bowl, transform_10m)
+    assert np.allclose(exact_dome_profile[ring], -exact_bowl_profile[ring], rtol=0, atol=1e-12)
+    assert np.allclose(exact_dome_plan[ring], -exact_bowl_plan[ring], rtol=0, atol=1e-12)
 
 
 def test_plan_curvature_of_a_cylindrical_ridge_is_zero(terrain, transform_10m):
@@ -221,3 +233,43 @@ def test_zero_pixel_size_is_refused(terrain):
     dem = np.zeros((10, 10), np.float32)
     with pytest.raises(ValueError):
         terrain.slope_percent_from_dem(dem, (0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+
+
+def test_curvature_resolves_short_wavelength_forms(terrain, transform_10m):
+    """A curvatura tem de enxergar formas de poucas celulas.
+
+    Ate a 1.1.2 as segundas derivadas puras saiam de duas diferencas centrais
+    encadeadas, o que as avaliava no passo 2h: numa onda de quatro celulas isso
+    preservava cerca de 40% da amplitude verdadeira, contra 81% do estencil de
+    tres pontos. Esporoes, cabeceiras e colos vivem justamente nessa escala, e
+    sao eles que decidem por onde uma trilha passa.
+
+    Nenhum teste de superficie quadratica podia detectar isso, porque a segunda
+    derivada de um polinomio de grau dois e exata em qualquer passo -- e por
+    isso este teste usa uma senoide, onde a atenuacao aparece.
+
+    A senoide vai sobre uma rampa suave de proposito: exatamente no cume de uma
+    crista o gradiente e nulo, a curvatura de perfil e indefinida e o codigo
+    devolve zero. A rampa tira a superficie dessa singularidade sem alterar as
+    segundas derivadas, que sao as que estao sendo medidas.
+    """
+    rows = cols = 81
+    h = 10.0
+    declive = 0.05
+    y, x = np.mgrid[0:rows, 0:cols].astype(np.float64)
+    coluna = (x - cols // 2) * h
+
+    # Comprimentos em que a amostragem cai sobre a crista: em 6 celulas o ponto
+    # mais proximo do cume fica 30 graus fora de fase e o maximo amostrado
+    # subestima o real, o que mediria a fase e nao o estimador.
+    for comprimento_em_celulas, minimo in ((4, 0.75), (8, 0.92), (12, 0.96)):
+        k = 2.0 * np.pi / (comprimento_em_celulas * h)
+        superficie = declive * coluna + 10.0 * np.sin(k * coluna)
+        _plan, profile = terrain.curvatures_from_dem(superficie, transform_10m)
+        teorico = (k ** 2) * 10.0 / (1.0 + declive ** 2) ** 1.5
+        miolo = slice(20, -20)
+        obtido = float(np.nanmax(np.abs(profile[miolo, miolo])))
+        preservado = obtido / teorico
+        assert preservado > minimo, (
+            f"onda de {comprimento_em_celulas} celulas: preservou "
+            f"{preservado:.2f} da amplitude, abaixo de {minimo}")
