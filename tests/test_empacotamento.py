@@ -59,7 +59,7 @@ def test_o_zip_nao_leva_cache_nem_suites_nem_ferramentas(tmp_path):
     assert not lixo, lixo
 
     publicadas = {nome.split("/")[1] for nome in nomes}
-    for pasta in ("tests", "integracao", ".github", "validation", "tools"):
+    for pasta in ("tests", "integracao", ".github", "validation", "tools", "exemplo"):
         assert pasta not in publicadas, pasta
 
     # o que o usuario precisa continua la

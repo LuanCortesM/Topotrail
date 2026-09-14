@@ -67,6 +67,15 @@ _restore*/
 *.aux.xml
 *.ovr
 
+# O exemplo reprodutivel e a excecao das regras acima: o MDE sintetico e os
+# tres pontos sao versionados de proposito -- sem eles nao ha exemplo -- e as
+# saidas da execucao, que sao regeneraveis, continuam fora.
+!exemplo/mde.tif
+!exemplo/origem.geojson
+!exemplo/destino.geojson
+!exemplo/intermediario.geojson
+exemplo/saida/
+
 # Local databases and dumps
 *.sqlite
 *.sqlite3

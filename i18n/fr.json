@@ -166,7 +166,7 @@
   "note_review": "Vérifiez les produits avant d'exécuter",
   "note_tuning": "Valeurs prudentes — déclarez celles que vous utilisez",
   "o_risk": "Carte de risque topographique relatif",
-  "o_risk_help": "Le complément de l'aptitude, pour lire directement où le terrain est le plus défavorable.",
+  "o_risk_help": "Pente et courbures combinées à 0,75 et 0,25, pour lire directement où le terrain est le plus défavorable. Ce n'est pas l'inverse de l'aptitude.",
   "o_route": "Itinéraire entre points et corridor d'accès",
   "o_route_help": "Chemin de moindre coût entre l'origine et la destination, en passant où vous voulez.",
   "o_route_tip": "Utilisez les destinations intermédiaires pour enchaîner des objectifs : gravir un sommet, puis un autre, passer par un point d'échantillonnage, puis redescendre.",

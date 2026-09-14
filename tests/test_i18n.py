@@ -146,6 +146,49 @@ def test_the_transitability_legend_is_translated_too():
     assert "labels=_class_labels()" in source
 
 
+def _nome_da_classe(rotulo):
+    """"4 - Muito forte (60-100%)" -> "Muito forte".
+
+    O parêntese pode ser o de meia largura ou o de largura inteira, que é o que
+    o chinês e o japonês usam.
+    """
+    return re.split(r"[(（]", rotulo.split("-", 1)[1])[0].strip()
+
+
+@pytest.mark.parametrize("code", ["pt", "en", "es", "fr", "zh", "ja"])
+def test_the_five_transitability_classes_have_distinct_names(code):
+    """Duas classes com o mesmo nome fazem um mapa ilegível, e aconteceu.
+
+    Em inglês as classes 4 e 5 chamavam-se ambas "Very steep": o GeoTIFF saía
+    com duas categorias homônimas e a legenda gravada contradizia a que o
+    próprio código monta em `CLASS_LABELS_EN`. É o idioma da publicação, e é o
+    idioma em que ninguém da equipe olha a legenda.
+    """
+    data = _load(code)
+    nomes = [_nome_da_classe(data[f"class_{numero}"]) for numero in range(1, 6)]
+    assert len(set(nomes)) == 5, f"{code}: classes com nomes repetidos: {nomes}"
+
+
+def test_the_labels_match_the_published_class_table():
+    """Os rótulos são os da tabela publicada; o i18n é a fonte única deles.
+
+    O README descrevia uma nomenclatura própria ("Walkable", "Not walkable"),
+    falsificada pelos dados de campo, e o inglês do i18n uma terceira. Aqui
+    ficam presos o português -- que é o do capítulo e o da reserva em
+    `transitability.CLASS_LABELS` -- e o inglês.
+    """
+    esperado = {
+        "pt": ["Suave", "Moderada", "Forte", "Muito forte", "Escarpada"],
+        "en": ["Gentle", "Moderate", "Steep", "Very steep", "Escarpment"],
+    }
+    for code, nomes in esperado.items():
+        data = _load(code)
+        for indice, nome in enumerate(nomes, start=1):
+            rotulo = data[f"class_{indice}"]
+            assert nome == _nome_da_classe(rotulo), (
+                f"{code}/class_{indice}: esperado {nome!r}, encontrado {rotulo!r}")
+
+
 def test_no_label_is_clipped_in_any_language():
     """Nenhum rótulo pode ficar cortado, em nenhum dos seis idiomas.
 

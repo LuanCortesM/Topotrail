@@ -2106,10 +2106,10 @@ def save_transitability_raster(classes, transform, proj, output_path, feedback=N
         table.SetColorEntry(int(code), tuple(int(c) for c in colour))
     band.SetRasterColorTable(table)
     band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
-    # Aviso sobre onde a legenda fica: o GeoTIFF nao tem lugar padrao para
-    # nomes de categoria, entao o GDAL os grava num arquivo irmao .aux.xml. O
-    # QGIS le e mostra corretamente, mas quem enviar apenas o .tif a outra
-    # pessoa perde a legenda -- envie os dois arquivos juntos.
+    # Onde a legenda fica: o GeoTIFF nao tem lugar padrao para nomes de
+    # categoria, entao o GDAL os grava num arquivo irmao .aux.xml, que e o que o
+    # QGIS le para montar a legenda. Por isso os mesmos rotulos vao tambem como
+    # metadado GDAL, logo abaixo -- esse sim dentro do .tif.
     # Os rotulos vem de quem classificou, ja preenchidos com os limites que a
     # execucao usou. Antes esta linha chamava _class_labels() de novo e gravava
     # sempre os limites de fabrica: medido com TRANSITABILITY_BREAKS = 2,4,6,8,
@@ -2117,6 +2117,15 @@ def save_transitability_raster(classes, transform, proj, output_path, feedback=N
     # "1 - Suave (< 20%)".
     rotulos = labels or format_class_labels(_class_labels())
     band.SetCategoryNames([""] + [rotulos[code] for code in sorted(rotulos)])
+    # SetCategoryNames nao entra no TIFF: o driver GTiff grava os nomes de
+    # categoria num arquivo .aux.xml ao lado, e quem enviasse so o .tif perdia a
+    # legenda -- ficava com as cores certas e sem saber o que cada uma significa.
+    # Os mesmos rotulos vao tambem como metadado GDAL, que o GTiff guarda DENTRO
+    # do arquivo, na etiqueta GDAL_METADATA. Assim o .tif viaja sozinho e ainda
+    # diz o que significa, em qualquer leitor que mostre metadados.
+    band.SetMetadata({
+        "TOPOTRAIL_CLASSE_{}".format(code): rotulos[code] for code in sorted(rotulos)
+    })
     band.SetNoDataValue(0)
     band.WriteArray(classes.astype(np.uint8))
     band.FlushCache()
@@ -3251,10 +3260,11 @@ def _qgs_enum(cls, group, value):
 def _class_labels():
     """Rotulos das classes de transitabilidade no idioma em vigor.
 
-    Eles nao ficam so na tela: vao gravados na legenda do proprio GeoTIFF, via
-    SetCategoryNames. Sem isto, um usuario japones abria o raster no QGIS e via
-    a legenda em portugues -- e o arquivo continuaria assim depois de enviado a
-    outra pessoa, porque o rotulo esta dentro dele.
+    Eles nao ficam so na tela: vao gravados no proprio GeoTIFF, como nomes de
+    categoria (que o QGIS le, pelo arquivo .aux.xml que o driver escreve ao lado)
+    e como metadado GDAL, que fica dentro do .tif. Sem isto, um usuario japones
+    abria o raster no QGIS e via a legenda em portugues -- e o arquivo
+    continuaria assim depois de enviado a outra pessoa.
     """
     try:
         from ..ui import i18n

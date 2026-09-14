@@ -166,7 +166,7 @@
   "note_review": "Revise os produtos antes de executar",
   "note_tuning": "Padrões conservadores — declare os que usar",
   "o_risk": "Mapa de risco topográfico relativo",
-  "o_risk_help": "O complemento da adequabilidade, para ler direto onde o terreno é mais desfavorável.",
+  "o_risk_help": "Declividade e curvaturas combinadas em 0,75 e 0,25, para ler direto onde o terreno é mais desfavorável. Não é o inverso da adequabilidade.",
   "o_route": "Rota entre pontos e corredor de acesso",
   "o_route_help": "Caminho de menor custo entre a origem e o destino, passando por onde você quiser.",
   "o_route_tip": "Use os destinos intermediários para encadear objetivos: subir um cume, depois outro, passar por um ponto de coleta, então descer.",

@@ -166,7 +166,7 @@
   "note_review": "Revise los productos antes de ejecutar",
   "note_tuning": "Valores conservadores — declare los que use",
   "o_risk": "Mapa de riesgo topográfico relativo",
-  "o_risk_help": "El complemento de la aptitud, para leer directamente dónde el terreno es más desfavorable.",
+  "o_risk_help": "Pendiente y curvaturas combinadas en 0,75 y 0,25, para leer directamente dónde el terreno es más desfavorable. No es el inverso de la aptitud.",
   "o_route": "Ruta entre puntos y corredor de acceso",
   "o_route_help": "Camino de menor coste entre el origen y el destino, pasando por donde usted quiera.",
   "o_route_tip": "Use los destinos intermedios para encadenar objetivos: subir una cumbre, luego otra, pasar por un punto de muestreo y después bajar.",

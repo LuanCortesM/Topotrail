@@ -1,5 +1,24 @@
 # TOPO_TRAIL_METHODOLOGICAL_AUDIT.md
 
+> ## Provenance — read this before reading the body
+>
+> **This document audits TopoTrail version 0.5.0.** It was written on
+> **2026-05-21** (commit `d0a3212`), when `metadata.txt` declared `version=0.5.0`;
+> it was moved from the repository root into `docs/` on 2026-09-03 (`f17380a`)
+> and its body has not been changed since it was written.
+>
+> It is kept **as a record**, not as a description of the current software. Its
+> statements were true of 0.5.0 and several of them are no longer true of the
+> shipped version: in particular, this document describes a route algorithm that
+> is isotropic and a workflow in which slope and both curvatures are mandatory
+> user-supplied rasters. **Neither is the case any more.** Section 9, at the end,
+> says item by item what was implemented and in which version.
+>
+> For what the software does **today**, read
+> [`METODOLOGIA_TOPOtrail.md`](METODOLOGIA_TOPOtrail.md) (formulas and named
+> constants, for version 1.3.0) and [`VALIDACAO.md`](VALIDACAO.md) (what field
+> GPS tracks said about the empirical constants).
+
 ## 1. Executive Summary
 
 The four external methodological criticisms are technically relevant, but they do not have the same severity.
@@ -185,3 +204,40 @@ O TopoTrail deve ser interpretado como uma ferramenta preliminar de avaliacao to
 Current methodological status: suitable for publication as a preliminary tool with explicit limitations.
 
 Rationale: the main workflow is coherent for topographic multicriteria analysis. It validates and aligns rasters, generates suitability, relative risk, potential access zones, routes and corridors, and includes diagnostic logging for traceability. The external criticisms do not reveal a fatal bug, but they identify real limitations that should be explicit in the manuscript, README and methodology documentation. The previously identified legacy helper module with incomplete stubs has been removed from the active plugin tree. A stable or stronger scientific claim about human movement cost would still require derivative recalculation on the final grid and optional anisotropic movement cost.
+
+---
+
+## 9. What happened since (added 2026-09-14, current version 1.3.0)
+
+Everything above is the 0.5.0 record and is left untouched. This section is the
+follow-up: what became of each recommendation, and in which version. The version
+of each item was read from `metadata.txt` at the relevant commit, not from
+memory.
+
+The two closing sentences of section 8 are the ones to revisit first — **both of
+the "would still require" items were done**, in 0.6.0 and 0.6.1 respectively.
+
+| # | Recommendation (section) | Status | Version | Evidence |
+|---|---|---|---|---|
+| 1 | Optionally recalculate slope and curvature from the prepared DEM (§2, §6) | **Done, and it is now the default** | **0.6.0** | `DERIVE_FROM_DEM` defaults to true; `processing/terrain.py` derives slope and both curvatures on the projected metric working grid, so they are aligned by construction. User-supplied rasters became *optional* inputs. Bilinear alignment still exists, but only for the user who chooses to supply his own. |
+| 2 | Optional anisotropic route mode, Tobler-inspired, keeping the isotropic mode (§3, §6) | **Done** | model added in **0.6.1**; default of the four-step window since **0.9.0**; default of the Processing toolbox since **1.2.0** | `ROUTE_COST_TOBLER`; the step cost is Tobler's hiking function and the accumulated cost is in hours. The two isotropic models (inverse, exponential) remain selectable. Section 3 of this document therefore no longer describes the default path. |
+| 3 | Keep the mathematical constants as named constants and document them (§4, §6) | **Done** | named by **0.6.x**, documented in **1.3.0** | All of them are module constants: `ROUTE_COST_EPSILON`, `SLOPE_RISK_EXPONENT`, `RISK_SLOPE_WEIGHT`, `RISK_CURVATURE_WEIGHT`, `CURVATURE_RISK_PERCENTILE`, `CURVATURE_SCORE_FLOOR`, `CURVATURE_DEVIATION_PERCENTILE`, `MAX_ROUTE_CROP_CELLS`, `NEAREST_VALID_CELL_RADIUS`, `MIN_ALTITUDE_BAND_SIZE_M`. Each is listed with its value and its role in `METODOLOGIA_TOPOtrail.md`. |
+| 4 | `processing/route_scenarios.py` presets should be documented as presets, not thresholds (§4) | **Moot — the module was removed** | **0.12.2** | Commit `cc52ecb`: 902 lines no import ever reached. That row of the §4 table no longer refers to anything. |
+| 5 | Document that the least-cost route is isotropic (§6) | **Superseded by item 2** | — | The documentation now describes the anisotropic default. The claim survived in this document, in the Portuguese README and in the user guide until 2026-09; those were corrected, and this document was given the header above instead of being rewritten. |
+| 6 | Keep the active tree free of legacy modules with TODO stubs (§5, §6) | **Done, and now enforced** | `tests/test_source_hygiene.py` from **0.5.1**, and its checks grew since | That file fails the build on orphan interface files, on module-level imports of anything QGIS does not ship (added in **0.13.0**) and on `except: pass` (added in **1.1.1**, because the QGIS plugin repository's Bandit scan blocks a release on it). |
+| 7 | Build publication packages without test folders, backups, logs, caches (§6) | **Done** | **1.3.0** | `tools/empacotar.py` builds the ZIP from `git archive HEAD` minus the development directories; `tests/test_empacotamento.py` fails if a cache or a test folder reappears, and checks the package is byte-reproducible. |
+| 8 | Automated tests for reversed origin/destination routes (§6) | **Done** | **0.7.0** | `tests/test_routing_math.py::test_anisotropic_route_is_direction_dependent` asserts uphill costs more than downhill on the same terrain, and pins the ratio to the closed-form `exp(2·3.5·0.05)`. |
+| 9 | Advanced presets for risk weighting and route-cost stabilisation (§6) | **Partly** | **0.6.0–0.6.1** | The cost model and its contrast `k` are user parameters (`ROUTE_COST_MODEL`, `ROUTE_CONTRAST`). The risk weights and the slope-risk exponent are still internal named constants — documented, but deliberately not exposed, for the reason §4 gives. |
+| 10 | Explain the constants in the scientific article (§4, §6) | **Done, and they were also measured** | **0.7.0**, **0.8.0** | Five of them were confronted with 224 km of field GPS tracks; `VALIDACAO.md` records what held, what did not, and what remains undetermined — including that the maximum walking speed does not change the route at all, and that the terrain-slowdown magnitude is not resolvable with seven tracks. |
+| 11 | Suggested methodological-limitations text (§7) | **Superseded** | — | The current text lives in the README, in `METODOLOGIA_TOPOtrail.md` and in `USUARIO_TOPOtrail.md`. The §7 paragraph describes 0.5.0 and should not be quoted for the current version. |
+
+Two further things in the body are now factually out of date, and are recorded
+here rather than edited above:
+
+* §2 says the algorithm **requires** four raster inputs. Since 0.6.0 it requires
+  one, the DEM.
+* §2 refers to `calculate_slope_degrees` and `calculate_curvature_arrays`. Those
+  functions are gone; `processing/terrain.py` has `slope_percent_from_dem` and
+  `curvatures_from_dem`, and **slope is expressed in percent, not degrees**.
+  The plan curvature also changed in 1.3.0, from the contour curvature of Moore
+  et al. (1991) to the tangential curvature of Mitášová & Hofierka (1993).

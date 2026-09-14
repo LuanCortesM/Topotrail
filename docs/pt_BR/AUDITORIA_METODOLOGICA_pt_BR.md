@@ -2,6 +2,25 @@
 
 > Copia de referencia em portugues de [`docs/METHODOLOGICAL_AUDIT.md`](../METHODOLOGICAL_AUDIT.md).
 
+> ## Proveniência — leia antes do corpo do documento
+>
+> **Este documento audita a versão 0.5.0 do TopoTrail.** Foi escrito em
+> **21/05/2026** (commit `d0a3212`), quando o `metadata.txt` declarava
+> `version=0.5.0`; foi movido da raiz do repositório para `docs/` em 03/09/2026
+> (`f17380a`) e o seu corpo não é alterado desde que foi escrito.
+>
+> Ele é mantido **como registro**, e não como descrição do software atual. As
+> suas afirmações eram verdadeiras na 0.5.0 e várias já não são verdadeiras na
+> versão publicada: em particular, este documento descreve um algoritmo de rota
+> isotrópico e um fluxo em que declividade e as duas curvaturas são rasters
+> obrigatórios fornecidos pelo usuário. **Nenhum dos dois é o caso hoje.** A
+> seção 9, ao final, diz item a item o que foi implementado e em que versão.
+>
+> Para o que o software faz **hoje**, leia
+> [`METODOLOGIA_TOPOtrail_pt_BR.md`](METODOLOGIA_TOPOtrail_pt_BR.md) (fórmulas e
+> constantes nomeadas, para a versão 1.3.0) e [`../VALIDACAO.md`](../VALIDACAO.md)
+> (o que os trajetos de GPS de campo disseram sobre as constantes empíricas).
+
 ## 1. Resumo executivo
 
 As quatro criticas recebidas sao tecnicamente relevantes, mas nao têm o mesmo peso.
@@ -194,3 +213,42 @@ TopoTrail should be interpreted as a preliminary topographic assessment tool for
 Estado metodologico atual: adequado para publicacao como ferramenta preliminar com limitacoes explicitas.
 
 Justificativa: o fluxo principal e coerente para analise multicriterio topografica, valida/alinha rasters, gera adequabilidade, risco, zonas, rota e corredor, e possui logs suficientes para rastreabilidade. As criticas nao indicam bug fatal, mas apontam limitacoes reais que precisam estar claras no artigo, README e documentacao metodologica. O modulo legado com stubs incompletos identificado anteriormente foi removido da arvore ativa do plugin. Para uma versao estavel ou uma afirmacao cientifica mais forte sobre custo de deslocamento humano, ainda seriam necessarios recalcullos de derivados no grid final e custo anisotropico opcional.
+
+
+---
+
+## 9. O que aconteceu depois (acrescentado em 14/09/2026, versão corrente 1.3.0)
+
+Tudo acima é o registro da 0.5.0 e fica intocado. Esta seção é o
+acompanhamento: o que foi feito de cada recomendação, e em que versão. A versão
+de cada item foi lida no `metadata.txt` do commit correspondente, e não de
+memória.
+
+As duas frases finais da seção 8 são as primeiras a rever — **os dois itens do
+"ainda seriam necessários" foram feitos**, na 0.6.0 e na 0.6.1 respectivamente.
+
+| # | Recomendação (seção) | Situação | Versão | Evidência |
+|---|---|---|---|---|
+| 1 | Recalcular opcionalmente declividade e curvaturas a partir do MDE preparado (§2, §6) | **Feito, e hoje é o padrão** | **0.6.0** | `DERIVE_FROM_DEM` vale verdadeiro por padrão; `processing/terrain.py` deriva declividade e as duas curvaturas na grade métrica de trabalho, já projetada, de modo que ficam alinhadas por construção. Os rasters do usuário passaram a ser entradas *opcionais*. O alinhamento bilinear continua existindo, mas só para quem escolhe fornecer os seus. |
+| 2 | Modo de rota anisotrópico opcional, inspirado em Tobler, preservando o isotrópico (§3, §6) | **Feito** | modelo acrescentado na **0.6.1**; padrão da janela de quatro etapas desde a **0.9.0**; padrão da caixa de ferramentas do Processing desde a **1.2.0** | `ROUTE_COST_TOBLER`; o custo do passo é a função de caminhada de Tobler e o custo acumulado sai em horas. Os dois modelos isotrópicos (inverso e exponencial) continuam selecionáveis. A seção 3 deste documento, portanto, já não descreve o caminho padrão. |
+| 3 | Manter as constantes matemáticas como constantes nomeadas e documentá-las (§4, §6) | **Feito** | nomeadas até a **0.6.x**, documentadas na **1.3.0** | Todas são constantes de módulo: `ROUTE_COST_EPSILON`, `SLOPE_RISK_EXPONENT`, `RISK_SLOPE_WEIGHT`, `RISK_CURVATURE_WEIGHT`, `CURVATURE_RISK_PERCENTILE`, `CURVATURE_SCORE_FLOOR`, `CURVATURE_DEVIATION_PERCENTILE`, `MAX_ROUTE_CROP_CELLS`, `NEAREST_VALID_CELL_RADIUS`, `MIN_ALTITUDE_BAND_SIZE_M`. Cada uma aparece com o seu valor e o seu papel em `METODOLOGIA_TOPOtrail_pt_BR.md`. |
+| 4 | Documentar os presets de `processing/route_scenarios.py` como presets, e não como limiares (§4) | **Sem objeto — o módulo foi removido** | **0.12.2** | Commit `cc52ecb`: 902 linhas que nenhum import alcançava. Aquela linha da tabela da §4 não se refere mais a nada. |
+| 5 | Documentar que a rota de menor custo é isotrópica (§6) | **Superada pelo item 2** | — | A documentação passou a descrever o padrão anisotrópico. A afirmação sobreviveu neste documento, no README em português e no guia do usuário até setembro de 2026; esses foram corrigidos, e este documento recebeu o cabeçalho acima em vez de ser reescrito. |
+| 6 | Manter a árvore ativa livre de módulos legados com stubs de TODO (§5, §6) | **Feito, e hoje cobrado por teste** | `tests/test_source_hygiene.py` desde a **0.5.1**, com verificações acrescentadas depois | Esse arquivo reprova a construção diante de arquivo de interface órfão, de import em nível de módulo de qualquer coisa que o QGIS não garanta (acrescentado na **0.13.0**) e de `except: pass` (acrescentado na **1.1.1**, porque o Bandit do repositório de plugins do QGIS bloqueia a versão por isso). |
+| 7 | Empacotar a publicação sem pastas de teste, backups, logs e caches (§6) | **Feito** | **1.3.0** | `tools/empacotar.py` monta o ZIP a partir de `git archive HEAD` menos os diretórios de desenvolvimento; `tests/test_empacotamento.py` reprova se um cache ou uma pasta de teste voltar, e confere que o pacote é reprodutível byte a byte. |
+| 8 | Testes automatizados para rota com origem e destino invertidos (§6) | **Feito** | **0.7.0** | `tests/test_routing_math.py::test_anisotropic_route_is_direction_dependent` exige que subir custe mais que descer no mesmo terreno, e fixa a razão no valor fechado `exp(2·3,5·0,05)`. |
+| 9 | Presets avançados para ponderação de risco e estabilização do custo de rota (§6) | **Parcialmente** | **0.6.0–0.6.1** | O modelo de custo e o seu contraste `k` são parâmetros do usuário (`ROUTE_COST_MODEL`, `ROUTE_CONTRAST`). Os pesos do risco e o expoente de declividade continuam constantes internas nomeadas — documentadas, mas deliberadamente não expostas, pela razão que a própria §4 dá. |
+| 10 | Explicar as constantes no artigo científico (§4, §6) | **Feito, e elas também foram medidas** | **0.7.0**, **0.8.0** | Cinco delas foram confrontadas com 224 km de trajetos de GPS de campo; o `VALIDACAO.md` registra o que se sustentou, o que não se sustentou e o que continua indeterminado — inclusive que a velocidade máxima não altera a rota, e que a magnitude do retardo por terreno não é resolúvel com sete trilhas. |
+| 11 | Texto sugerido de limitações metodológicas (§7) | **Superado** | — | O texto corrente está no README, em `METODOLOGIA_TOPOtrail_pt_BR.md` e em `USUARIO_TOPOtrail_pt_BR.md`. O parágrafo da §7 descreve a 0.5.0 e não deve ser citado para a versão atual. |
+
+Duas outras coisas do corpo estão hoje factualmente desatualizadas, e ficam
+registradas aqui em vez de editadas acima:
+
+* a §2 diz que o algoritmo **exige** quatro rasters de entrada. Desde a 0.6.0 ele
+  exige um, o MDE.
+* a §2 cita `calculate_slope_degrees` e `calculate_curvature_arrays`. Essas
+  funções não existem mais; o `processing/terrain.py` tem
+  `slope_percent_from_dem` e `curvatures_from_dem`, e **a declividade é expressa
+  em porcentagem, não em graus**. A curvatura horizontal também mudou na 1.3.0,
+  da curvatura de contorno de Moore et al. (1991) para a curvatura tangencial de
+  Mitášová & Hofierka (1993).

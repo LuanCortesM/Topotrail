@@ -160,6 +160,12 @@ print(gdal.__version__, numpy.__version__, scipy.__version__)
 The plugin is also available as a Processing algorithm (`topotrail:topotrail`),
 so it can be scripted or placed in a model.
 
+**If you have no DEM to hand, start with [`exemplo/`](exemplo/README.md).** It
+ships a small synthetic DEM, the origin, destination and an intermediate point,
+a script that runs the whole chain in headless QGIS with all 45 parameters
+written out, and the output values to compare against — route length, walking
+time, accumulated ascent and number of watercourse crossings.
+
 ## Inputs and outputs
 
 **Inputs**
@@ -182,7 +188,7 @@ so it can be scripted or placed in a model.
 |---|---|---|
 | Continuous topographic suitability | `…_adequabilidade.tif` | 0–1 per cell |
 | Relative topographic risk | `…_risco_topografico.tif` | 0–1 per cell |
-| Transitability classes | `…_transitabilidade.tif` | 5 classes, legend and colours in the file, in the active language |
+| Transitability classes | `…_transitabilidade.tif` | 5 classes, legend and colours written into the file, in the active language |
 | Potential access zones | `….gpkg` / `.shp` / `.kml` | polygons with `area_m2`, `area_ha` |
 | Suggested route | `…_rota.gpkg` | `compr_m`, `tempo_h` (Tobler), altitudes, number of legs |
 | Access corridor | `…_corredor.gpkg` | buffer of the route, in metres |
@@ -330,13 +336,27 @@ here, or not?**
 
 `*_transitabilidade.tif` answers it with five absolute classes:
 
-| | class | slope | meaning |
+| | class | slope | what the terrain does |
 |---|---|---|---|
-| 1 | Walkable | < 20% | ordinary walking |
-| 2 | Walkable with effort | 20–35% | steep walking |
-| 3 | Hard, hands needed | 35–60% | occasional scrambling |
-| 4 | Very hard, scrambling | 60–100% | climbing rather than walking |
-| 5 | Not walkable | > 100%, or blocked | rock face, or a constraint set to "avoid" |
+| 1 | Gentle | < 20% | ordinary walking |
+| 2 | Moderate | 20–35% | steep walking |
+| 3 | Steep | 35–60% | occasional scrambling |
+| 4 | Very steep | 60–100% | climbing rather than walking |
+| 5 | Escarpment | > 100%, or blocked | a face, or a constraint set to "avoid" |
+
+**The labels describe the slope, not a verdict on the walker.** An earlier
+version called class 5 "not walkable", and 25 113 GPS fixes on ground that had
+demonstrably been walked falsified that: 5.2% and 6.9% of the two campaigns'
+fixes fall in class 4, and the steepest ground actually walked was 115.8%,
+inside class 5. The thresholds survived — they are defensible slope strata, and
+class 5 really is rare on real tracks — but the wording was rewritten to
+describe steepness, and a test now stops the old claim coming back. The full
+table is in [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
+
+These five names, and only these, are the ones the software uses: they live in
+`i18n/*.json`, in all six languages, and that is the single source. They are
+what the legend beside the output raster says and what the diagnostic log
+records.
 
 Absolute is the point. A class has to mean the same thing in the Mantiqueira
 and in the Andes, or two maps cannot be compared and a field team cannot build
@@ -352,8 +372,16 @@ absolute ruggedness depends on DEM resolution and TWI on basin size, so a fixed
 threshold for them would not transfer. The class the legend promises stays
 absolute.
 
-The palette and the category labels are written into the GeoTIFF, so the map
-opens in QGIS already readable instead of as a grey ramp from 0 to 5.
+The palette and the class labels are written into the output in the active
+language, so the map opens in QGIS already readable instead of as a grey ramp
+from 0 to 5. They are written **twice**, on purpose. GeoTIFF has no standard
+place for category names, so GDAL puts them in the `*.tif.aux.xml` written
+beside the raster — that is the copy QGIS reads to build the legend. The same
+five labels also go in as GDAL metadata items, `TOPOTRAIL_CLASSE_1` to
+`TOPOTRAIL_CLASSE_5`, and those live in the `GDAL_METADATA` tag **inside** the
+`.tif`, along with the colour table. So the pair opens with a full legend in
+QGIS, and a `.tif` sent on its own still arrives with its colours and still says
+what each of them means.
 
 ## Walking time instead of an abstract cost
 
@@ -391,11 +419,17 @@ now, and accelerated erosion later, which is the dominant mechanism of trail
 degradation in the literature. On the test area, weighting it at 1.0 moved the
 selected zone from 16.3% to 12.3% and from 638 patches to 869: it discriminates.
 
-**Terrain ruggedness index**, the mean absolute elevation difference to the
-eight neighbours (Riley et al. 1999), in metres. It is independent of slope,
-which is the point: it separates a smooth grassy hillside from a boulder field
-at the same average inclination — the thing that actually decides whether you
-can walk there, and the thing slope alone cannot see.
+**Terrain ruggedness**, as the Vector Ruggedness Measure (Sappington et al.
+2007): each cell becomes the unit vector normal to the surface, the 3×3
+neighbourhood's vectors are summed, and the index is one minus the modulus of
+the resultant over the number of normals. Dimensionless, in [0, 1], and **zero
+on a plane however steep it is** — that decoupling from slope is the point,
+because it separates a smooth grassy hillside from a boulder field at the same
+average inclination, which slope alone cannot see. The older Terrain Ruggedness
+Index (Riley et al. 1999), the mean absolute elevation difference to the eight
+neighbours in metres, is also implemented and is *not* what the model uses: TRI
+is not slope-independent — on a perfectly smooth 80% ramp it reads 6.00 m
+against 3.36 m on a noisy surface averaging 27%.
 
 ## How the model works
 
@@ -452,9 +486,11 @@ is only to reach a point, disabling vector-zone generation speeds processing up
 considerably.
 
 Full formulas, the named empirical constants and the normalisation rules are in
-[`docs/METODOLOGIA_TOPOtrail.md`](docs/METODOLOGIA_TOPOtrail.md), and the
-critical review of those choices is in
-[`docs/METHODOLOGICAL_AUDIT.md`](docs/METHODOLOGICAL_AUDIT.md).
+[`docs/METODOLOGIA_TOPOtrail.md`](docs/METODOLOGIA_TOPOtrail.md), which describes
+version 1.3.0. The published critical review of those choices,
+[`docs/METHODOLOGICAL_AUDIT.md`](docs/METHODOLOGICAL_AUDIT.md), audited **version
+0.5.0** and is kept as a dated record; its closing section says which of its
+recommendations were implemented and when.
 
 ## Methodological limitations
 
@@ -506,9 +542,12 @@ relative cells within each elevation band.
 
 | Document | Contents |
 |---|---|
+| [`exemplo/README.md`](exemplo/README.md) | A worked example you can run: small synthetic DEM, three points, one script, and the output values to check against |
 | [`docs/USUARIO_TOPOtrail.md`](docs/USUARIO_TOPOtrail.md) | Step-by-step user guide |
 | [`docs/METODOLOGIA_TOPOtrail.md`](docs/METODOLOGIA_TOPOtrail.md) | Formulas, constants, normalisation |
-| [`docs/METHODOLOGICAL_AUDIT.md`](docs/METHODOLOGICAL_AUDIT.md) | Critical review of the modelling choices |
+| [`docs/METHODOLOGICAL_AUDIT.md`](docs/METHODOLOGICAL_AUDIT.md) | Critical review of the modelling choices — audits version 0.5.0, kept as a record, with a closing section on what was implemented since |
+| [`docs/VALIDACAO.md`](docs/VALIDACAO.md) | What field GPS tracks said about the empirical constants, with the plugin version behind each figure |
+| [`tests/README.md`](tests/README.md) | The two test suites, why they are two, and how to run each |
 | [`docs/qgis4/`](docs/qgis4) | QGIS 4 / Qt6 migration notes and manual checklist |
 | [`docs/pt_BR/`](docs/pt_BR) | Portuguese reference copies of all of the above |
 
@@ -535,10 +574,12 @@ Every release is archived on Zenodo. Cite the version you used:
 > suitability and least-cost route planning* (version 1.1.2) [Computer
 > software]. Zenodo. https://doi.org/10.5281/zenodo.22399472
 
-The concept DOI [10.5281/zenodo.20295565](https://doi.org/10.5281/zenodo.20295565)
-always resolves to the latest archived version. Machine-readable metadata is in
-[`CITATION.cff`](CITATION.cff); GitHub renders a ready-made citation from it in
-the sidebar.
+**That version DOI is 1.1.2's**, which is the most recent archive: 1.3.0 has no
+published release yet, so it has no version DOI of its own. The concept DOI
+[10.5281/zenodo.20295565](https://doi.org/10.5281/zenodo.20295565) always
+resolves to the latest archived version. Machine-readable metadata is in
+[`CITATION.cff`](CITATION.cff), which records that pendency explicitly; GitHub
+renders a ready-made citation from it in the sidebar.
 
 ```bibtex
 @software{maciel_topotrail_2026,
@@ -600,6 +641,18 @@ and every parameter used.
 The full, per-version changelog lives in [`metadata.txt`](metadata.txt) and is
 what the QGIS plugin repository shows. In short:
 
+- **1.3.0** — Corrections from six independent audits of the code and of the
+  chapter describing it: a diagonal A\* step now exists only where there is room
+  to pass outside it (the route used to slip through the vertex between two
+  impassable cells, and diagonal drainage crossings were free and unlisted);
+  plan curvature moves from Moore et al.'s contour curvature, which diverges on
+  flat ground, to Mitášová & Hofierka's tangential curvature; writing an output
+  into an existing GeoPackage no longer deletes the file; and a series of
+  silences the audit measured are now spoken.
+- **1.2.0** — Accumulated climb now sums the ascents instead of reporting the
+  range to the highest point; the diagnostic log records the cost model actually
+  used and all seven weights; memory ceiling for large DEMs; the Processing
+  toolbox now opens on the walking-time cost model.
 - **1.1.x** — Graded river crossings by contributing area, with a crossings
   layer; repository-scanner hygiene (Bandit, Flake8, Qt6 enum check).
 - **1.0.0** — First stable release after an end-to-end battery on three regions;

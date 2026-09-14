@@ -7,6 +7,35 @@ função de Tobler, os limites de classe de transitabilidade e o fator de
 penalidade das restrições. O que segue é o que os dados de campo mostraram —
 inclusive onde contrariaram o que o próprio plugin afirmava.
 
+## 0. Proveniência dos números deste documento
+
+**Leia esta seção antes de comparar qualquer número daqui com outro texto do
+projeto.** Este é o registro de uma campanha de calibração, e não uma tabela de
+resultados correntes: cada número é a evidência que justificou uma constante **na
+versão em que a decisão foi tomada**. As versões são estas, e saem do histórico
+do próprio repositório:
+
+| Seções | Versão do plugin que as produziu | Commit |
+|---|---|---|
+| 1 a 5, 5b, 6, 6b, 6c | **0.7.0** | `729e2e5`, `83245bf` |
+| 8 (8.1 a 8.4), 9, 10 | **0.8.0** | `90a83b4` |
+
+**Os números não foram atualizados para a 1.3.0, e a escolha é deliberada.** Duas
+razões. A primeira é que substituí-los apagaria a trilha de auditoria: a
+justificativa de uma constante é a medida que existia quando ela foi escolhida, e
+um documento que só mostra o valor de hoje não permite verificar o raciocínio. A
+segunda é que eles não podem ser refeitos aqui: dependem dos trajetos de GPS de
+campo, que não são redistribuídos com o código por conterem localidades de
+ocorrência de espécies, de modo que reescrevê-los com números de outra execução
+seria apresentar como medida algo que este documento não mediu.
+
+O que mudou desde então, e por quê: a versão **1.3.0** trocou a curvatura de
+contorno pela curvatura tangencial e passou a exigir passagem por fora do passo
+diagonal, e as duas correções **alteram resultados numéricos**. Onde a travessia
+Marins–Itaguaré aparece abaixo — seções 5b.2 e 9 —, os valores correntes da
+execução canônica da 1.3.0 estão registrados ao lado dos históricos, com esta
+marca: **[1.3.0]**. Os números do capítulo da dissertação são os da 1.3.0.
+
 ## 1. Dados
 
 Onze trajetos de GPS cedidos pelo autor, registrados em levantamento de campo
@@ -46,6 +75,8 @@ herpetológica, parar para manejar um animal não é caminhar devagar, é não
 caminhar.
 
 ## 3. Resultado: a função de Tobler
+
+> Proveniência: números medidos na versão **0.7.0** do plugin. Ver a seção 0.
 
 Ajuste de `W = vmax · exp(−decay · |S + ótimo|)` por mínimos quadrados no
 logaritmo da velocidade, caatinga, 270 janelas de 180 m, excluído o trecho de
@@ -128,6 +159,8 @@ apresentá-la como tal.
 
 ## 5. Resultado: as classes de transitabilidade
 
+> Proveniência: números medidos na versão **0.7.0** do plugin. Ver a seção 0.
+
 Classes atribuídas a 28.567 fixos de GPS sobre terreno comprovadamente
 percorrido a pé:
 
@@ -152,6 +185,8 @@ consegue passar: "1 – Suave (< 20%)" … "5 – Escarpada (> 100%)". Fixado em
 `test_the_labels_do_not_claim_a_verdict_about_the_walker`.
 
 ## 5b. Resultado: a geometria das rotas
+
+> Proveniência: números medidos na versão **0.7.0** do plugin. Ver a seção 0.
 
 A pergunta que faltava: a rota que o plugin desenha passa por onde as pessoas
 passam? Critério de Goodchild & Hunter (1997) — proporção da trilha real que cai
@@ -185,6 +220,11 @@ amostragem, parte é que o modelo não conhece o que há sob os pés.
 
 ### 5b.2 O caso em que o plugin perde: travessia Marins–Itaguaré
 
+> **Proveniência: versão 0.7.0.** Valores históricos. A conclusão desta seção —
+> que a rota modelada é mensuravelmente mais fácil, e que a discordância é de
+> objetivo e não de modelo — continua valendo na 1.3.0; os números da tabela não
+> são os dela. Os correntes estão marcados **[1.3.0]** na seção 9.
+
 | | comprimento | sinuosidade | concord. <250 m | desvio mediano | cume | subida acumulada | adequab. média |
 |---|---|---|---|---|---|---|---|
 | Trilha real | 21,66 km | 2,43 | — | — | 2.398 m | 2.180 m | 0,643 |
@@ -209,6 +249,8 @@ ser uma limitação declarada, não uma suposição.
 
 ## 6. Resultado: cursos d'água não são evitados
 
+> Proveniência: números medidos na versão **0.7.0** do plugin. Ver a seção 0.
+
 `CONSTRAINT_PENALTY_FACTOR = 8,0` supõe que atravessar drenagem é custoso e que
 as pessoas desviam. Teste de preferência revelada: cruzamentos de canal por km
 na trilha real contra a linha reta entre os mesmos extremos, 7 trajetos, 61,5 km.
@@ -231,6 +273,8 @@ que este tipo de usuário quer visitar.
 
 ## 6b. Resultado: dependência de resolução
 
+> Proveniência: números medidos na versão **0.7.0** do plugin. Ver a seção 0.
+
 Mesmo terreno da Mantiqueira, variando apenas o tamanho da célula:
 
 | Célula | Declividade mediana | Classe 1 | Classe 4 |
@@ -251,6 +295,8 @@ interpretável sem o tamanho da célula ao lado**, e isso vale para qualquer
 seção de métodos que os cite.
 
 ## 6c. Resultado: o retardo por terreno não prevê ritmo
+
+> Proveniência: números medidos na versão **0.7.0** do plugin. Ver a seção 0.
 
 O modelo afirma que o tempo é `tobler(gradiente) × (1 + 2,0 × (1 − S))`, com S a
 adequabilidade. Em logaritmo isso é linear e o coeficiente é estimável. Ajuste
@@ -283,6 +329,8 @@ a geometria é grande: entre 0 e 2,0 as rotas compartilham 45% das células.
 plugin deve declarar o valor usado.
 
 ## 8. Calibração contra o objetivo certo: a geometria
+
+> Proveniência: números medidos na versão **0.8.0** do plugin. Ver a seção 0.
 
 O estudo da seção 6c calibrou `TERRAIN_SLOWDOWN_MAX` contra **velocidade** e o
 reprovou. A pergunta estava errada. Prever tempo nunca foi função dessa
@@ -358,11 +406,15 @@ vedada, propriedade privada — e não como constante calibrada.
 
 ## 9. Rotas com múltiplos destinos, e o que isso provou
 
+> Proveniência: números medidos na versão **0.8.0** do plugin. Ver a seção 0.
+
 A limitação declarada na seção 5b.2 — o plugin perde para a linha reta na
 travessia Marins–Itaguaré porque modela acesso e não travessia de cumes — era
 uma hipótese sobre a causa. Com destinos intermediários implementados, ela pôde
 ser testada: se a explicação estivesse certa, declarar os cumes deveria
 recuperar a concordância; se fosse defeito do modelo, não deveria.
+
+**Versão 0.8.0** (histórico):
 
 | | km | <60 m | <150 m | <250 m | <500 m | desvio mediano | cume | subida |
 |---|---|---|---|---|---|---|---|---|
@@ -376,6 +428,25 @@ recuperar a concordância; se fosse defeito do modelo, não deveria.
 O desvio mediano cai de **1.860 m para 114 m** — dezesseis vezes — e a rota passa
 a bater a linha reta com folga (73,0% contra 25,3%). **A hipótese da seção 5b.2
 fica confirmada**: o modelo não errava, o objetivo é que estava subespecificado.
+
+**[1.3.0]** A mesma progressão, refeita na execução canônica da versão corrente,
+com a curvatura tangencial e a regra do passo diagonal. A conclusão é a mesma e
+mais forte; os números não são os de cima:
+
+| | km | <60 m | <150 m | <250 m | <500 m | desvio mediano | cume | subida |
+|---|---|---|---|---|---|---|---|---|
+| Linha reta (controle) | 8,92 | 7,0% | 19,2% | 25,2% | 42,4% | 643 m | 2.200 m | 1.319 m |
+| Plugin, só origem e destino | 10,94 | 0,7% | 1,7% | 2,7% | 11,1% | 1.824 m | 1.678 m | 671 m |
+| Plugin + Marins | 12,04 | 20,9% | 40,7% | 62,5% | 69,3% | 181 m | 2.389 m | 1.294 m |
+| Plugin + Marins, Marinzinho | 12,25 | 27,7% | 45,4% | 62,5% | 69,3% | 173 m | 2.389 m | 1.314 m |
+| **Plugin + os três cumes** | 13,86 | **47,7%** | **74,4%** | **88,8%** | **97,8%** | **66,5 m** | 2.389 m | 1.404 m |
+| Trilha real | 21,66 | — | — | — | — | — | 2.401 m | 1.936 m |
+
+A concordância é a de Goodchild & Hunter (1997) — a proporção da trilha real que
+cai dentro de um buffer em torno da rota modelada. Na 1.3.0 o desvio mediano cai
+de 1.824 m para **66,5 m** e a concordância a 250 m sobe de 2,7% para **88,8%**,
+contra 25,2% da linha reta. São esses os números que o capítulo da dissertação
+reporta, e é a versão 1.3.0 que os reproduz.
 
 Implementação: `multi_leg_route()` encadeia o mesmo A* entre pontos
 consecutivos, o que é ótimo dada a ordem. `optimise_waypoint_order()` resolve a
@@ -409,7 +480,7 @@ Honestidade sobre o que este trabalho *não* resolveu:
   de busca. Generalizar para caminhada recreativa ou para carga militar não é
   legítimo a partir destes dados.
 
-## 8. Reprodutibilidade
+## 11. Reprodutibilidade
 
 Os scripts de extração e ajuste estão em `validation/` (`tracks.py`,
 `speed_slope.py`, `run_extract.py`, `fit_tobler.py`, `sensitivity.py`,

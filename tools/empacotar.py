@@ -35,6 +35,10 @@ DIRETORIOS_EXCLUIDOS = (
     ".github",
     "validation",
     "tools",
+    # O exemplo reprodutivel serve a quem le o repositorio, nao a quem instala o
+    # plugin: sao 200 kB de MDE sintetico que o QGIS copiaria para o perfil de
+    # cada usuario sem que nada os lesse.
+    "exemplo",
 )
 
 # Qualquer cache de ferramenta, em qualquer profundidade. Nao deveriam estar

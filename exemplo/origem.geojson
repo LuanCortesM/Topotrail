@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "origem",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::32723" } },
+"features": [
+{ "type": "Feature", "properties": { "nome": "Origem" }, "geometry": { "type": "Point", "coordinates": [ 500900.0, 7491900.0 ] } }
+]
+}

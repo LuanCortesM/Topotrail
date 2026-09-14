@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "destino",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::32723" } },
+"features": [
+{ "type": "Feature", "properties": { "nome": "Destino" }, "geometry": { "type": "Point", "coordinates": [ 508100.0, 7499100.0 ] } }
+]
+}
