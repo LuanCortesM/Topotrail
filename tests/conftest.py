@@ -229,10 +229,3 @@ def transitability():
 def transform_10m():
     """GeoTransform for a 10 m grid: origin (0, 1000), y decreasing."""
     return (0.0, 10.0, 0.0, 1000.0, 0.0, -10.0)
-
-
-def inclined_plane(rows, cols, spacing, slope_ratio, axis="x"):
-    """A perfect plane of known gradient, for closed-form comparison."""
-    y, x = np.mgrid[0:rows, 0:cols].astype(np.float64)
-    distance = (x if axis == "x" else y) * spacing
-    return (distance * slope_ratio).astype(np.float32)

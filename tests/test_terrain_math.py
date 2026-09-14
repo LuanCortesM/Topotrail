@@ -8,7 +8,7 @@ tell a correct implementation from a consistently wrong one.
 import numpy as np
 import pytest
 
-from conftest import inclined_plane
+from apoio import inclined_plane
 
 
 # --------------------------------------------------------------------------

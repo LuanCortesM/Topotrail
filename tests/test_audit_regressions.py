@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import inclined_plane
+from apoio import inclined_plane
 
 
 # ---- 1. borda de nodata --------------------------------------------------

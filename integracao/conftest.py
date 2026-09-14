@@ -20,11 +20,24 @@ import pytest
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+RECADO_SUBSTITUTO = (
+    "esta suite foi coletada no mesmo processo que tests/, que substitui osgeo e "
+    "qgis por dubles em sys.modules e nao da para desfazer isso depois do import. "
+    "Rode-a sozinha: /usr/bin/python3.12 -m pytest integracao -q"
+)
+
+
 def _real(nome):
-    """Importa de verdade, recusando qualquer substituto deixado por outra suite."""
+    """Importa de verdade, recusando qualquer substituto deixado por outra suite.
+
+    Testar contra um duble aqui seria pior que nao testar: foi exatamente num
+    modulo substituido que passou o pior defeito da 1.2.0 -- gravar a saida num
+    GeoPackage existente apagava as camadas do usuario, e no duble
+    GetDriverByName devolve None.
+    """
     modulo = sys.modules.get(nome)
     if modulo is not None and getattr(modulo, "__topotrail_stub__", False):
-        return None
+        pytest.skip("{}: {}".format(nome, RECADO_SUBSTITUTO), allow_module_level=False)
     try:
         return __import__(nome, fromlist=["*"])
     except Exception:
