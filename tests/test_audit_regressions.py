@@ -106,7 +106,7 @@ def test_streams_are_a_cost_for_the_route_not_a_wall(algorithm):
     stream_factor = np.where(stream, 4.0, 1.0)
 
     route_mask, zone_mask, penalty, barrier, _tratamento = algorithm.combine_constraints(
-        valid.copy(), valid.copy(), valid, layer, stream_factor,
+        valid.copy(), valid.copy(), layer, stream_factor,
         algorithm.CONSTRAINT_AVOID)
 
     assert route_mask[:, 2].all(), "a rota tem de poder cruzar o rio"
@@ -132,7 +132,7 @@ def test_a_stream_above_the_fordable_ceiling_is_the_only_stream_that_blocks(algo
     stream_factor = np.ones(shape)
     stream_factor[:, 2] = np.inf              # rio acima do teto declarado
     route_mask, _zone, penalty, barrier, _t = algorithm.combine_constraints(
-        valid.copy(), valid.copy(), valid, None, stream_factor,
+        valid.copy(), valid.copy(), None, stream_factor,
         algorithm.CONSTRAINT_AVOID)
     assert not route_mask[:, 2].any(), "acima do teto a travessia nao e presumida"
     assert barrier[:, 2].all()

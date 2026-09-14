@@ -1123,6 +1123,15 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
     return mask
 
 
+def _cancelado(mensagem):
+    """Excecao de cancelamento, no idioma do Processing quando ele existe."""
+    try:
+        from qgis.core import QgsProcessingException
+        return QgsProcessingException(mensagem)
+    except Exception:
+        return Exception(mensagem)
+
+
 def cost_model_name(cost_model):
     """Nome do modelo de custo para o registro de diagnostico.
 
@@ -1141,12 +1150,11 @@ def cost_model_name(cost_model):
 def build_route_cost(score_array, cost_model, contrast, penalty_mask=None, feedback=None):
     """Converte adequabilidade em custo de deslocamento.
 
-    O modelo inverso, `1/(S + eps)`, e o das versoes 0.5.x. Ele parece dar um
-    contraste de 20:1, mas isso supoe S percorrendo todo o intervalo [0, 1]. Em
-    cena real S fica concentrado no miolo -- numa area da Serra da Mantiqueira o
-    P05 foi 0,55 e o P95 0,87 -- e o contraste efetivo cai para cerca de 5:1.
-    Plano demais para desviar a rota: a rota resultante teve sinuosidade 1,04,
-    ou seja, praticamente a linha reta entre origem e destino.
+    O modelo inverso, `1/(S + eps)`, e o das versoes 0.5.x. O contraste que ele
+    aparenta oferecer supoe S percorrendo todo o intervalo [0, 1]; em cena real
+    S fica concentrado no miolo. Medido na cena da Serra da Mantiqueira usada
+    na dissertacao: P05 = 0,49 e P95 = 0,77, de modo que o custo entre esses
+    percentis varia por um fator de 1,5 -- plano demais para valer o desvio.
 
     O modelo de Tobler e diferente em natureza: o custo passa a ser tempo, em
     horas, e depende da direcao do passo -- subir 100 m custa muito mais que
@@ -1248,10 +1256,14 @@ def detect_stream_crossings(path_cells, stream_mask, crossing_area, crossing_cla
     """Travessias ao longo da rota: uma por sequencia continua de celulas na faixa.
 
     Devolve lista de dicts com a celula (linha, coluna) de entrada, a area de
-    contribuicao maxima e a pior classe encontradas na sequencia.
+    contribuicao maxima e a pior classe encontradas na sequencia, e o
+    comprimento percorrido dentro da faixa, em celulas -- somando o passo real
+    de cada transicao, que vale raiz de dois nas diagonais. Contar celulas e
+    multiplicar pelo lado subestimaria a extensao em ate 41%.
     """
     crossings = []
     run = None
+    anterior = None
     for cell in list(path_cells) + [None]:
         on = False
         if cell is not None:
@@ -1262,14 +1274,20 @@ def detect_stream_crossings(path_cells, stream_mask, crossing_area, crossing_cla
             a = float(crossing_area[row, col]) if np.isfinite(crossing_area[row, col]) else 0.0
             k = int(crossing_class[row, col])
             if run is None:
-                run = {"entrada": (row, col), "area_km2": a, "classe": k, "celulas": 1}
+                run = {"entrada": (row, col), "area_km2": a, "classe": k,
+                       "celulas": 1, "passos": 0.0}
             else:
                 run["area_km2"] = max(run["area_km2"], a)
                 run["classe"] = max(run["classe"], k)
                 run["celulas"] += 1
+                if anterior is not None:
+                    run["passos"] += float(np.hypot(row - anterior[0], col - anterior[1]))
         elif run is not None:
+            # uma travessia de uma celula so percorre uma celula de faixa
+            run["passos"] = max(run["passos"], 1.0)
             crossings.append(run)
             run = None
+        anterior = cell
     return crossings
 
 
@@ -1497,7 +1515,7 @@ def binarize_result(array, threshold, feedback=None):
     return binary
 
 
-def combine_constraints(route_mask, zone_mask, valid_mask, layer_mask,
+def combine_constraints(route_mask, zone_mask, layer_mask,
                         stream_factor, constraint_mode):
     """Aplica as restricoes as mascaras da rota e das zonas.
 
@@ -2254,7 +2272,7 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
         # fica com o QGIS preso e o botao de cancelar sem efeito.
         if feedback is not None and expandidas % 20000 == 0:
             if feedback.isCanceled():
-                raise Exception("Calculo da rota cancelado pelo usuario.")
+                raise _cancelado("Calculo da rota cancelado pelo usuario.")
             if progress_range is not None:
                 inicio, fim = progress_range
                 fracao = min(1.0, expandidas / float(total_celulas))
@@ -2391,7 +2409,7 @@ def optimise_waypoint_order(cost_array, waypoints_rc, elevation=None,
     for contagem, (i, j) in enumerate(necessarios, start=1):
         if feedback is not None:
             if feedback.isCanceled():
-                raise Exception("Otimizacao da ordem cancelada pelo usuario.")
+                raise _cancelado("Otimizacao da ordem cancelada pelo usuario.")
             feedback.setProgress(100.0 * contagem / len(necessarios))
         _, cost = least_cost_path(cost_array, tuple(waypoints_rc[i]),
                                   tuple(waypoints_rc[j]), elevation=elevation,
@@ -2688,12 +2706,6 @@ def save_access_route(
         if crossings:
             labels = _ford_labels()
             factors = [factor for _limit, factor, _key in FORD_CLASSES] + [float("inf")]
-            # Um passo diagonal percorre raiz de dois celulas: contar celulas e
-            # multiplicar pelo lado subestimaria a extensao em ate 41%. O passo
-            # medio do proprio caminho corrige isso no agregado.
-            passos = [float(np.hypot(b[0] - a[0], b[1] - a[1]))
-                      for a, b in zip(path_cells, path_cells[1:])]
-            passo_medio = float(np.mean(passos)) if passos else 1.0
             geometries, attributes = [], []
             for number, item in enumerate(crossings, start=1):
                 x, y = pixel_to_world(transform, *item["entrada"])
@@ -2706,7 +2718,7 @@ def save_access_route(
                     "bacia_km2": round(float(item["area_km2"]), 3),
                     "classe": labels[k],
                     "fator_custo": (None if not np.isfinite(factors[k]) else float(factors[k])),
-                    "extensao_na_faixa_m": round(int(item["celulas"]) * passo_medio * float(pixel_size_m or abs(transform[1])), 1),
+                    "extensao_na_faixa_m": round(float(item.get("passos") or item["celulas"]) * float(pixel_size_m or abs(transform[1])), 1),
                     "aviso": ("Estimado so pelo relevo (area de contribuicao). Profundidade e "
                               "corrente variam com a estacao e a chuva: confira em campo antes de usar."),
                 })
@@ -3398,9 +3410,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 "drenagem_do_mde": streams_from_dem,
                 "bacia_min_km2": stream_min_basin_km2,
                 "teto_vadeavel_km2": stream_ford_max_km2,
-                "restricao_modo": ("evitar" if constraint_mode == CONSTRAINT_AVOID else "penalizar"),
+                "restricao_modo": ("evitar" if constraint_mode == CONSTRAINT_AVOID else "encarecer"),
                 "restricao_buffer_m": constraint_buffer_m,
-                "derivar_do_mde": derive_from_dem,
+                "derivar_do_mde_solicitado": derive_from_dem,
                 "unidade_vertical": ("pes" if vertical_unit == VERTICAL_UNIT_FEET else "metros"),
             },
         )
@@ -3501,6 +3513,12 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 "a derivacao a partir do MDE foi ignorada."
             )
         derive_from_dem = derive_from_dem and bool(missing)
+        # O bloco de parametros grava o que o usuario pediu; aqui fica o que de
+        # fato aconteceu, que pode divergir quando ele fornece os rasters.
+        append_diagnostic_log(
+            debug_log_path, "origem_das_derivadas",
+            derivadas_do_mde=bool(derive_from_dem),
+            rasters_ausentes=list(missing))
 
         for label, source_path, key in [
             (label, layer.source(), key)
@@ -3652,7 +3670,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             affected = int((restricted_mask & valid_mask).sum())
             (route_constraint_mask, zone_constraint_mask, penalty_mask,
              route_barrier, tratamento) = combine_constraints(
-                route_constraint_mask, zone_constraint_mask, valid_mask,
+                route_constraint_mask, zone_constraint_mask,
                 layer_mask, stream_factor, constraint_mode)
             if stream_factor is not None and feedback:
                 labels = _ford_labels()

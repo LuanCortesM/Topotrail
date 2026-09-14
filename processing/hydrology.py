@@ -115,7 +115,11 @@ def fill_depressions(dem_array, feedback=None):
         processadas += 1
         if feedback is not None and processadas % 50000 == 0:
             if feedback.isCanceled():
-                raise Exception("Extracao da drenagem cancelada pelo usuario.")
+                try:
+                    from qgis.core import QgsProcessingException as _Cancel
+                except Exception:
+                    _Cancel = Exception
+                raise _Cancel("Extracao da drenagem cancelada pelo usuario.")
             feedback.setProgress(100.0 * processadas / total)
         for d_row, d_col in NEIGHBOURS:
             n_row, n_col = row + d_row, col + d_col

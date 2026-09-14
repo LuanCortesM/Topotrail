@@ -235,41 +235,70 @@ def test_zero_pixel_size_is_refused(terrain):
         terrain.slope_percent_from_dem(dem, (0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
 
 
-def test_curvature_resolves_short_wavelength_forms(terrain, transform_10m):
-    """A curvatura tem de enxergar formas de poucas celulas.
+def test_plan_curvature_is_zero_on_straight_contours_at_any_orientation(terrain, transform_10m):
+    """Encosta lisa quase nao tem curvatura plana -- em nenhuma orientacao.
 
-    Ate a 1.1.2 as segundas derivadas puras saiam de duas diferencas centrais
-    encadeadas, o que as avaliava no passo 2h: numa onda de quatro celulas isso
-    preservava cerca de 40% da amplitude verdadeira, contra 81% do estencil de
-    tres pontos. Esporoes, cabeceiras e colos vivem justamente nessa escala, e
-    sao eles que decidem por onde uma trilha passa.
+    Este e o teste que faltava, e a sua ausencia custou uma regressao. Uma
+    superficie de curvas de nivel retas (desenvolvivel) tem curvatura plana
+    identicamente nula, em qualquer angulo em relacao aos eixos da grade.
+    Numericamente isso depende de as tres segundas derivadas virem do mesmo
+    operador: com o gradiente aplicado duas vezes o Hessiano discreto tem posto
+    1, e o residuo fica abaixo de 1% da curvatura de perfil real -- exatamente
+    zero nos eixos de simetria da grade (0, 45 e 90 graus) e cerca de 1e-4 nas
+    orientacoes intermediarias. Misturando um estencil de tres pontos nas
+    derivadas puras com o termo cruzado do gradiente, o residuo sobe para cerca
+    de 13%: um vale de 105 m de raio aparecendo numa encosta lisa.
 
-    Nenhum teste de superficie quadratica podia detectar isso, porque a segunda
-    derivada de um polinomio de grau dois e exata em qualquer passo -- e por
-    isso este teste usa uma senoide, onde a atenuacao aparece.
-
-    A senoide vai sobre uma rampa suave de proposito: exatamente no cume de uma
-    crista o gradiente e nulo, a curvatura de perfil e indefinida e o codigo
-    devolve zero. A rampa tira a superficie dessa singularidade sem alterar as
-    segundas derivadas, que sao as que estao sendo medidas.
+    O teste anterior usava uma crista alinhada ao eixo y -- uma das orientacoes
+    em que ate o esquema misto continua exato -- e por isso nao podia detectar
+    o problema. Aqui a superficie e corrugada e obliqua.
     """
-    rows = cols = 81
+    n = 161
+    h = 10.0
+    y, x = np.mgrid[0:n, 0:n].astype(np.float64)
+    for graus in (0.0, 30.0, 45.0, 63.0):
+        angulo = np.deg2rad(graus)
+        u = (x - n // 2) * h * np.cos(angulo) + (y - n // 2) * h * np.sin(angulo)
+        # Onda de seis celulas sobre uma rampa de 50%: curvas de nivel retas. A
+        # rampa e forte de proposito, para que o gradiente nunca se anule -- no
+        # cume de uma crista a curvatura plana e indefinida por divisao por
+        # zero, e o teste mediria a singularidade em vez do estimador.
+        superficie = 2.0 * np.sin(2.0 * np.pi * u / (6.0 * h)) + 0.5 * u
+        plan, profile = terrain.curvatures_from_dem(superficie, transform_10m)
+        miolo = slice(30, -30)
+        espurio = float(np.nanmax(np.abs(plan[miolo, miolo])))
+        real = float(np.nanmax(np.abs(profile[miolo, miolo])))
+        assert espurio < 0.03 * real, (
+            f"a {graus:.0f} graus a curvatura plana deveria ser desprezivel e "
+            f"vale {espurio:.3e}, {100 * espurio / real:.1f}% da curvatura de "
+            f"perfil real ({real:.3e})")
+
+
+def test_curvature_attenuates_short_wavelength_forms_by_a_known_amount(terrain, transform_10m):
+    """A atenuacao em formas curtas e conhecida, medida e declarada.
+
+    As segundas derivadas saem do operador de gradiente aplicado duas vezes, o
+    que as avalia num passo de duas celulas: a amplitude preservada e
+    [sin(kh)/(kh)]^2, isto e, 40% numa onda de quatro celulas e 81% numa de
+    oito. O estencil de tres pontos preservaria 81% e 95%, mas quebraria a
+    identidade fixada no teste acima -- a escolha esta documentada em
+    `curvatures_from_dem`.
+
+    Este teste existe para que a atenuacao seja um numero declarado e nao uma
+    surpresa: se alguem mudar o estimador, ele avisa exatamente quanto mudou.
+    """
+    n = 121
     h = 10.0
     declive = 0.05
-    y, x = np.mgrid[0:rows, 0:cols].astype(np.float64)
-    coluna = (x - cols // 2) * h
-
-    # Comprimentos em que a amostragem cai sobre a crista: em 6 celulas o ponto
-    # mais proximo do cume fica 30 graus fora de fase e o maximo amostrado
-    # subestima o real, o que mediria a fase e nao o estimador.
-    for comprimento_em_celulas, minimo in ((4, 0.75), (8, 0.92), (12, 0.96)):
-        k = 2.0 * np.pi / (comprimento_em_celulas * h)
+    y, x = np.mgrid[0:n, 0:n].astype(np.float64)
+    coluna = (x - n // 2) * h
+    for comprimento, esperado in ((4, 0.405), (8, 0.811), (12, 0.912)):
+        k = 2.0 * np.pi / (comprimento * h)
         superficie = declive * coluna + 10.0 * np.sin(k * coluna)
         _plan, profile = terrain.curvatures_from_dem(superficie, transform_10m)
         teorico = (k ** 2) * 10.0 / (1.0 + declive ** 2) ** 1.5
-        miolo = slice(20, -20)
-        obtido = float(np.nanmax(np.abs(profile[miolo, miolo])))
-        preservado = obtido / teorico
-        assert preservado > minimo, (
-            f"onda de {comprimento_em_celulas} celulas: preservou "
-            f"{preservado:.2f} da amplitude, abaixo de {minimo}")
+        miolo = slice(30, -30)
+        preservado = float(np.nanmax(np.abs(profile[miolo, miolo]))) / teorico
+        assert abs(preservado - esperado) < 0.02, (
+            f"onda de {comprimento} celulas: preservou {preservado:.3f}, "
+            f"esperado {esperado:.3f}")

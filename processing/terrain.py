@@ -18,35 +18,35 @@ import numpy as np
 
 
 # Acima disto a derivacao de relevo passa a ser um risco para o processo do
-# QGIS, nao so uma espera. Medido nesta implementacao: o pico transitorio e de
-# cerca de 134 bytes por celula, porque o MDE e promovido a float64 e cada
-# gradiente cria varios temporarios de grade cheia. 8 milhoes de celulas ficam
-# em torno de 1 GB (aviso); 40 milhoes passam de 5 GB e derrubam a maioria das
-# maquinas de campo (erro, com instrucao de recortar).
+# QGIS, nao so uma espera. Medido com tracemalloc em grades de 1000x1000: o
+# pico transitorio e de 114 bytes por celula em derive_terrain e 134 em
+# vector_ruggedness, porque o MDE e promovido a float64 e cada gradiente cria
+# varios temporarios de grade cheia. As duas passam por esta checagem, com o
+# valor da mais cara. 8 milhoes de celulas ficam em torno de 1 GB (aviso); 100
+# milhoes passam de 13 GB e derrubam qualquer maquina de campo (erro, com
+# instrucao de recortar).
 WARN_TERRAIN_CELLS = 8_000_000
-MAX_TERRAIN_CELLS = 40_000_000
+MAX_TERRAIN_CELLS = 100_000_000
 BYTES_POR_CELULA = 134
 
 
 def check_terrain_size(dem_array, feedback=None):
     """Avisa ou barra grades cuja derivacao estouraria a memoria do QGIS."""
-    celulas = int(dem_array.size)
-    gb = celulas * BYTES_POR_CELULA / 1e9
+    celulas = int(np.asarray(dem_array).size)
+    gb = "{:.1f}".format(celulas * BYTES_POR_CELULA / 1e9).replace(".", ",")
+    quantas = "{:,}".format(celulas).replace(",", ".")
     if celulas > MAX_TERRAIN_CELLS:
         raise ValueError(
-            "O MDE tem {:,} celulas ({:.0f} x {:.0f}); derivar declividade e "
-            "curvaturas exigiria cerca de {:.1f} GB de memoria transitoria e "
-            "muito provavelmente encerraria o QGIS. Recorte o MDE para a area "
-            "de interesse (Raster > Extrair > Cortar) ou reamostre para uma "
-            "celula maior antes de rodar.".format(
-                celulas, dem_array.shape[1], dem_array.shape[0], gb)
-            .replace(",", "."))
+            "O MDE tem {} celulas; derivar declividade, curvaturas e rugosidade "
+            "exigiria cerca de {} GB de memoria transitoria e muito provavelmente "
+            "encerraria o QGIS. Recorte o MDE para a area de interesse "
+            "(Raster > Extrair > Cortar pelo retangulo) ou reamostre para uma "
+            "celula maior antes de rodar.".format(quantas, gb))
     if celulas > WARN_TERRAIN_CELLS and feedback:
         feedback.pushWarning(
-            "MDE grande: {:,} celulas. A derivacao pode usar cerca de {:.1f} GB "
-            "de memoria e levar varios minutos. Recortar a area de interesse "
-            "deixa o resultado igual e a espera menor.".format(celulas, gb)
-            .replace(",", "."))
+            "MDE grande: {} celulas. A derivacao pode usar cerca de {} GB de "
+            "memoria e levar varios minutos. Recortar a area de interesse deixa "
+            "o resultado igual e a espera menor.".format(quantas, gb))
 
 
 def _metric_spacing(transform):
@@ -111,33 +111,6 @@ def _masked_gradient(surface, valid, spacing_y, spacing_x):
     return result[0], result[1]
 
 
-def _masked_second(surface, valid, h, axis):
-    """Segunda derivada por estencil de tres pontos, respeitando o nodata.
-
-    Onde falta um dos dois vizinhos do eixo a segunda derivada nao e definida
-    por diferencas finitas e sai zero, que e o valor neutro do modelo (a nota
-    de curvatura pontua a proximidade de zero).
-    """
-    z = np.where(valid, surface, 0.0)
-    z_next = np.roll(z, -1, axis=axis)
-    v_next = np.roll(valid, -1, axis=axis)
-    z_prev = np.roll(z, 1, axis=axis)
-    v_prev = np.roll(valid, 1, axis=axis)
-    edge_last = np.zeros_like(valid)
-    edge_first = np.zeros_like(valid)
-    if axis == 0:
-        edge_last[-1, :] = True
-        edge_first[0, :] = True
-    else:
-        edge_last[:, -1] = True
-        edge_first[:, 0] = True
-    v_next &= ~edge_last
-    v_prev &= ~edge_first
-    both = v_next & v_prev
-    second = np.where(both, (z_next - 2.0 * z + z_prev) / (h * h), 0.0)
-    return np.where(valid, second, np.nan)
-
-
 def _require_2d(dem_array, what):
     if dem_array.ndim != 2 or min(dem_array.shape) < 2:
         raise ValueError(
@@ -183,8 +156,9 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
     equals 2a/(1+p)^{3/2}. They are not the Zevenbergen-Thorne (1987) forms,
     which come from fitting a partial quartic to the 3x3 window rather than
     from the differential definitions, and which use the opposite profile
-    sign. Both are slope-normalised: an earlier version of this docstring
-    claimed ZT was not, which is wrong.
+    sign. An earlier version of this docstring claimed ZT lacks slope
+    normalisation; the claim was dropped, because it is not defensible as
+    stated.
 
     Sign convention, verified against surfaces with known shape in
     `tests/test_terrain_math.py` rather than asserted here:
@@ -217,17 +191,27 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
     px, py = _metric_spacing(transform)
     filled, valid = _filled_for_gradient(dem_array)
 
+    # As tres segundas derivadas saem do MESMO operador aplicado duas vezes, e
+    # isso e deliberado. Trocar as derivadas puras por um estencil de tres
+    # pontos, mantendo o termo cruzado, resolve melhor formas curtas -- 81% da
+    # amplitude verdadeira numa onda de quatro celulas contra 40% -- mas quebra
+    # uma propriedade que importa mais aqui: com o operador encadeado o Hessiano
+    # discreto tem posto 1 sobre qualquer superficie de curvas de nivel retas,
+    # de modo que a curvatura plana de uma encosta lisa fica abaixo de 1% da
+    # curvatura de perfil real em qualquer orientacao, e exatamente zero nos
+    # eixos de simetria da grade. Misturando familias de estencil isso se perde:
+    # medido numa encosta corrugada a 45 graus com ondas de seis celulas, a
+    # curvatura plana espuria subiu de 1,8e-15 para 9,6e-3 1/m -- um vale de
+    # 105 m de raio onde nao ha vale nenhum. Como o modelo penaliza curvatura
+    # afastada de zero, encostas obliquas passariam a ser penalizadas por uma
+    # forma que a superficie nao tem.
+    #
+    # O preco e a atenuacao em formas curtas, que fica declarada como limitacao
+    # conhecida em vez de ser trocada por um artefato dependente de orientacao.
+    # Os dois comportamentos estao fixados em teste.
     zy, zx = _masked_gradient(filled, valid, py, px)
-    # As segundas derivadas puras saem de um estencil de tres pontos, e nao de
-    # duas diferencas centrais encadeadas. Encadear daria (z[i+2] - 2z[i] +
-    # z[i-2])/(4h^2), isto e, uma derivada avaliada no passo 2h, que ignora os
-    # vizinhos imediatos: medido em superficies senoidais, isso preservava 40%
-    # da amplitude verdadeira em formas de quatro celulas contra 81% do
-    # estencil de tres pontos. O termo cruzado continua vindo do gradiente,
-    # porque ali ele ja e avaliado no passo h.
-    _, zyx = _masked_gradient(np.where(valid, zy, 0.0), valid, py, px)
-    zyy = _masked_second(filled, valid, py, 0)
-    zxx = _masked_second(filled, valid, px, 1)
+    zyy, zyx = _masked_gradient(np.where(valid, zy, 0.0), valid, py, px)
+    _, zxx = _masked_gradient(np.where(valid, zx, 0.0), valid, py, px)
 
     p = zx ** 2 + zy ** 2          # squared gradient magnitude
     q = p + 1.0
@@ -338,6 +322,7 @@ def vector_ruggedness(dem_array, transform, feedback=None):
     documentacao anterior afirmava.
     """
     _require_2d(dem_array, "a rugosidade")
+    check_terrain_size(dem_array, feedback)
     px, py = _metric_spacing(transform)
     filled, valid = _filled_for_gradient(dem_array)
     rows, cols = dem_array.shape
