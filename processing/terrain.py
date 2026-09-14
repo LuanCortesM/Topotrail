@@ -150,8 +150,9 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
     defined relative to the direction of steepest descent rather than to the
     grid axes. The forms used are the geometric contour ("plan") and profile
     curvatures of Moore, Grayson & Ladson (1991) / Mitasova & Hofierka (1993),
-    evaluated with central differences for the first derivatives and a
-    three-point stencil for the pure second derivatives: on a bowl
+    evaluated with the central-difference gradient operator applied twice, so
+    that all three second derivatives come from the same operator (see the
+    comment in the body for why that homogeneity is worth its cost): on a bowl
     z = a(x^2 + y^2) the plan curvature equals 1/r and the profile curvature
     equals 2a/(1+p)^{3/2}. They are not the Zevenbergen-Thorne (1987) forms,
     which come from fitting a partial quartic to the 3x3 window rather than
