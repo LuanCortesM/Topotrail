@@ -302,3 +302,77 @@ def test_curvature_attenuates_short_wavelength_forms_by_a_known_amount(terrain, 
         assert abs(preservado - esperado) < 0.02, (
             f"onda de {comprimento} celulas: preservou {preservado:.3f}, "
             f"esperado {esperado:.3f}")
+
+
+def test_plan_curvature_stays_bounded_where_the_ground_goes_flat(terrain, transform_10m):
+    """O defeito que a 1.3.0 corrigiu, fixado como teste.
+
+    Ate a 1.2.0 a curvatura plana era a curvatura de contorno de Moore et al.
+    (1991), com p^{3/2} no denominador. Ela e a curvatura da propria curva de
+    nivel, e a curva de nivel se fecha cada vez mais apertada perto de um ponto
+    plano: no alto de uma calota lisa ela diverge como 1/r embora a superficie
+    ali nao tenha nada de abrupto. Como o modelo pontua a forma pela distancia
+    a zero, o terreno mais suave -- que e o que se quer premiar -- recebia a
+    pior nota de forma. Medido na cena real da Mantiqueira do capitulo:
+    corr(log da declividade, nota de forma) = +0,52, decil mais suave 0,736
+    contra 0,964 no mais ingreme, com o criterio de forma trabalhando CONTRA o
+    de declividade sob o mesmo peso.
+
+    A curvatura tangencial de Mitasova & Hofierka (1993) e a curvatura NORMAL na
+    direcao da curva de nivel: numa calota z = 500 - a r^2 ela vale
+    2a/(1+p)^{1/2} e nunca passa de 2a, por mais plano que o terreno fique.
+    """
+    rows = cols = 81
+    y, x = np.mgrid[0:rows, 0:cols].astype(np.float64)
+    dx = (x - cols // 2) * 10.0
+    dy = (y - rows // 2) * 10.0
+    a = 0.002
+    dome = (500.0 - a * (dx ** 2 + dy ** 2)).astype(np.float64)
+
+    plan, _ = terrain.curvatures_from_dem(dome, transform_10m)
+    miolo = np.zeros((rows, cols), bool)
+    miolo[3:-3, 3:-3] = True
+
+    assert np.nanmax(np.abs(plan[miolo])) <= 2.0 * a * 1.02, (
+        "a curvatura plana estourou o limite fechado 2a: o denominador voltou "
+        "a ser p^{3/2} e volta a divergir no terreno plano")
+
+    # forma fechada k_t = 2a/(1+p)^{1/2} ao longo de um raio, do quase plano ao
+    # ingreme. O apice fica de fora porque ali o gradiente e nulo e a curvatura
+    # e indefinida -- o codigo devolve zero, como esta documentado.
+    for coluna in range(cols // 2 + 2, cols - 6, 6):
+        raio = (coluna - cols // 2) * 10.0
+        p = (2.0 * a * raio) ** 2
+        esperado = 2.0 * a / np.sqrt(1.0 + p)
+        assert abs(plan[rows // 2, coluna]) == pytest.approx(esperado, rel=0.02), (
+            "coluna {}: curvatura plana fora da forma fechada tangencial".format(coluna))
+
+
+def test_plan_curvature_measures_relief_not_the_shape_of_the_contour_line(terrain, transform_10m):
+    """A distincao entre as duas formas, isolada num so numero.
+
+    Duas calotas com a MESMA geometria de curvas de nivel -- circulos
+    concentricos identicos -- e relevos que diferem por um fator de 2000: uma
+    com 2 m de amplitude, outra com 1 mm. A segunda e, para qualquer efeito
+    pratico, um plano.
+
+    A curvatura de CONTORNO nao ve diferenca entre as duas: vale 1/r nas duas,
+    porque so depende do desenho da curva de nivel. A curvatura TANGENCIAL, que
+    e a curvatura da superficie, escala com o relevo. Um criterio de forma que
+    nao distingue uma calota de um plano nao esta medindo forma.
+    """
+    rows = cols = 81
+    y, x = np.mgrid[0:rows, 0:cols].astype(np.float64)
+    radius2 = ((x - cols // 2) * 10.0) ** 2 + ((y - rows // 2) * 10.0) ** 2
+    miolo = np.zeros((rows, cols), bool)
+    miolo[3:-3, 3:-3] = True
+
+    forte = (500.0 - 2e-3 * radius2).astype(np.float64)
+    fraca = (500.0 - 1e-6 * radius2).astype(np.float64)
+    plan_forte, _ = terrain.curvatures_from_dem(forte, transform_10m)
+    plan_fraca, _ = terrain.curvatures_from_dem(fraca, transform_10m)
+
+    razao = np.nanmax(np.abs(plan_fraca[miolo])) / np.nanmax(np.abs(plan_forte[miolo]))
+    assert razao < 0.01, (
+        "a curvatura plana quase nao mudou quando o relevo caiu 2000 vezes "
+        "(razao {:.3f}): esta medindo a curva de nivel, nao a superficie".format(razao))

@@ -29,6 +29,12 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 def _module(name, **attributes):
     module = types.ModuleType(name)
+    # Marca o substituto. A suite de integracao (integracao/) recusa qualquer
+    # modulo com esta marca em vez de testar contra um dublê: foi num modulo
+    # substituido que passou o pior defeito da 1.2.0 -- gravar num GeoPackage
+    # existente apagava as camadas do usuario, e aqui GetDriverByName devolve
+    # None, entao nenhum teste unitario poderia te-lo pego.
+    module.__topotrail_stub__ = True
     for key, value in attributes.items():
         setattr(module, key, value)
     sys.modules[name] = module

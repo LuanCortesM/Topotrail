@@ -148,13 +148,16 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
 
     These are the two curvatures the multicriteria model expects, and they are
     defined relative to the direction of steepest descent rather than to the
-    grid axes. The forms used are the geometric contour ("plan") and profile
-    curvatures of Moore, Grayson & Ladson (1991) / Mitasova & Hofierka (1993),
-    evaluated with the central-difference gradient operator applied twice, so
-    that all three second derivatives come from the same operator (see the
-    comment in the body for why that homogeneity is worth its cost): on a bowl
-    z = a(x^2 + y^2) the plan curvature equals 1/r and the profile curvature
-    equals 2a/(1+p)^{3/2}. They are not the Zevenbergen-Thorne (1987) forms,
+    grid axes. The forms used are the tangential ("plan") and profile normal
+    curvatures of Mitasova & Hofierka (1993), evaluated with the
+    central-difference gradient operator applied twice, so that all three
+    second derivatives come from the same operator (see the comment in the body
+    for why that homogeneity is worth its cost): on a bowl z = a(x^2 + y^2) the
+    plan curvature equals 2a/(1+p)^{1/2} and the profile curvature equals
+    2a/(1+p)^{3/2}. Up to version 1.2.0 the plan curvature was the geometric
+    contour curvature of Moore, Grayson & Ladson (1991), which has p^{3/2} in
+    the denominator and therefore diverges as the gradient goes to zero; the
+    body comment records what that cost the suitability model. They are not the Zevenbergen-Thorne (1987) forms,
     which come from fitting a partial quartic to the 3x3 window rather than
     from the differential definitions, and which use the opposite profile
     sign. An earlier version of this docstring claimed ZT lacks slope
@@ -171,15 +174,19 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
 
     * **plan** curvature is measured across the slope, so it captures whether
       flow spreads out or concentrates. On a cylindrical ridge, whose contours
-      are straight, it is exactly zero -- the test asserts that.
+      are straight, it is exactly zero -- the test asserts that. Being the
+      normal curvature in the contour direction rather than the curvature of
+      the contour line itself, it stays bounded on gentle ground, where the
+      contour line curves sharply but the surface does not.
     * **profile** curvature is measured along the slope: convex breaks where
       the gradient steepens downhill are negative, concave footslopes positive.
 
-    Both are returned in units of 1/m. Their absolute scale does not matter to
-    the suitability model, which normalises each by a percentile of its own
-    distribution and scores cells by distance from zero -- so a provider using
-    a different scale, or the opposite sign convention, produces the same
-    result. Flat cells, where the curvature is undefined, are returned as zero.
+    Both are returned in units of 1/m. A uniform change of scale does not
+    matter to the suitability model, which normalises each by a percentile of
+    its own distribution and scores cells by distance from zero -- so a
+    provider using a different scale, or the opposite sign convention, produces
+    the same result. What does matter, and what the contour form got wrong, is
+    a scale that varies systematically with another criterion in the model. Flat cells, where the curvature is undefined, are returned as zero.
 
     References: Moore, I.D., Grayson, R.B. & Ladson, A.R. (1991) Digital
     terrain modelling: a review of hydrological, geomorphological, and
@@ -218,9 +225,22 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
     q = p + 1.0
 
     with np.errstate(divide="ignore", invalid="ignore"):
+        # Curvatura TANGENCIAL (curvatura normal na direcao da curva de nivel),
+        # Mitasova & Hofierka (1993), e nao a curvatura de contorno de Moore et
+        # al. (1991), que tem p^{3/2} no denominador. A diferenca nao e de
+        # escala: a curvatura de contorno diverge quando o gradiente tende a
+        # zero, porque e a curvatura da propria curva de nivel, que se fecha
+        # cada vez mais perto de um ponto plano. Como o modelo pontua a forma
+        # pela distancia a zero, o terreno mais suave -- justamente o que se
+        # quer premiar -- recebia a pior nota de forma. Medido na cena da
+        # Mantiqueira do capitulo: corr(log da declividade, nota de forma) =
+        # +0,52, decil mais suave 0,736 contra 0,964 no mais ingreme, com o
+        # criterio de forma trabalhando CONTRA o de declividade sob o mesmo
+        # peso. Com a curvatura tangencial a correlacao vai a -0,17, que e o
+        # sinal esperado: terreno mais ingreme e um pouco mais dissecado.
         plan = np.where(
             p > 1e-12,
-            (zxx * zy ** 2 - 2.0 * zyx * zx * zy + zyy * zx ** 2) / np.power(p, 1.5),
+            (zxx * zy ** 2 - 2.0 * zyx * zx * zy + zyy * zx ** 2) / (p * np.sqrt(q)),
             0.0,
         )
         profile = np.where(

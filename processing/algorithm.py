@@ -419,15 +419,31 @@ class FeatureSet:
         ogr_driver = ogr.GetDriverByName(driver)
         if ogr_driver is None:
             raise Exception(f"Driver OGR indisponivel: {driver}")
-        datasource = ogr_driver.CreateDataSource(path)
-        if datasource is None:
-            raise Exception(f"Nao foi possivel criar o arquivo vetorial: {path}")
         if layer_name is None:
             layer_name = os.path.splitext(os.path.basename(path))[0]
         # "gpkg_*" e prefixo reservado do GeoPackage: um arquivo de saida chamado
         # gpkg_saida.gpkg falhava na criacao da camada.
         if layer_name.lower().startswith("gpkg"):
             layer_name = "topotrail_" + layer_name
+        # Um GeoPackage guarda varias camadas, e o usuario costuma ter um so
+        # arquivo de projeto com tudo dentro. Recriar o arquivo apagava o
+        # trabalho dele inteiro -- pontos de coleta, limites, amostras -- sem
+        # aviso e com o algoritmo relatando sucesso. Abrindo para atualizacao,
+        # so a camada homonima e substituida e o resto fica onde estava.
+        datasource = None
+        if driver == "GPKG" and os.path.exists(path):
+            try:
+                datasource = ogr.Open(path, 1)
+            except Exception:
+                datasource = None
+            if datasource is not None:
+                for indice in range(datasource.GetLayerCount() - 1, -1, -1):
+                    if datasource.GetLayerByIndex(indice).GetName() == layer_name:
+                        datasource.DeleteLayer(indice)
+        if datasource is None:
+            datasource = ogr_driver.CreateDataSource(path)
+        if datasource is None:
+            raise Exception(f"Nao foi possivel criar o arquivo vetorial: {path}")
         geom_type = ogr.wkbUnknown
         kinds = {ogr.GT_Flatten(g.GetGeometryType()) for g in self.geometries}
         if kinds == {ogr.wkbPolygon} or kinds == {ogr.wkbMultiPolygon} or kinds == {ogr.wkbPolygon, ogr.wkbMultiPolygon}:
@@ -1252,6 +1268,79 @@ def stream_crossing_factors(stream_mask, basin_km2, ford_max_km2, transform, cha
     return factors, area, classes
 
 
+def _com_travessias_diagonais(path_cells, stream_mask, crossing_area=None):
+    """Insere a celula de canto quando a rota atravessa a drenagem na diagonal.
+
+    Um passo diagonal cruza o canto compartilhado por quatro celulas. Quando a
+    faixa de drenagem passa justamente pelas duas celulas que o passo contorna,
+    a rota corta o curso d'agua sem pousar em nenhuma celula de curso, e a
+    travessia nao entra na lista que o usuario confere em campo. Medido na cena
+    da Mantiqueira do capitulo, dois dos oito cruzamentos reais escapavam assim
+    -- um quarto do total -- e o log chegava a afirmar que a rota nao cruzava
+    curso nenhum. A celula de canto que entra e a que esta na faixa; havendo as
+    duas, entra a de maior area de contribuicao, que e a que manda na classe.
+    """
+    rows, cols = stream_mask.shape
+
+    def na_faixa(row, col):
+        return 0 <= row < rows and 0 <= col < cols and bool(stream_mask[row, col])
+
+    saida = []
+    celulas = list(path_cells)
+    for posicao, atual in enumerate(celulas):
+        saida.append(atual)
+        if posicao + 1 >= len(celulas):
+            continue
+        (row0, col0), (row1, col1) = atual, celulas[posicao + 1]
+        if abs(row0 - row1) != 1 or abs(col0 - col1) != 1:
+            continue
+        if na_faixa(row0, col0) or na_faixa(row1, col1):
+            continue
+        cantos = [(r, c) for r, c in ((row0, col1), (row1, col0)) if na_faixa(r, c)]
+        if not cantos:
+            continue
+        if len(cantos) > 1 and crossing_area is not None:
+            cantos.sort(key=lambda rc: float(np.nan_to_num(crossing_area[rc])), reverse=True)
+        saida.append(cantos[0])
+    return saida
+
+
+def _saida_gpkg_utilizavel(path, layer_name, feedback=None):
+    """Confere se da para gravar a camada neste GeoPackage sem perder nada.
+
+    O arquivo nunca e apagado: se abrir para atualizacao, a camada homonima e
+    substituida dentro dele e as outras ficam intactas. So quando o arquivo
+    existe e nao abre -- porque o QGIS esta com ele aberto, ou o sistema o
+    bloqueou -- e que a saida muda de nome, com aviso.
+    """
+    if not os.path.exists(path):
+        return path
+    aberto = None
+    try:
+        aberto = ogr.Open(path, 1)
+    except Exception:
+        aberto = None
+    if aberto is not None:
+        outras = [aberto.GetLayerByIndex(i).GetName()
+                  for i in range(aberto.GetLayerCount())
+                  if aberto.GetLayerByIndex(i).GetName() != layer_name]
+        aberto = None
+        if outras and feedback:
+            feedback.pushInfo(
+                "O GeoPackage de saida ja tem {} camada(s) ({}). A camada \"{}\" sera "
+                "gravada ao lado delas; nada do que ja estava no arquivo e apagado.".format(
+                    len(outras), ", ".join(outras[:4]) + ("..." if len(outras) > 4 else ""),
+                    layer_name))
+        return path
+    alternativo = available_output_path(path)
+    if feedback:
+        feedback.pushWarning(
+            "O GeoPackage {} existe e nao pode ser aberto para gravacao (em uso no QGIS "
+            "ou bloqueado pelo sistema). Salvando como {} para nao perder o arquivo "
+            "existente.".format(os.path.basename(path), os.path.basename(alternativo)))
+    return alternativo
+
+
 def detect_stream_crossings(path_cells, stream_mask, crossing_area, crossing_class):
     """Travessias ao longo da rota: uma por sequencia continua de celulas na faixa.
 
@@ -1264,7 +1353,7 @@ def detect_stream_crossings(path_cells, stream_mask, crossing_area, crossing_cla
     crossings = []
     run = None
     anterior = None
-    for cell in list(path_cells) + [None]:
+    for cell in _com_travessias_diagonais(path_cells, stream_mask, crossing_area) + [None]:
         on = False
         if cell is not None:
             row, col = cell
@@ -1981,7 +2070,9 @@ def save_vector(features, output_path, output_format, output_crs, feedback=None)
         else:
             stringify = True
     driver_obj = ogr.GetDriverByName(driver)
-    if driver_obj and os.path.exists(output_path):
+    # O GeoPackage nao entra aqui: ele e substituido camada a camada dentro de
+    # to_file, para nao levar junto as outras camadas do usuario.
+    if driver_obj and driver != "GPKG" and os.path.exists(output_path):
         try:
             driver_obj.DeleteDataSource(output_path)
         except RuntimeError:
@@ -2218,10 +2309,16 @@ def tobler_hours(delta_z, horizontal_m):
 
 def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
                     pixel_size_m=None, anisotropic=False, feedback=None,
-                    progress_range=None):
+                    progress_range=None, crossing_factor=None):
     rows, cols = cost_array.shape
     start_index = start_rc[0] * cols + start_rc[1]
     end_index = end_rc[0] * cols + end_rc[1]
+
+    if crossing_factor is not None:
+        crossing_factor = np.asarray(crossing_factor)
+        if crossing_factor.dtype == bool:
+            crossing_factor = np.where(crossing_factor, CONSTRAINT_PENALTY_FACTOR, 1.0)
+        crossing_factor = crossing_factor.astype(np.float64, copy=False)
 
     dist = np.full(rows * cols, np.inf, dtype=np.float64)
     previous = np.full(rows * cols, -1, dtype=np.int64)
@@ -2249,15 +2346,23 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
 
     heap = [(heuristic(start_rc[0], start_rc[1]), 0.0, start_index)]
 
+    # Cada passo diagonal atravessa o canto compartilhado por quatro celulas, e
+    # duas delas nao sao nem a origem nem o destino do passo: sao as celulas que
+    # ele contorna. Olhar so o destino deixa a rota escapar por um vao que nao
+    # existe no terreno -- passar entre duas celulas intransponiveis -- e cruzar
+    # a drenagem sem pousar em nenhuma celula de curso d'agua, de modo que o
+    # fator de vau nao e cobrado e a travessia nao entra na lista conferida em
+    # campo. Por isso cada diagonal carrega, alem do passo, as duas celulas
+    # ortogonais que ela contorna.
     neighbors = [
-        (-1, 0, 1.0),
-        (1, 0, 1.0),
-        (0, -1, 1.0),
-        (0, 1, 1.0),
-        (-1, -1, np.sqrt(2.0)),
-        (-1, 1, np.sqrt(2.0)),
-        (1, -1, np.sqrt(2.0)),
-        (1, 1, np.sqrt(2.0)),
+        (-1, 0, 1.0, ()),
+        (1, 0, 1.0, ()),
+        (0, -1, 1.0, ()),
+        (0, 1, 1.0, ()),
+        (-1, -1, np.sqrt(2.0), ((-1, 0), (0, -1))),
+        (-1, 1, np.sqrt(2.0), ((-1, 0), (0, 1))),
+        (1, -1, np.sqrt(2.0), ((1, 0), (0, -1))),
+        (1, 1, np.sqrt(2.0), ((1, 0), (0, 1))),
     ]
 
     expandidas = 0
@@ -2282,7 +2387,7 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
         row = index // cols
         col = index % cols
         current_cost = cost_array[row, col]
-        for d_row, d_col, step_length in neighbors:
+        for d_row, d_col, step_length, corners in neighbors:
             next_row = row + d_row
             next_col = col + d_col
             if next_row < 0 or next_row >= rows or next_col < 0 or next_col >= cols:
@@ -2292,6 +2397,24 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
                 continue
             next_index = next_row * cols + next_col
             if visited[next_index]:
+                continue
+            # Uma celula de canto fora do recorte nao e barreira: e terreno que
+            # a janela de busca nao cobre, e bloquear por causa dela impediria
+            # a rota de acompanhar a borda do recorte.
+            corner_block = False
+            corner_factor = 1.0
+            for c_row, c_col in corners:
+                corner_r = row + c_row
+                corner_c = col + c_col
+                if not (0 <= corner_r < rows and 0 <= corner_c < cols):
+                    continue
+                if not np.isfinite(cost_array[corner_r, corner_c]):
+                    corner_block = True
+                    break
+                if crossing_factor is not None:
+                    corner_factor = max(corner_factor,
+                                        float(crossing_factor[corner_r, corner_c]))
+            if corner_block:
                 continue
             if anisotropic:
                 delta_z = float(elevation[next_row, next_col] - elevation[row, col])
@@ -2304,6 +2427,14 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
                     continue
             else:
                 move_cost = ((current_cost + next_cost) / 2.0) * step_length
+            # O canto contornado tambem se paga. Sem isto, atravessar a drenagem
+            # na diagonal sai de graca e o otimizador aprende exatamente isso:
+            # o fator de vau so incide em quem pousa na celula do curso d'agua.
+            if crossing_factor is not None and corner_factor > 1.0:
+                passo = max(float(crossing_factor[row, col]),
+                            float(crossing_factor[next_row, next_col]))
+                if corner_factor > passo:
+                    move_cost = move_cost * (corner_factor / max(passo, 1e-12))
             candidate_dist = current_dist + move_cost
             if candidate_dist < dist[next_index]:
                 dist[next_index] = candidate_dist
@@ -2332,7 +2463,8 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
 
 
 def multi_leg_route(cost_array, waypoints_rc, elevation=None, pixel_size_m=None,
-                    anisotropic=False, optimise_order=False, feedback=None):
+                    anisotropic=False, optimise_order=False, feedback=None,
+                    crossing_factor=None):
     """Rota otima passando por uma sequencia de pontos, na ordem dada.
 
     Uma travessia raramente e um par origem-destino. "Subir o Marins, depois o
@@ -2352,7 +2484,8 @@ def multi_leg_route(cost_array, waypoints_rc, elevation=None, pixel_size_m=None,
 
     if optimise_order and len(waypoints_rc) > 3:
         waypoints_rc = optimise_waypoint_order(
-            cost_array, waypoints_rc, elevation, pixel_size_m, anisotropic, feedback)
+            cost_array, waypoints_rc, elevation, pixel_size_m, anisotropic, feedback,
+            crossing_factor=crossing_factor)
 
     cells, leg_costs = [], []
     for index in range(len(waypoints_rc) - 1):
@@ -2364,6 +2497,7 @@ def multi_leg_route(cost_array, waypoints_rc, elevation=None, pixel_size_m=None,
         passo = 100.0 / max(1, len(waypoints_rc) - 1)
         leg, cost = least_cost_path(cost_array, tuple(start), tuple(end),
                                     elevation=elevation, pixel_size_m=pixel_size_m,
+                                    crossing_factor=crossing_factor,
                                     anisotropic=anisotropic, feedback=feedback,
                                     progress_range=(index * passo, (index + 1) * passo))
         leg_costs.append(float(cost))
@@ -2377,7 +2511,8 @@ def multi_leg_route(cost_array, waypoints_rc, elevation=None, pixel_size_m=None,
 
 
 def optimise_waypoint_order(cost_array, waypoints_rc, elevation=None,
-                            pixel_size_m=None, anisotropic=False, feedback=None):
+                            pixel_size_m=None, anisotropic=False, feedback=None,
+                            crossing_factor=None):
     """Melhor ordem de visita, mantendo fixos o primeiro e o ultimo ponto.
 
     Held-Karp sobre a matriz de custos entre pares. O custo e assimetrico no
@@ -2414,7 +2549,7 @@ def optimise_waypoint_order(cost_array, waypoints_rc, elevation=None,
         _, cost = least_cost_path(cost_array, tuple(waypoints_rc[i]),
                                   tuple(waypoints_rc[j]), elevation=elevation,
                                   pixel_size_m=pixel_size_m, anisotropic=anisotropic,
-                                  feedback=feedback)
+                                  feedback=feedback, crossing_factor=crossing_factor)
         pair[(i, j)] = float(cost)
 
     last = n - 1
@@ -2596,7 +2731,8 @@ def save_access_route(
     path_cells, accumulated_cost, leg_costs = multi_leg_route(
         cost_crop, local_sequence, elevation=elevation_crop,
         pixel_size_m=pixel_size_m, anisotropic=anisotropic,
-        optimise_order=optimise_order, feedback=feedback)
+        optimise_order=optimise_order, feedback=feedback,
+        crossing_factor=penalty_crop)
     if len(path_cells) < 2:
         raise Exception(
             "O ponto inicial e o ponto final caem na mesma celula do raster. "
@@ -2676,21 +2812,13 @@ def save_access_route(
         if feedback:
             feedback.pushInfo(f"Rota e corredor reprojetados para {target_label}")
 
-    gpkg_driver = ogr.GetDriverByName("GPKG")
-    for path in [route_path, corridor_path]:
-        if gpkg_driver and os.path.exists(path):
-            try:
-                gpkg_driver.DeleteDataSource(path)
-            except RuntimeError:
-                if path == route_path:
-                    route_path = available_output_path(route_path)
-                else:
-                    corridor_path = available_output_path(corridor_path)
-                if feedback:
-                    feedback.pushWarning(
-                        "Uma saida de rota/corredor anterior esta em uso no QGIS ou bloqueada pelo sistema. "
-                        "Salvando com novo nome."
-                    )
+    for nome, path in (("rota", route_path), ("corredor", corridor_path)):
+        alternativo = _saida_gpkg_utilizavel(path, nome, feedback)
+        if alternativo != path:
+            if nome == "rota":
+                route_path = alternativo
+            else:
+                corridor_path = alternativo
 
     route.to_file(route_path, driver="GPKG", layer_name="rota")
     corridor.to_file(corridor_path, driver="GPKG", layer_name="corredor")
@@ -2725,12 +2853,8 @@ def save_access_route(
             crossings_set = FeatureSet(geometries, attributes, crs_wkt)
             if target_crs:
                 crossings_set = crossings_set.to_crs(target_crs)
-            crossings_path = f"{base_path}_travessias.gpkg"
-            if gpkg_driver and os.path.exists(crossings_path):
-                try:
-                    gpkg_driver.DeleteDataSource(crossings_path)
-                except RuntimeError:
-                    crossings_path = available_output_path(crossings_path)
+            crossings_path = _saida_gpkg_utilizavel(
+                f"{base_path}_travessias.gpkg", "travessias", feedback)
             crossings_set.to_file(crossings_path, driver="GPKG", layer_name="travessias")
             if feedback:
                 feedback.pushInfo(

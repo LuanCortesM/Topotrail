@@ -13,9 +13,15 @@ import math
 import numpy as np
 import pytest
 
-NEIGHBOURS = ((-1, 0, 1.0), (1, 0, 1.0), (0, -1, 1.0), (0, 1, 1.0),
-              (-1, -1, math.sqrt(2)), (-1, 1, math.sqrt(2)),
-              (1, -1, math.sqrt(2)), (1, 1, math.sqrt(2)))
+# Cada diagonal traz as duas celulas de canto que ela contorna: um passo
+# diagonal so existe se der para passar por fora, isto e, se nenhuma das duas
+# for intransponivel. Sem isso a rota atravessa uma barreira de uma celula de
+# espessura pelo vertice -- um vao que nao existe no terreno.
+NEIGHBOURS = ((-1, 0, 1.0, ()), (1, 0, 1.0, ()), (0, -1, 1.0, ()), (0, 1, 1.0, ()),
+              (-1, -1, math.sqrt(2), ((-1, 0), (0, -1))),
+              (-1, 1, math.sqrt(2), ((-1, 0), (0, 1))),
+              (1, -1, math.sqrt(2), ((1, 0), (0, -1))),
+              (1, 1, math.sqrt(2), ((1, 0), (0, 1))))
 
 
 def reference_dijkstra(cost, start, end):
@@ -35,11 +41,19 @@ def reference_dijkstra(cost, start, end):
         if node == end:
             return d
         row, col = node
-        for d_row, d_col, step in NEIGHBOURS:
+        for d_row, d_col, step, corners in NEIGHBOURS:
             n_row, n_col = row + d_row, col + d_col
             if not (0 <= n_row < rows and 0 <= n_col < cols):
                 continue
             if not np.isfinite(cost[n_row, n_col]) or not np.isfinite(cost[row, col]):
+                continue
+            bloqueado = False
+            for c_row, c_col in corners:
+                cr, cc = row + c_row, col + c_col
+                if 0 <= cr < rows and 0 <= cc < cols and not np.isfinite(cost[cr, cc]):
+                    bloqueado = True
+                    break
+            if bloqueado:
                 continue
             move = (cost[row, col] + cost[n_row, n_col]) / 2.0 * step
             candidate = d + move
@@ -249,7 +263,7 @@ def test_anisotropic_heuristic_stays_admissible(algorithm):
             best = d
             break
         r, c = node
-        for d_row, d_col, length in NEIGHBOURS:
+        for d_row, d_col, length, _corners in NEIGHBOURS:
             nr, nc = r + d_row, c + d_col
             if not (0 <= nr < rows and 0 <= nc < cols):
                 continue
@@ -419,3 +433,67 @@ def test_the_terrain_slowdown_moves_the_route(algorithm):
         algorithm.TERRAIN_SLOWDOWN_MAX = original
 
     assert len(set(path) & set(reference)) / len(path) < 0.75
+
+
+def test_the_route_cannot_slip_through_the_corner_between_two_barriers(algorithm):
+    """O vazamento que o red team achou no dado real, fixado como teste.
+
+    Uma cerca diagonal de uma celula de espessura separa os dois cantos da
+    grade. Ela e continua no terreno: nao ha vao nenhum entre uma celula e a
+    seguinte. Mas num grafo de 8 vizinhos o passo diagonal atravessa o vertice
+    compartilhado, e ate a 1.2.0 o A* so olhava a celula de destino -- entao a
+    rota passava pelo canto, entre duas celulas declaradas intransponiveis.
+
+    No dado real da Mantiqueira isso era pior do que parece: com o teto vadeavel
+    em 1 km2 a rota cruzava cinco canais declarados intransponiveis e o log
+    ainda escrevia "a rota nao cruza nenhum curso d'agua da rede extraida".
+    """
+    n = 15
+    cost = np.ones((n, n))
+    for i in range(n):
+        cost[i, i] = np.inf          # cerca diagonal continua, um pixel de espessura
+    cost[0, 0] = np.inf
+    with pytest.raises(Exception) as erro:
+        algorithm.least_cost_path(cost, (0, n - 1), (n - 1, 0))
+    assert "caminho" in str(erro.value).lower()
+
+    # e com um portao de uma celula a rota passa -- a cerca so bloqueia onde e cerca
+    cost[n // 2, n // 2] = 1.0
+    caminho, _ = algorithm.least_cost_path(cost, (0, n - 1), (n - 1, 0))
+    assert (n // 2, n // 2) in caminho
+
+
+def test_a_diagonal_step_pays_for_the_ford_it_would_have_skipped(algorithm):
+    """Atravessar a drenagem na diagonal nao pode sair de graca.
+
+    O fator de vau incide em quem pousa na celula do curso d'agua. Um passo
+    diagonal entre duas celulas secas, contornando duas celulas de curso,
+    cruzava o canal sem pagar nada -- e o otimizador aprende exatamente isso.
+    """
+    cost = np.ones((9, 9))
+    fator = np.ones((9, 9))
+    fator[4, 3] = 8.0
+    fator[3, 4] = 8.0
+
+    caminho_sem, sem = algorithm.least_cost_path(cost, (3, 3), (4, 4))
+    caminho_com, com = algorithm.least_cost_path(cost, (3, 3), (4, 4), crossing_factor=fator)
+
+    # sem o fator, o passo diagonal e o caminho: dois pontos, custo raiz de dois
+    assert caminho_sem == [(3, 3), (4, 4)]
+    assert sem == pytest.approx(math.sqrt(2))
+
+    # com o fator, cruzar o canal pelo vertice custa 8 * raiz de dois = 11,3, e
+    # contornar por fora sai por 2,0 -- o otimizador para de atravessar de graca
+    assert com > sem
+    assert caminho_com != caminho_sem
+    assert len(caminho_com) == 3
+
+    # e quando nao existe desvio -- grade de 2x2, com as duas celulas de canto
+    # em terreno caro -- a diagonal e tomada, mas agora cobrada pelo curso que
+    # ela atravessa, exatamente como se a rota tivesse pousado nele.
+    minima = np.array([[1.0, 1000.0], [1000.0, 1.0]])
+    f3 = np.array([[1.0, 8.0], [1.0, 1.0]])
+    _, gratis = algorithm.least_cost_path(minima, (0, 0), (1, 1))
+    _, pago = algorithm.least_cost_path(minima, (0, 0), (1, 1), crossing_factor=f3)
+    assert gratis == pytest.approx(math.sqrt(2))
+    assert pago == pytest.approx(math.sqrt(2) * 8.0)

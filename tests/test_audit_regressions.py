@@ -241,3 +241,30 @@ def test_the_log_records_every_weight_that_enters_the_score(algorithm):
     for parametro in ('"modelo_de_custo"', '"destinos_intermediarios"',
                       '"teto_vadeavel_km2"', '"restricao_modo"'):
         assert parametro in fonte, f"o log nao grava {parametro}"
+
+
+def test_a_stream_crossed_diagonally_still_shows_up_in_the_list(algorithm):
+    """A travessia que a rota corta pelo vertice tem de entrar na lista.
+
+    A lista de travessias e o que o capitulo chama de "a parte que protege o
+    usuario": cada cruzamento sai marcado para ser conferido em campo. Um passo
+    diagonal entre duas celulas secas, contornando duas celulas de curso,
+    cruzava o canal sem pousar nele e nao entrava na lista. Medido na cena da
+    Mantiqueira, dois dos oito cruzamentos reais escapavam assim -- um quarto do
+    total -- e em outra configuracao o log chegava a afirmar que a rota nao
+    cruzava curso nenhum.
+    """
+    import numpy as np
+
+    mask = np.zeros((9, 9), dtype=bool)
+    mask[4, 3] = True                      # o canal corre na diagonal
+    mask[3, 4] = True
+    area = np.where(mask, 3.0, 0.0)
+    classe = np.where(mask, 1, 0).astype(int)
+
+    rota = [(2, 2), (3, 3), (4, 4), (5, 5)]   # passa pelo vertice, sem pousar no canal
+    assert not any(mask[r, c] for r, c in rota)
+
+    travessias = algorithm.detect_stream_crossings(rota, mask, area, classe)
+    assert len(travessias) == 1, "a travessia diagonal nao foi detectada"
+    assert travessias[0]["area_km2"] == 3.0

@@ -274,7 +274,13 @@ def analyse_hydrology(dem_array, transform, min_basin_km2=1.0, feedback=None,
     factor = int(np.ceil(np.sqrt(dem_array.size / MAX_HYDROLOGY_CELLS)))
     factor = max(1, factor)
     if factor > 1:
-        work = dem_array[::factor, ::factor]
+        # A amostra sai do CENTRO de cada bloco, nao do canto. Ao voltar, cada
+        # celula de trabalho e expandida no bloco que comeca em i*fator, cujo
+        # centro e i*fator + (fator-1)/2: amostrar o canto deslocava a rede
+        # inteira meia janela para cima e para a esquerda -- meio quilometro
+        # com fator 3 num pixel de 30 m, o bastante para um vale sair do lugar.
+        deslocamento = factor // 2
+        work = dem_array[deslocamento::factor, deslocamento::factor]
         work_px, work_py = pixel_size_x * factor, pixel_size_y * factor
         if feedback:
             feedback.pushInfo(
