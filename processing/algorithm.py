@@ -1,4 +1,5 @@
 import os
+import contextlib
 import tempfile
 import shutil
 import heapq
@@ -20,13 +21,18 @@ import numpy as np  # noqa: E402
 from osgeo import gdal, ogr, osr  # noqa: E402
 from scipy import ndimage  # noqa: E402
 from .hydrology import analyse_hydrology  # noqa: E402
-from .terrain import derive_terrain, vector_ruggedness  # noqa: E402
+from .terrain import (  # noqa: E402
+    check_terrain_size,
+    derive_terrain,
+    vector_ruggedness,
+)
 from .transitability import (  # noqa: E402
     CLASS_COLORS,
     CLASS_LABELS,
     CLASS_LABELS_EN,
     DEFAULT_SLOPE_BREAKS,
     classify as classify_transitability,
+    format_class_labels,
     walkable_fraction,
 )
 from qgis.core import (  # noqa: E402
@@ -43,11 +49,15 @@ from qgis.core import (  # noqa: E402
     QgsProcessingOutputVectorLayer,
     QgsProcessingOutputRasterLayer,
     QgsProcessingOutputFile,
-    QgsProject,
 )
 
-gdal.UseExceptions()
-ogr.UseExceptions()
+# As excecoes de GDAL/OGR NAO sao ligadas aqui de proposito: UseExceptions()
+# no import muda o GDAL do processo QGIS inteiro. Medido na auditoria: antes de
+# importar o TopoTrail, gdal.GetUseExceptions() = 0 e gdal.Open de arquivo
+# inexistente devolvia None; depois do import passava a 1 e levantava
+# RuntimeError -- para todo outro plugin e para o proprio codigo Python do
+# QGIS, que ainda espera Open() -> None. Agora isso vale so no escopo do
+# algoritmo, em gdal_exceptions_scoped().
 
 
 _LOG = logging.getLogger("TopoTrail")
@@ -70,7 +80,21 @@ RISK_SLOPE_WEIGHT = 0.75
 RISK_CURVATURE_WEIGHT = 0.25
 ROUTE_COST_EPSILON = 0.05
 MAX_ROUTE_CROP_CELLS = 8000000
+# Acima deste valor absoluto nenhum raster de criterio de terreno tem
+# significado fisico: curvaturas reais ficam na casa de 1e-2 1/m, declividades
+# em 1e2 %, altitudes em 1e4 m. Sentinelas de NoData nao declaradas -- -3.4e38
+# (minimo do float32), -9999, 1e30 -- passam de longe, e nenhuma delas e NaN,
+# entao nanpercentile nao as descarta.
+CRITERION_PLAUSIBLE_ABS = 1e6
 NEAREST_VALID_CELL_RADIUS = 30
+# Acima deste deslocamento o ponto que o usuario pediu deixa de caber no
+# corredor que o plugin entrega por padrao (ROUTE_BUFFER_M = 100 m de raio):
+# a rota passa a responder por um lugar que ninguem apontou, e o comprimento,
+# o tempo e o ganho anunciados sao todos do trajeto deslocado. Abaixo dele o
+# ponto pedido continua dentro do corredor entregue e um aviso so faria ruido.
+# Todo deslocamento, de qualquer tamanho, vai ao log de qualquer maneira --
+# medido na auditoria: 7.500 m de deslocamento com zero mensagens.
+NEAREST_VALID_CELL_WARN_M = 100.0
 MIN_ALTITUDE_BAND_SIZE_M = 50.0
 
 # Unidade do raster de declividade fornecido pelo usuario. Internamente o
@@ -369,7 +393,7 @@ class FeatureSet:
         source_srs = self.srs()
         target_srs = srs_from_any(target)
         if source_srs is None:
-            raise Exception("FeatureSet sem CRS de origem; nao ha como reprojetar")
+            raise _erro("FeatureSet sem CRS de origem; nao ha como reprojetar")
         if source_srs.IsSame(target_srs):
             return FeatureSet([g.Clone() for g in self.geometries], self.attributes, self.crs)
         transformation = osr.CoordinateTransformation(source_srs, target_srs)
@@ -377,7 +401,7 @@ class FeatureSet:
         for geometry in self.geometries:
             clone = geometry.Clone()
             if clone.Transform(transformation) != 0:
-                raise Exception("Falha ao reprojetar geometria com o OSR")
+                raise _erro("Falha ao reprojetar geometria com o OSR")
             moved.append(clone)
         return FeatureSet(moved, self.attributes, str(target))
 
@@ -418,7 +442,7 @@ class FeatureSet:
         """Grava a colecao. ``stringify`` converte todo atributo em texto (KML)."""
         ogr_driver = ogr.GetDriverByName(driver)
         if ogr_driver is None:
-            raise Exception(f"Driver OGR indisponivel: {driver}")
+            raise _erro(f"Driver OGR indisponivel: {driver}")
         if layer_name is None:
             layer_name = os.path.splitext(os.path.basename(path))[0]
         # "gpkg_*" e prefixo reservado do GeoPackage: um arquivo de saida chamado
@@ -443,7 +467,7 @@ class FeatureSet:
         if datasource is None:
             datasource = ogr_driver.CreateDataSource(path)
         if datasource is None:
-            raise Exception(f"Nao foi possivel criar o arquivo vetorial: {path}")
+            raise _erro(f"Nao foi possivel criar o arquivo vetorial: {path}")
         geom_type = ogr.wkbUnknown
         kinds = {ogr.GT_Flatten(g.GetGeometryType()) for g in self.geometries}
         if kinds == {ogr.wkbPolygon} or kinds == {ogr.wkbMultiPolygon} or kinds == {ogr.wkbPolygon, ogr.wkbMultiPolygon}:
@@ -454,7 +478,7 @@ class FeatureSet:
             geom_type = ogr.wkbPoint
         layer = datasource.CreateLayer(layer_name, srs=self.srs(), geom_type=geom_type)
         if layer is None:
-            raise Exception(f"Nao foi possivel criar a camada em: {path}")
+            raise _erro(f"Nao foi possivel criar a camada em: {path}")
 
         names = [name for name in self.columns if name != "geometry"]
         for name in names:
@@ -514,9 +538,12 @@ def raster_metadata(path):
     orientation. Raises a clear exception if GDAL cannot open the raster. The
     dataset handle is explicitly released before returning.
     """
-    dataset = gdal.Open(path)
+    try:
+        dataset = gdal.Open(path)
+    except RuntimeError as exc:
+        raise _erro(f"Nao foi possivel abrir raster para metadados: {path}") from exc
     if dataset is None:
-        raise Exception(f"Nao foi possivel abrir raster para metadados: {path}")
+        raise _erro(f"Nao foi possivel abrir raster para metadados: {path}")
     transform = dataset.GetGeoTransform()
     projection = dataset.GetProjection()
     band = dataset.GetRasterBand(1)
@@ -617,15 +644,18 @@ def copy_raster_with_assigned_crs(input_path, output_path, crs):
     This is only used when a CRS-less raster is explicitly handled by the
     default CRS policy. It does not reproject coordinates.
     """
-    dataset = gdal.Open(input_path)
+    try:
+        dataset = gdal.Open(input_path)
+    except RuntimeError as exc:
+        raise _erro(f"Nao foi possivel abrir raster sem CRS: {input_path}") from exc
     if dataset is None:
-        raise Exception(f"Nao foi possivel abrir raster sem CRS: {input_path}")
+        raise _erro(f"Nao foi possivel abrir raster sem CRS: {input_path}")
     driver = gdal.GetDriverByName("GTiff")
     if os.path.exists(output_path):
         driver.Delete(output_path)
     copy = driver.CreateCopy(output_path, dataset, strict=0, options=["COMPRESS=LZW"])
     if copy is None:
-        raise Exception(f"Nao foi possivel criar copia com CRS definido: {output_path}")
+        raise _erro(f"Nao foi possivel criar copia com CRS definido: {output_path}")
     srs = srs_from_projection(None, crs)
     copy.SetProjection(srs.ExportToWkt())
     copy.FlushCache()
@@ -642,14 +672,18 @@ def warp_raster_checked(input_path, output_path, warp_options, description="repr
     try:
         result = gdal.Warp(output_path, input_path, options=warp_options)
     except Exception as exc:
-        raise Exception(f"Falha em {description}: {input_path} -> {output_path}: {exc}") from exc
+        raise _erro(f"Falha em {description}: {input_path} -> {output_path}: {exc}") from exc
     if result is None:
-        raise Exception(f"Falha em {description}: GDAL Warp retornou vazio para {input_path}")
+        raise _erro(f"Falha em {description}: GDAL Warp retornou vazio para {input_path}")
     result.FlushCache()
     result = None
-    check = gdal.Open(output_path)
+    try:
+        check = gdal.Open(output_path)
+    except RuntimeError as exc:
+        raise _erro(
+            f"Falha em {description}: arquivo final nao abre: {output_path}") from exc
     if check is None:
-        raise Exception(f"Falha em {description}: arquivo final nao abre: {output_path}")
+        raise _erro(f"Falha em {description}: arquivo final nao abre: {output_path}")
     check = None
     return output_path
 
@@ -694,7 +728,7 @@ def ensure_projected_working_crs(
                 raster=dem_path,
                 strict_crs_mode=True,
             )
-            raise ValueError(message)
+            raise _erro(message)
         assigned_default = True
         assigned_path = os.path.join(temp_dir, "dem_assumido_crs.tif")
         source_path = copy_raster_with_assigned_crs(dem_path, assigned_path, default_crs)
@@ -795,7 +829,7 @@ def ensure_projected_working_crs(
         reprojected = True
         messages.append(f"DEM reprojetado para CRS de trabalho metrico: {working_crs}.")
     elif not original_srs.IsProjected():
-        raise Exception("O CRS do DEM nao e geografico nem projetado. Defina um CRS valido antes de processar.")
+        raise _erro("O CRS do DEM nao e geografico nem projetado. Defina um CRS valido antes de processar.")
     else:
         messages.append(f"DEM em CRS projetado mantido: {working_crs}.")
 
@@ -895,7 +929,7 @@ def align_raster_to_reference(candidate_path, reference_path, output_path, resam
         if not problem.startswith("NoData diferente")
     ]
     if blocking_problems:
-        raise Exception(
+        raise _erro(
             "Raster alinhado ainda incompativel com o MDE: " + "; ".join(blocking_problems)
         )
     append_diagnostic_log(
@@ -919,14 +953,14 @@ def read_raster(raster_path, feedback=None):
     try:
         dataset = gdal.Open(raster_path)
     except RuntimeError as exc:
-        raise Exception(f"Não foi possível abrir o raster: {raster_path}") from exc
+        raise _erro(f"Não foi possível abrir o raster: {raster_path}") from exc
     if dataset is None:
-        raise Exception(f"Não foi possível abrir o raster: {raster_path}")
+        raise _erro(f"Não foi possível abrir o raster: {raster_path}")
 
     band = dataset.GetRasterBand(1)
     array = band.ReadAsArray()
     if array is None:
-        raise Exception(f"Não foi possível ler a banda 1 do raster: {raster_path}")
+        raise _erro(f"Não foi possível ler a banda 1 do raster: {raster_path}")
 
     array = array.astype(np.float32)
     nodata = band.GetNoDataValue()
@@ -954,14 +988,14 @@ def validate_raster_alignment(reference_shape, reference_transform, rasters, fee
     """Ensure every input raster shares the DEM grid."""
     for name, array, transform in rasters:
         if array.shape != reference_shape:
-            raise ValueError(
+            raise _erro(
                 f"{name} possui dimensões {array.shape}, mas o MDE possui {reference_shape}. "
                 "Reamostre e alinhe os rasters antes de processar."
             )
 
         diffs = [abs(float(transform[i]) - float(reference_transform[i])) for i in range(6)]
         if any(diff > 1e-9 for diff in diffs):
-            raise ValueError(
+            raise _erro(
                 f"{name} não está alinhado ao MDE. "
                 "Use a mesma extensão, resolução e origem de grade para todos os rasters."
             )
@@ -991,7 +1025,7 @@ def slope_to_percent(slope_data, slope_unit, feedback=None, log_path=None):
     convertido = False
     if slope_unit == SLOPE_UNIT_DEGREES:
         if valid.size and maximum > 90.0:
-            raise Exception(
+            raise _erro(
                 "A declividade foi declarada em graus, mas o raster chega a "
                 f"{maximum:.1f}. Declividade em graus nao passa de 90: este raster "
                 "esta em porcentagem. Corrija a unidade no parametro."
@@ -1039,7 +1073,7 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
     if hasattr(layer_source, "getFeatures"):
         crs = layer_source.crs()
         if not crs.isValid():
-            raise Exception(
+            raise _erro(
                 "A camada de restricao nao possui CRS definido. Defina o CRS na origem "
                 "do dado antes de usa-la como restricao."
             )
@@ -1054,13 +1088,17 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
                 source_geometries.append(geometry)
         layer_source = layer_source.source()
     else:
-        datasource_in = ogr.Open(str(layer_source))
+        try:
+            datasource_in = ogr.Open(str(layer_source))
+        except RuntimeError as exc:
+            raise _erro(
+                f"Nao foi possivel abrir a camada de restricao: {layer_source}") from exc
         if datasource_in is None:
-            raise Exception(f"Nao foi possivel abrir a camada de restricao: {layer_source}")
+            raise _erro(f"Nao foi possivel abrir a camada de restricao: {layer_source}")
         layer_in = datasource_in.GetLayer(0)
         source_srs = layer_in.GetSpatialRef()
         if source_srs is None:
-            raise Exception(
+            raise _erro(
                 "A camada de restricao nao possui CRS definido. Defina o CRS na origem "
                 "do dado antes de usa-la como restricao."
             )
@@ -1082,7 +1120,7 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
         try:
             reproject = osr.CoordinateTransformation(source_srs, target_srs)
         except Exception as exc:
-            raise Exception(
+            raise _erro(
                 f"Nao foi possivel reprojetar a camada de restricao para o CRS de trabalho: {exc}"
             )
 
@@ -1136,6 +1174,25 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
             "{:,} celulas atingidas ({:.2f}% da grade).".format(
                 feature_count, buffer_m, int(mask.sum()), 100.0 * mask.sum() / mask.size)
         )
+    # Zero celulas com a camada cheia era registrado como informacao e mais
+    # nada: como restricted_mask.any() fica falso, o bloco de restricoes
+    # inteiro e pulado e nem a linha "Restricoes: ..." chega a sair. Medido na
+    # auditoria (caso B1): uma cerca de 5 m atravessando toda a cena num pixel
+    # de 30 m deu "0 celulas atingidas (0.00%)" e o comprimento devolvido foi
+    # exatamente o da rota sem restricao nenhuma. A causa e sempre a mesma --
+    # gdal.RasterizeLayer sem ALL_TOUCHED so queima a celula cujo centro cai
+    # dentro da feicao -- entao vale dizer isso e dizer o que fazer.
+    pixel_m = max(abs(float(transform[1])), abs(float(transform[5])))
+    if feedback and feature_count and not mask.any():
+        feedback.pushWarning(
+            "A camada de restricao nao atingiu nenhuma celula: ela nao teve efeito "
+            "nenhum sobre a rota nem sobre o mapa. So e marcada a celula cujo centro "
+            "cai dentro da feicao, e com buffer de {:.0f} m nenhuma feicao cobre um "
+            "centro de celula -- tipicamente porque a feicao e mais estreita que o "
+            "pixel de {:.0f} m. Aumente a distancia a manter (buffer) para pelo menos "
+            "{:.0f} m, ou use um MDE de celula menor.".format(
+                buffer_m, pixel_m, buffer_m + pixel_m)
+        )
     return mask
 
 
@@ -1146,6 +1203,113 @@ def _cancelado(mensagem):
         return QgsProcessingException(mensagem)
     except Exception:
         return Exception(mensagem)
+
+
+def _estado_excecoes(modulo):
+    """Estado atual de excecoes do modulo GDAL/OGR, ou None se nao der para ler."""
+    leitor = getattr(modulo, "GetUseExceptions", None)
+    if leitor is None:
+        return None
+    try:
+        return bool(leitor())
+    except Exception:
+        return None
+
+
+@contextlib.contextmanager
+def gdal_exceptions_scoped():
+    """Liga as excecoes de GDAL/OGR apenas enquanto o algoritmo roda.
+
+    Substitui o gdal.UseExceptions()/ogr.UseExceptions() que ficava no import e
+    contaminava o processo QGIS inteiro. Prefere gdal.ExceptionMgr()/
+    ogr.ExceptionMgr() (GDAL >= 3.7) e cai no par GetUseExceptions/
+    DontUseExceptions nas versoes mais antigas.
+
+    O gdal.ErrorReset() antes de sair nao e cosmetico: medido no GDAL 3.8.4
+    deste ambiente, o __exit__ do ExceptionMgr chama _SetExceptionsLocal, que
+    re-levanta o ultimo erro CPL ainda pendente -- sair do contexto depois de um
+    gdal.Open() que falhou levantava RuntimeError de dentro do finally e
+    mascarava o erro verdadeiro. A restauracao inteira fica sob try/except pelo
+    mesmo motivo: sair nunca pode inventar um erro novo.
+    """
+    anteriores = [(modulo, _estado_excecoes(modulo)) for modulo in (gdal, ogr)]
+    gerentes = []
+    for modulo in (gdal, ogr):
+        fabrica = getattr(modulo, "ExceptionMgr", None)
+        if fabrica is None:
+            modulo.UseExceptions()
+            continue
+        gerente = fabrica(useExceptions=True)
+        gerente.__enter__()
+        gerentes.append(gerente)
+    try:
+        yield
+    finally:
+        try:
+            gdal.ErrorReset()
+        except Exception as exc:
+            _LOG.debug("ErrorReset do GDAL falhou: %s", exc)
+        for gerente in reversed(gerentes):
+            try:
+                gerente.__exit__(None, None, None)
+            except Exception as exc:
+                _LOG.debug("ExceptionMgr nao restaurou o estado: %s", exc)
+        for modulo, ligado in anteriores:
+            if ligado is None:
+                continue
+            try:
+                if _estado_excecoes(modulo) != ligado:
+                    if ligado:
+                        modulo.UseExceptions()
+                    else:
+                        modulo.DontUseExceptions()
+            except Exception as exc:
+                _LOG.debug("estado de excecoes do GDAL nao restaurado: %s", exc)
+
+
+def _erro(mensagem):
+    """Erro do algoritmo, no tipo que o Processing sabe mostrar.
+
+    O invólucro Python do Processing re-embrulha Exception e ValueError
+    incluindo o traceback inteiro como mensagem: a frase escrita para o usuario
+    virava a ultima linha de uma pilha com os caminhos absolutos da maquina de
+    quem empacotou. Medido na auditoria (ALT_MIN=5000): o texto entregue
+    comecava em "Traceback (most recent call last)". QgsProcessingException e
+    mostrada como a frase e nada mais. Mesmo padrao de _cancelado: se o
+    qgis.core nao for importavel -- e o caso da suite hermetica de tests/ --
+    cai em Exception, que e o que havia antes.
+    """
+    try:
+        from qgis.core import QgsProcessingException
+        return QgsProcessingException(mensagem)
+    except Exception:
+        return Exception(mensagem)
+
+
+def project_crs_from_context(context):
+    """CRS do projeto que o context carrega, ou None quando nao houver.
+
+    Substitui a leitura de QgsProject.instance() que estava em initAlgorithm:
+    o projeto certo para um algoritmo de Processing e o do contexto de
+    execucao. Sem contexto, sem projeto ou com projeto sem CRS valido devolve
+    None, e o algoritmo mantem o CRS de trabalho -- que e o comportamento de
+    quem nao pediu reprojecao nenhuma.
+    """
+    if context is None:
+        return None
+    try:
+        project = context.project()
+    except Exception:
+        return None
+    if project is None:
+        return None
+    try:
+        crs = project.crs()
+    except Exception:
+        return None
+    if crs is None or not crs.isValid():
+        return None
+    return crs
 
 
 def cost_model_name(cost_model):
@@ -1464,7 +1628,7 @@ def report_model_discrimination(slope_data, zone_score, valid_mask, slope_score_
 
 def normalize_linear(array, min_val, max_val, feedback=None, name="Critério"):
     if max_val <= min_val:
-        raise ValueError(f"Limites inválidos para {name}: min={min_val}, max={max_val}")
+        raise _erro(f"Limites inválidos para {name}: min={min_val}, max={max_val}")
 
     valid_mask = ~np.isnan(array)
     normalized = np.zeros_like(array, dtype=np.float32)
@@ -1495,6 +1659,55 @@ def normalize_cost(array, min_val, max_val, feedback=None, name="Critério"):
     return result
 
 
+def report_absurd_criterion_values(array, name, feedback=None, log_path=None,
+                                   limit=CRITERION_PLAUSIBLE_ABS):
+    """Avisa quando um raster de criterio traz valores fora de escala fisica.
+
+    Medido na auditoria (15_criterio_degenerado.py): um raster de curvatura
+    horizontal com 2% das linhas em -3,4e38 e sem NoData declarado levou o
+    limite do percentil de 0,0004 para 3,4e37, a nota media da curvatura de
+    0,656 para 0,984, mudou a rota e o tempo, e nao emitiu um unico aviso --
+    report_model_discrimination so reclama quando a adequabilidade TOTAL fica
+    plana, e a declividade segura a amplitude. nanpercentile descarta NaN, mas
+    nao descarta infinito nem sentinela.
+
+    Devolve o numero de celulas suspeitas encontradas.
+    """
+    dados = np.asarray(array)
+    if dados.size == 0:
+        return 0
+    finitos = np.isfinite(dados)
+    infinitos = int(np.sum(~finitos & ~np.isnan(dados)))
+    fora_de_escala = finitos & (np.abs(dados) > float(limit))
+    absurdos = int(np.sum(fora_de_escala))
+    total = infinitos + absurdos
+    if total == 0:
+        return 0
+    extremo = None
+    if absurdos:
+        candidatos = np.abs(dados[fora_de_escala])
+        extremo = float(dados[fora_de_escala][int(np.argmax(candidatos))])
+    append_diagnostic_log(
+        log_path, "valores_absurdos_no_criterio", raster=name,
+        celulas_fora_de_escala=absurdos, celulas_infinitas=infinitos,
+        proporcao=float(total / dados.size), limite_plausivel=float(limit),
+        extremo=extremo,
+    )
+    if feedback:
+        feedback.pushWarning(
+            "{}: {:,} celulas ({:.2f}% do raster) trazem valores fora de qualquer "
+            "escala fisica{}. Quase sempre e um valor sentinela de NoData que o "
+            "arquivo nao declara (-3.4e38, -9999, 1e30). Enquanto nao for "
+            "declarado, o criterio e calculado com essas celulas dentro: o limite "
+            "do percentil explode, todas as celulas validas recebem nota proxima "
+            "de 1 e este criterio deixa de pesar no modelo. Declare o NoData na "
+            "origem do dado ou recorte a area valida.".format(
+                name, total, 100.0 * total / dados.size,
+                "" if extremo is None else " (extremo {:.3g})".format(extremo))
+        )
+    return total
+
+
 def normalize_curvature_preference(
     array,
     feedback=None,
@@ -1507,7 +1720,7 @@ def normalize_curvature_preference(
     valid_mask = ~np.isnan(array)
     valid_data = array[valid_mask]
     if valid_data.size == 0:
-        raise ValueError(f"{name} não contém valores válidos")
+        raise _erro(f"{name} não contém valores válidos")
 
     if limit is None or limit <= 0:
         deviations = np.abs(valid_data - target)
@@ -1516,6 +1729,17 @@ def normalize_curvature_preference(
             limit = float(np.nanmax(deviations))
         if limit <= 0:
             limit = 1.0
+
+    if feedback and limit > CRITERION_PLAUSIBLE_ABS:
+        # Segunda rede, para o caso de a sentinela ter entrado por outro
+        # caminho: o limite e o sintoma direto -- medido 3,4e37 contra os
+        # 0,0004 da mesma cena limpa.
+        feedback.pushWarning(
+            "{}: o limite do percentil saiu em {:.3g}, fora de qualquer escala de "
+            "curvatura de terreno. Com um limite assim toda celula valida recebe "
+            "nota proxima de 1 e o criterio some do modelo. Confira o NoData do "
+            "raster de {}.".format(name, limit, name)
+        )
 
     score = np.zeros_like(array, dtype=np.float32)
     score[valid_mask] = floor + (1.0 - floor) * (
@@ -1537,12 +1761,12 @@ def calculate_slope_degrees(dem_array, transform, feedback=None):
 
     Expects DEM values in a metric working CRS and uses transform pixel width
     and height as spacing for np.gradient. NaN cells remain NaN in the output.
-    Raises ValueError for invalid non-positive pixel sizes.
+    Raises a QgsProcessingException for invalid non-positive pixel sizes.
     """
     pixel_size_x = abs(float(transform[1]))
     pixel_size_y = abs(float(transform[5]))
     if pixel_size_x <= 0 or pixel_size_y <= 0:
-        raise ValueError("Resolucao espacial invalida para calculo de declividade.")
+        raise _erro("Resolucao espacial invalida para calculo de declividade.")
     dem = dem_array.astype(np.float32)
     valid_mask = np.isfinite(dem)
     filled = np.where(valid_mask, dem, np.nanmean(dem[valid_mask]) if np.any(valid_mask) else 0.0)
@@ -1569,7 +1793,7 @@ def calculate_curvature_arrays(dem_array, transform, feedback=None):
     pixel_size_x = abs(float(transform[1]))
     pixel_size_y = abs(float(transform[5]))
     if pixel_size_x <= 0 or pixel_size_y <= 0:
-        raise ValueError("Resolucao espacial invalida para calculo de curvatura.")
+        raise _erro("Resolucao espacial invalida para calculo de curvatura.")
     dem = dem_array.astype(np.float32)
     valid_mask = np.isfinite(dem)
     filled = np.where(valid_mask, dem, np.nanmean(dem[valid_mask]) if np.any(valid_mask) else 0.0)
@@ -1813,7 +2037,7 @@ def save_score_raster(score_array, transform, proj, output_path, feedback=None):
                 )
     dataset = driver.Create(score_path, cols, rows, 1, gdal.GDT_Float32, options=["COMPRESS=LZW"])
     if dataset is None:
-        raise Exception("Nao foi possivel criar o raster de adequabilidade.")
+        raise _erro("Nao foi possivel criar o raster de adequabilidade.")
 
     dataset.SetGeoTransform(transform)
     if proj:
@@ -1829,7 +2053,8 @@ def save_score_raster(score_array, transform, proj, output_path, feedback=None):
     return score_path
 
 
-def save_transitability_raster(classes, transform, proj, output_path, feedback=None):
+def save_transitability_raster(classes, transform, proj, output_path, feedback=None,
+                               labels=None):
     """Grava o mapa de classes com paleta e rotulos embutidos.
 
     Um raster categorico sem tabela de cores abre no QGIS como uma rampa
@@ -1856,7 +2081,7 @@ def save_transitability_raster(classes, transform, proj, output_path, feedback=N
         options=["COMPRESS=LZW", "PHOTOMETRIC=PALETTE"],
     )
     if dataset is None:
-        raise Exception("Nao foi possivel criar o raster de transitabilidade.")
+        raise _erro("Nao foi possivel criar o raster de transitabilidade.")
     dataset.SetGeoTransform(transform)
     if proj:
         dataset.SetProjection(proj)
@@ -1873,7 +2098,12 @@ def save_transitability_raster(classes, transform, proj, output_path, feedback=N
     # nomes de categoria, entao o GDAL os grava num arquivo irmao .aux.xml. O
     # QGIS le e mostra corretamente, mas quem enviar apenas o .tif a outra
     # pessoa perde a legenda -- envie os dois arquivos juntos.
-    rotulos = _class_labels()
+    # Os rotulos vem de quem classificou, ja preenchidos com os limites que a
+    # execucao usou. Antes esta linha chamava _class_labels() de novo e gravava
+    # sempre os limites de fabrica: medido com TRANSITABILITY_BREAKS = 2,4,6,8,
+    # a classe 1 do arquivo valia "< 2%" e a legenda gravada dentro dele dizia
+    # "1 - Suave (< 20%)".
+    rotulos = labels or format_class_labels(_class_labels())
     band.SetCategoryNames([""] + [rotulos[code] for code in sorted(rotulos)])
     band.SetNoDataValue(0)
     band.WriteArray(classes.astype(np.uint8))
@@ -1907,7 +2137,7 @@ def save_risk_raster(risk_array, transform, proj, output_path, feedback=None):
                 )
     dataset = driver.Create(risk_path, cols, rows, 1, gdal.GDT_Float32, options=["COMPRESS=LZW"])
     if dataset is None:
-        raise Exception("Nao foi possivel criar o raster de risco topografico.")
+        raise _erro("Nao foi possivel criar o raster de risco topografico.")
 
     dataset.SetGeoTransform(transform)
     if proj:
@@ -1978,7 +2208,7 @@ def vectorize_binary_raster(binary_array, transform, proj, feedback=None):
         driver = gdal.GetDriverByName("GTiff")
         dataset = driver.Create(temp_raster, cols, rows, 1, gdal.GDT_Byte)
         if dataset is None:
-            raise Exception("Não foi possível criar raster temporário")
+            raise _erro("Não foi possível criar raster temporário")
 
         dataset.SetGeoTransform(transform)
         if proj:
@@ -1993,7 +2223,7 @@ def vectorize_binary_raster(binary_array, transform, proj, feedback=None):
         mem_driver = ogr.GetDriverByName("Memory")
         vector_ds = mem_driver.CreateDataSource("mask")
         if vector_ds is None:
-            raise Exception("Não foi possível criar vetor temporário")
+            raise _erro("Não foi possível criar vetor temporário")
         layer = vector_ds.CreateLayer("polygons", srs=srs, geom_type=ogr.wkbPolygon)
         layer.CreateField(ogr.FieldDefn("value", ogr.OFTInteger))
 
@@ -2036,7 +2266,7 @@ def save_vector(features, output_path, output_format, output_crs, feedback=None)
     }
 
     if len(features) == 0:
-        raise Exception("Nenhuma area atingiu o threshold configurado. Reduza o threshold ou revise os criterios.")
+        raise _erro("Nenhuma area atingiu o threshold configurado. Reduza o threshold ou revise os criterios.")
 
     output_dir = os.path.dirname(output_path)
     if output_dir and not os.path.exists(output_dir):
@@ -2155,9 +2385,12 @@ def _warn_points_without_crs(point_path):
 
 
 def transform_point_to_raster(point_path, raster_proj):
-    datasource = ogr.Open(point_path)
+    try:
+        datasource = ogr.Open(point_path)
+    except RuntimeError as exc:
+        raise _erro(f"Nao foi possivel abrir o ponto: {point_path}") from exc
     if datasource is None:
-        raise Exception(f"Nao foi possivel abrir o ponto: {point_path}")
+        raise _erro(f"Nao foi possivel abrir o ponto: {point_path}")
 
     raster_srs = osr.SpatialReference()
     raster_srs.ImportFromWkt(raster_proj) if raster_proj else raster_srs.ImportFromEPSG(4326)
@@ -2190,7 +2423,7 @@ def transform_point_to_raster(point_path, raster_proj):
                 if sub_geom and ogr.GT_Flatten(sub_geom.GetGeometryType()) == ogr.wkbPoint:
                     return float(sub_geom.GetX()), float(sub_geom.GetY())
 
-    raise Exception(f"Nenhuma geometria de ponto encontrada em: {point_path}")
+    raise _erro(f"Nenhuma geometria de ponto encontrada em: {point_path}")
 
 
 def transform_points_to_raster(point_path, raster_proj):
@@ -2201,9 +2434,12 @@ def transform_points_to_raster(point_path, raster_proj):
     Marins, Marinzinho e Itaguare nessa ordem produz exatamente essa rota. Quem
     quiser outra ordem pode reordenar a camada ou pedir a otimizacao.
     """
-    datasource = ogr.Open(point_path)
+    try:
+        datasource = ogr.Open(point_path)
+    except RuntimeError as exc:
+        raise _erro(f"Nao foi possivel abrir a camada de pontos: {point_path}") from exc
     if datasource is None:
-        raise Exception(f"Nao foi possivel abrir a camada de pontos: {point_path}")
+        raise _erro(f"Nao foi possivel abrir a camada de pontos: {point_path}")
 
     raster_srs = osr.SpatialReference()
     raster_srs.ImportFromWkt(raster_proj) if raster_proj else raster_srs.ImportFromEPSG(4326)
@@ -2236,7 +2472,7 @@ def transform_points_to_raster(point_path, raster_proj):
                     if sub and ogr.GT_Flatten(sub.GetGeometryType()) == ogr.wkbPoint:
                         points.append((float(sub.GetX()), float(sub.GetY())))
     if not points:
-        raise Exception(f"Nenhum ponto encontrado em: {point_path}")
+        raise _erro(f"Nenhum ponto encontrado em: {point_path}")
     return points
 
 
@@ -2282,7 +2518,7 @@ def nearest_valid_cell(valid_mask, row, col, radius=NEAREST_VALID_CELL_RADIUS):
             best = (rr, cc)
             best_dist = dist
     if best is None:
-        raise Exception("Ponto inicial ou final caiu fora das celulas viaveis e nao ha celula valida proxima.")
+        raise _erro("Ponto inicial ou final caiu fora das celulas viaveis e nao ha celula valida proxima.")
     return best
 
 
@@ -2307,6 +2543,35 @@ def tobler_hours(delta_z, horizontal_m):
     return (horizontal_m / 1000.0) / speed_kmh
 
 
+def _liga_apenas_pelo_canto(cost_array, start_rc, end_rc):
+    """Os dois pontos se ligariam se o passo diagonal pudesse cortar o canto?
+
+    Rotula componentes conexas duas vezes sobre a mesma grade: uma com a
+    vizinhanca de 8 crua, que e a regra ate a 1.2.0 e deixa passar pelo vertice,
+    e outra so com os quatro vizinhos ortogonais, que nunca corta canto. Ligados
+    na primeira e separados na segunda significa que toda ligacao entre eles
+    depende de um contato de largura zero.
+
+    A vizinhanca de 4 e mais restritiva do que a regra em vigor -- que aceita a
+    diagonal quando ha passagem por fora -- entao um "sim" aqui e conservador.
+    Por isso o resultado so serve para ESCOLHER A MENSAGEM, nunca para permitir
+    ou proibir um passo.
+    """
+    try:
+        from scipy import ndimage
+    except Exception:
+        return False
+    passavel = np.isfinite(cost_array)
+    if not (passavel[start_rc] and passavel[end_rc]):
+        return False
+    oito = np.ones((3, 3), dtype=bool)
+    quatro = np.array([[False, True, False], [True, True, True], [False, True, False]])
+    rotulos_oito, _ = ndimage.label(passavel, structure=oito)
+    rotulos_quatro, _ = ndimage.label(passavel, structure=quatro)
+    return bool(rotulos_oito[start_rc] == rotulos_oito[end_rc]
+                and rotulos_quatro[start_rc] != rotulos_quatro[end_rc])
+
+
 def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
                     pixel_size_m=None, anisotropic=False, feedback=None,
                     progress_range=None, crossing_factor=None):
@@ -2326,7 +2591,7 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
     dist[start_index] = 0.0
     finite_costs = cost_array[np.isfinite(cost_array)]
     if finite_costs.size == 0:
-        raise Exception("A area de busca da rota nao contem celulas viaveis.")
+        raise _erro("A area de busca da rota nao contem celulas viaveis.")
     min_step_cost = float(np.nanmin(finite_costs))
 
     if anisotropic:
@@ -2443,7 +2708,23 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
                 heapq.heappush(heap, (priority, candidate_dist, next_index))
 
     if not np.isfinite(dist[end_index]):
-        raise Exception(
+        # Antes de devolver o beco sem saida, vale saber se ele e um beco de
+        # verdade. Se os dois lados so se ligam pelo VERTICE de duas celulas
+        # intransponiveis, o diagnostico e outro e a saida tambem: nao adianta
+        # elevar a declividade maxima, o que falta e largura. Medido no caso do
+        # Parque das Carnaubas, da bateria: a rota que a 1.2.0 devolvia dependia
+        # de um unico contato pelo canto -- descrevia uma travessia que nao
+        # existe no terreno.
+        if _liga_apenas_pelo_canto(cost_array, start_rc, end_rc):
+            raise _erro(
+                "Os dois pontos so se ligam por um contato de vertice: em algum lugar do "
+                "caminho, duas celulas intransponiveis se tocam na diagonal e a passagem fica "
+                "com largura zero. Ate a versao 1.2.0 a rota escapava por esse vertice, o que "
+                "descrevia uma travessia que nao existe no terreno. Aqui falta largura, nao "
+                "declividade: reduza a area minima de fragmento para nao fatiar as areas "
+                "caminhaveis, amplie o afastamento da restricao, ou use um MDE de maior "
+                "resolucao, em que a passagem real apareca com mais de uma celula.")
+        raise _erro(
             "Nao foi possivel conectar os pontos da rota: nao existe caminho de celulas viaveis "
             "entre eles. Causas comuns: declividade maxima admitida baixa demais para o relevo "
             "(celulas acima dela sao intransponiveis), camada de restricao no modo 'evitar' "
@@ -2491,7 +2772,7 @@ def multi_leg_route(cost_array, waypoints_rc, elevation=None, pixel_size_m=None,
     for index in range(len(waypoints_rc) - 1):
         start, end = waypoints_rc[index], waypoints_rc[index + 1]
         if tuple(start) == tuple(end):
-            raise Exception(
+            raise _erro(
                 "Os pontos {} e {} caem na mesma celula do raster. Use pontos mais "
                 "afastados ou um MDE de maior resolucao.".format(index + 1, index + 2))
         passo = 100.0 / max(1, len(waypoints_rc) - 1)
@@ -2627,9 +2908,9 @@ def save_access_route(
     invalid buffer/margin, unreachable endpoints or impossible paths.
     """
     if buffer_m <= 0:
-        raise ValueError("A largura do corredor deve ser maior que zero.")
+        raise _erro("A largura do corredor deve ser maior que zero.")
     if margin_m <= 0:
-        raise ValueError("A margem de busca da rota deve ser maior que zero.")
+        raise _erro("A margem de busca da rota deve ser maior que zero.")
 
     output_dir = os.path.dirname(output_path)
     if output_dir and not os.path.exists(output_dir):
@@ -2643,6 +2924,7 @@ def save_access_route(
     sequence = []
     rows_total, cols_total = score_array.shape
     labels = ["inicial"] + [f"intermediario {i + 1}" for i in range(len(via_xy))] + ["final"]
+    deslocamentos = []
     for label, (x, y) in zip(labels, [start_xy] + via_xy + [end_xy]):
         row, col = world_to_pixel(transform, x, y)
         if not (0 <= row < rows_total and 0 <= col < cols_total):
@@ -2650,13 +2932,37 @@ def save_access_route(
             # proxima": era a mensagem que quem digitava X, Y no CRS errado via.
             x0, y0 = pixel_to_world(transform, 0, 0)
             x1, y1 = pixel_to_world(transform, rows_total - 1, cols_total - 1)
-            raise Exception(
+            raise _erro(
                 "O ponto {} ({:.6g}, {:.6g}) esta fora da extensao do MDE "
                 "(x {:.6g} a {:.6g}, y {:.6g} a {:.6g}, no CRS de trabalho). "
                 "Confira o CRS dos pontos: coordenadas digitadas sao lidas no CRS do projeto.".format(
                     label, x, y, min(x0, x1), max(x0, x1), min(y0, y1), max(y0, y1))
             )
-        sequence.append(nearest_valid_cell(valid_mask, row, col))
+        celula = nearest_valid_cell(valid_mask, row, col)
+        sequence.append(celula)
+        if celula != (row, col):
+            # nearest_valid_cell troca o ponto pedido pela celula viavel mais
+            # proxima dentro de NEAREST_VALID_CELL_RADIUS celulas e ate aqui
+            # nao dizia nada -- nem ao feedback, nem ao log. Em metros o
+            # deslocamento nao tem teto: e 30 x o tamanho do pixel.
+            x_efetivo, y_efetivo = pixel_to_world(transform, celula[0], celula[1])
+            distancia = float(np.hypot(x_efetivo - x, y_efetivo - y))
+            deslocamentos.append(dict(
+                ponto=label, pedido=[float(x), float(y)],
+                usado=[x_efetivo, y_efetivo], deslocamento_m=distancia))
+            texto = (
+                "O ponto {} caiu numa celula inviavel e foi movido {:,.0f} m para a "
+                "celula viavel mais proxima ({:.6g}, {:.6g} no CRS de trabalho). "
+                "O comprimento, o tempo e o ganho referem-se ao trajeto deslocado."
+            ).format(label, distancia, x_efetivo, y_efetivo)
+            if feedback:
+                if distancia > NEAREST_VALID_CELL_WARN_M:
+                    feedback.pushWarning(texto)
+                else:
+                    feedback.pushInfo(texto)
+    if deslocamentos:
+        append_diagnostic_log(log_path, "pontos_deslocados", pontos=deslocamentos,
+                              limite_de_aviso_m=NEAREST_VALID_CELL_WARN_M)
     start_row, start_col = sequence[0]
     end_row, end_col = sequence[-1]
 
@@ -2675,7 +2981,7 @@ def save_access_route(
 
     score_crop = score_array[row_min:row_max, col_min:col_max]
     if score_crop.size > MAX_ROUTE_CROP_CELLS:
-        raise Exception(
+        raise _erro(
             "A area de busca da rota ficou grande demais. Reduza a margem de busca ou use pontos mais proximos "
             "para evitar travamento durante o calculo."
         )
@@ -2720,7 +3026,7 @@ def save_access_route(
     pixel_size_m = None
     if anisotropic:
         if elevation_array is None:
-            raise Exception(
+            raise _erro(
                 "O modelo de tempo de caminhada precisa do MDE, que nao foi repassado."
             )
         elevation_crop = elevation_array[row_min:row_max, col_min:col_max]
@@ -2734,7 +3040,7 @@ def save_access_route(
         optimise_order=optimise_order, feedback=feedback,
         crossing_factor=penalty_crop)
     if len(path_cells) < 2:
-        raise Exception(
+        raise _erro(
             "O ponto inicial e o ponto final caem na mesma celula do raster. "
             "Use pontos mais afastados ou um raster de maior resolucao para gerar uma rota."
         )
@@ -3361,8 +3667,18 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterCrs(
                 self.OUTPUT_CRS,
                 self.tr("alg_outcrs"),
-                defaultValue=QgsProject.instance().crs().authid(),
-                # Sem projeto aberto, authid() devolve string vazia. Sem
+                # initAlgorithm nao pode ler QgsProject.instance(): o singleton
+                # so existe na thread principal e, em execucao em background
+                # (modelo, lote, script, QGIS Server), ele nao e o projeto do
+                # usuario. Medido na auditoria: com um contexto cujo projeto
+                # estava em EPSG:4674, o default lido saia 'EPSG:31983' --
+                # veio do singleton, nao do contexto. Alem disso o default
+                # congelava na instancia registrada no provider, de modo que
+                # trocar o CRS do projeto nao atualizava a Caixa de
+                # Ferramentas. O CRS do projeto passa a ser lido do context em
+                # tempo de execucao, em project_crs_from_context().
+                defaultValue=None,
+                # Sem projeto aberto nao ha CRS nenhum para o padrao. Sem
                 # optional=True o algoritmo recusa o proprio valor padrao
                 # quando chamado por script, modelo ou linha de comando.
                 optional=True,
@@ -3385,10 +3701,14 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         quando a execucao falha. Sem ele, cada execucao deixava no diretorio
         temporario do sistema uma copia completa do MDE reprojetado e dos
         rasters alinhados.
+
+        As excecoes de GDAL/OGR sao ligadas aqui, e so aqui: ligadas no import
+        elas valiam para o processo QGIS inteiro.
         """
         self._temp_dirs = []
         try:
-            return self._run_algorithm(parameters, context, feedback)
+            with gdal_exceptions_scoped():
+                return self._run_algorithm(parameters, context, feedback)
         finally:
             for directory in self._temp_dirs:
                 shutil.rmtree(directory, ignore_errors=True)
@@ -3412,15 +3732,19 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         ]:
             if layer is None:
                 if label == "Altitude / MDE":
-                    raise Exception(f"Camada obrigatória ausente: {label}")
+                    raise _erro(f"Camada obrigatória ausente: {label}")
                 continue
             if not layer.crs().isValid():
-                raise Exception(f"O raster {label} não possui CRS definido.")
+                raise _erro(f"O raster {label} não possui CRS definido.")
             # gdal.Open, e nao os.path.exists: um MDE dentro de um GeoPackage
             # ("GPKG:/caminho.gpkg:mde") e valido no QGIS e nao e um caminho.
-            probe = gdal.Open(str(layer.source()))
+            try:
+                probe = gdal.Open(str(layer.source()))
+            except RuntimeError as exc:
+                raise _erro(
+                    f"O GDAL nao conseguiu abrir a camada {label}: {layer.source()}") from exc
             if probe is None:
-                raise Exception(f"O GDAL nao conseguiu abrir a camada {label}: {layer.source()}")
+                raise _erro(f"O GDAL nao conseguiu abrir a camada {label}: {layer.source()}")
             probe = None
 
         min_altitude = self.parameterAsDouble(parameters, self.ALT_MIN, context)
@@ -3446,12 +3770,12 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 float(part) for part in breaks_text.replace(";", ",").split(",") if part.strip()
             )
         except ValueError:
-            raise Exception(
+            raise _erro(
                 f"Nao entendi os limites de transitabilidade: {breaks_text!r}. "
                 "Informe quatro numeros crescentes separados por virgula, em porcentagem."
             )
         if len(transitability_breaks) != 4:
-            raise Exception(
+            raise _erro(
                 "Os limites de transitabilidade precisam ser exatamente quatro valores "
                 f"em porcentagem, crescentes. Recebi {len(transitability_breaks)}."
             )
@@ -3485,6 +3809,11 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         output_formats = ["Shapefile", "GeoPackage", "KML"]
         output_format = output_formats[output_format_idx] if 0 <= output_format_idx < len(output_formats) else "Shapefile"
         output_crs = self.parameterAsCrs(parameters, self.OUTPUT_CRS, context)
+        if output_crs is None or not output_crs.isValid():
+            # O padrao de OUTPUT_CRS deixou de ser lido em initAlgorithm (onde
+            # so havia o singleton QgsProject.instance()) e passou a sair do
+            # projeto do proprio contexto de execucao.
+            output_crs = project_crs_from_context(context) or output_crs
         output_path = ensure_output_extension(output_path, output_format)
         debug_log_path = diagnostic_log_path(output_path)
         append_diagnostic_log(
@@ -3543,47 +3872,47 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         if bool(start_point_file) != bool(end_point_file):
             message = "Informe os dois pontos: inicial e final. Para gerar rota, ambos sao obrigatorios."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
-            raise Exception(message)
+            raise _erro(message)
         for point_file, label in [(start_point_file, "ponto inicial"), (end_point_file, "ponto final")]:
             if point_file and not os.path.exists(point_file):
                 message = f"Arquivo do {label} nao encontrado: {point_file}"
                 append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
-                raise Exception(message)
+                raise _erro(message)
 
         if total_weight <= 0:
             message = "A soma dos pesos deve ser maior que zero."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
-            raise ValueError(message)
+            raise _erro(message)
         if any(weight < 0 for weight in [altitude_weight, slope_weight, curvh_weight,
                                          curvv_weight, wetness_weight, roughness_weight,
                                          extra_weight]):
             message = "Os pesos nao podem ser negativos."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
-            raise ValueError(message)
+            raise _erro(message)
         if min_altitude >= max_altitude:
             message = "A altitude minima deve ser menor que a altitude maxima."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
-            raise ValueError(message)
+            raise _erro(message)
         if max_slope <= 0 or slope_score_max <= 0:
             message = "Os limites de declividade devem ser maiores que zero."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
-            raise ValueError(message)
+            raise _erro(message)
         if min_patch_area_ha < 0:
             message = "A area minima do fragmento nao pode ser negativa."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
-            raise ValueError(message)
+            raise _erro(message)
         if not (0 <= threshold <= 1):
             message = "O threshold deve estar entre 0 e 1."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
-            raise ValueError(message)
+            raise _erro(message)
         if not (0 < auto_percentile < 100):
             message = "O percentil automatico deve estar entre 0 e 100."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
-            raise ValueError(message)
+            raise _erro(message)
         if route_buffer_m <= 0 or route_margin_m <= 0:
             message = "Corredor e margem de busca devem ser maiores que zero."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
-            raise ValueError(message)
+            raise _erro(message)
 
         if feedback:
             feedback.pushInfo("=== PARÂMETROS CONFIGURADOS ===")
@@ -3626,7 +3955,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         ]
         missing = [label for label, layer, _ in derivative_layers if layer is None]
         if not derive_from_dem and missing:
-            raise Exception(
+            raise _erro(
                 "Sem derivar do MDE, as camadas a seguir sao obrigatorias: "
                 + ", ".join(missing)
                 + ". Marque 'Derivar declividade e curvaturas do proprio MDE' ou forneca os rasters."
@@ -3671,6 +4000,19 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 )
 
         dem_data, transform, proj = read_raster(prepared_rasters["dem"], feedback)
+        # O teto e o aviso de memoria viviam so dentro de derive_terrain e
+        # vector_ruggedness. Com DERIVE_FROM_DEM=False e rugosidade com peso
+        # zero, nenhuma das duas rodava: nem o aviso, nem o teto. Medido na
+        # auditoria com a mesma grade de 9.000.000 de celulas, o caminho que
+        # deriva avisou e gastou 96 B/celula e o que recebe os rasters prontos
+        # nao avisou e gastou 103 B/celula -- o caminho sem aviso gasta mais.
+        # Quem gasta a memoria e a leitura das quatro grades e a combinacao
+        # ponderada, nao a derivacao, entao a guarda pertence aqui. O feedback
+        # so vai quando a derivacao nao roda, para nao duplicar a mesma linha.
+        try:
+            check_terrain_size(dem_data, None if derive_from_dem else feedback)
+        except ValueError as exc:
+            raise _erro(str(exc)) from exc
 
         if vertical_unit == VERTICAL_UNIT_FEET:
             dem_data = (dem_data * FEET_TO_METRES).astype(np.float32)
@@ -3696,6 +4038,16 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             slope_data, slope_transform, slope_proj = read_raster(prepared_rasters["slope"], feedback)
             curvh_data, curvh_transform, curvh_proj = read_raster(prepared_rasters["curvh"], feedback)
             curvv_data, curvv_transform, curvv_proj = read_raster(prepared_rasters["curvv"], feedback)
+            # Sentinela nao declarada num raster fornecido pelo usuario apagava
+            # o criterio inteiro em silencio. Vale para os tres que ele traz;
+            # os derivados do MDE saem da propria grade e ja passaram pelo
+            # aviso de faixa de altitude.
+            for nome_raster, dados_raster in (
+                    ("Declividade", slope_data),
+                    ("Curvatura horizontal", curvh_data),
+                    ("Curvatura vertical", curvv_data)):
+                report_absurd_criterion_values(
+                    dados_raster, nome_raster, feedback, debug_log_path)
         append_diagnostic_log(
             debug_log_path,
             "rasters_lidos",
@@ -3727,7 +4079,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 ("Curvatura vertical", curvv_proj),
             ]:
                 if proj and raster_proj and proj != raster_proj:
-                    raise Exception(f"{label} possui projeção diferente do MDE.")
+                    raise _erro(f"{label} possui projeção diferente do MDE.")
 
         slope_data = slope_to_percent(slope_data, slope_unit, feedback, debug_log_path)
 
@@ -3857,7 +4209,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         extra_norm = None
         if extra_weight > 0:
             if extra_layer is None:
-                raise Exception(
+                raise _erro(
                     "O peso do criterio adicional é maior que zero, mas nenhum raster foi "
                     "informado. Escolha a camada ou zere o peso."
                 )
@@ -3866,9 +4218,11 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 os.path.join(temp_work_dir, "criterio_adicional_alinhado.tif"),
                 resampling="bilinear", feedback=feedback, log_path=debug_log_path)
             extra_data, _, _ = read_raster(extra_aligned, feedback)
+            report_absurd_criterion_values(
+                extra_data, "Criterio adicional", feedback, debug_log_path)
             extra_valid = valid_mask & np.isfinite(extra_data)
             if not np.any(extra_valid):
-                raise Exception(
+                raise _erro(
                     "O raster do criterio adicional nao tem nenhuma celula valida sobre a "
                     "area do MDE. Verifique se ele cobre a area de estudo."
                 )
@@ -3878,7 +4232,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             low = float(np.percentile(extra_data[extra_valid], 5))
             high = float(np.percentile(extra_data[extra_valid], 95))
             if high - low < 1e-12:
-                raise Exception(
+                raise _erro(
                     "O raster do criterio adicional e praticamente constante sobre a area "
                     f"de estudo (P05 = {low:.4g}, P95 = {high:.4g}); ele nao distingue nada."
                 )
@@ -3925,7 +4279,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         wetness_norm = None
         if wetness_weight > 0:
             if twi_data is None:
-                raise Exception(
+                raise _erro(
                     "O peso da umidade do terreno exige a hidrografia extraida do MDE. "
                     "Marque \"Considerar cursos d'agua extraidos do MDE\" ou zere esse peso."
                 )
@@ -3967,11 +4321,11 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         zone_valid_scores = zone_score[~np.isnan(zone_score)]
         route_valid_scores = route_score[~np.isnan(route_score)]
         if generate_zones and zone_valid_scores.size == 0:
-            raise Exception("Nenhum pixel atende às restrições configuradas para zonas potenciais.")
+            raise _erro("Nenhum pixel atende às restrições configuradas para zonas potenciais.")
         if start_point_file and end_point_file and route_valid_scores.size == 0:
-            raise Exception("Nenhum pixel navegável atende às restrições de rota. Aumente o limite de declividade máxima.")
+            raise _erro("Nenhum pixel navegável atende às restrições de rota. Aumente o limite de declividade máxima.")
         if not generate_zones and not (start_point_file and end_point_file) and route_valid_scores.size == 0:
-            raise Exception("Nenhum pixel atende às restrições configuradas.")
+            raise _erro("Nenhum pixel atende às restrições configuradas.")
 
         threshold_is_auto = threshold is None or threshold == 0
         if generate_zones and not walkability_zones and threshold_is_auto:
@@ -4017,13 +4371,15 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             labels=_class_labels(),
         )
         transitability_path = save_transitability_raster(
-            transitability_classes, transform, proj, output_path, feedback)
+            transitability_classes, transform, proj, output_path, feedback,
+            labels=transitability_metrics.get("rotulos"))
         walkable = walkable_fraction(transitability_classes)
         append_diagnostic_log(
             debug_log_path, "transitabilidade",
             arquivo=file_diagnostics(transitability_path),
             fracao_transitavel_classes_1_2=walkable,
-            rotulos_en={str(k): v for k, v in CLASS_LABELS_EN.items()},
+            rotulos_en={str(k): v for k, v in format_class_labels(
+                CLASS_LABELS_EN, transitability_breaks).items()},
             **transitability_metrics,
         )
         if feedback and walkable is not None:
@@ -4128,5 +4484,14 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         if crossings_path:
             result[self.OUTPUT_CROSSINGS] = crossings_path
         result[self.OUTPUT_DEBUG_LOG] = debug_log_path
+        # QgsProcessingParameterFileDestination declara automaticamente uma
+        # saida com o mesmo nome do parametro, e ate aqui ela nunca era
+        # preenchida: o dicionario voltava so com as cinco chaves de produto.
+        # Sem esta chave o Modelador nao encadeia OUTPUT_FILE, o modo lote e o
+        # processing.run() nao recebem de volta o caminho pedido e o "carregar
+        # resultados ao concluir" nao acha a saida declarada. O valor e o
+        # caminho ja normalizado por ensure_output_extension, que e o nome-base
+        # de todos os sete produtos.
+        result[self.OUTPUT_FILE] = output_path
         append_diagnostic_log(debug_log_path, "processamento_concluido", outputs=result)
         return result

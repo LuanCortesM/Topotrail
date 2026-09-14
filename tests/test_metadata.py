@@ -112,3 +112,26 @@ def test_metadata_parses_with_interpolation_as_plugins_qgis_org_does():
     parser = configparser.ConfigParser()          # interpolacao ligada, como no servidor
     parser.read_string(text)
     assert parser["general"]["version"]
+
+
+def test_supports_qt6_is_declared_and_matches_the_promised_maximum():
+    """O repositorio oficial le `supportsQt6` para decidir se serve o plugin a
+    compilacoes Qt6 do QGIS. O manifesto declarava `qgisMaximumVersion=4.99` --
+    isto e, prometia QGIS 4, que roda sobre Qt6 -- e nao declarava o campo:
+    prometia numa ponta e ficava calado exatamente onde o repositorio le.
+
+    O valor e True porque a compatibilidade esta testada: `tests/test_qt6_compat.py`
+    e `tests/test_qt6_runtime.py` cobrem o acesso a enums, que e o unico padrao
+    removido no Qt6 que o codigo usava, e o projeto tem os auxiliares
+    `qt_enum`/`class_enum`/`_qgs_enum` para isso.
+    """
+    general = read_metadata()["general"]
+    declarado = general.get("supportsQt6", "").strip()
+    assert declarado, "metadata.txt nao declara supportsQt6"
+    assert declarado.lower() in ("true", "false"), declarado
+
+    maximo = general.get("qgisMaximumVersion", "").strip()
+    if maximo and int(maximo.split(".")[0]) >= 4:
+        assert declarado.lower() == "true", (
+            "qgisMaximumVersion={} promete QGIS 4 (Qt6), entao supportsQt6 "
+            "nao pode ser {}".format(maximo, declarado))

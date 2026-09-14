@@ -2,6 +2,7 @@
 name=TopoTrail
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
+supportsQt6=True
 description=Topographic suitability, access zones and least-cost routes for preliminary trail and field planning, from a single DEM.
 version=1.2.0
 author=MACIEL, L. S. C.

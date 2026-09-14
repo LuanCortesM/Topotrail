@@ -497,3 +497,24 @@ def test_a_diagonal_step_pays_for_the_ford_it_would_have_skipped(algorithm):
     _, pago = algorithm.least_cost_path(minima, (0, 0), (1, 1), crossing_factor=f3)
     assert gratis == pytest.approx(math.sqrt(2))
     assert pago == pytest.approx(math.sqrt(2) * 8.0)
+
+
+def test_a_corner_only_contact_is_diagnosed_as_such(algorithm):
+    """Quando a unica ligacao e um vertice, a mensagem tem de dizer isso.
+
+    O caso do Parque das Carnaubas, da bateria: ate a 1.2.0 a rota saia por um
+    unico contato de canto entre duas celulas intransponiveis. Fechada a brecha,
+    o caso passa a nao ter rota -- e a resposta certa nao e "aumente a
+    declividade maxima", que nao resolve nada, e sim dizer que ali falta largura.
+    """
+    cost = np.full((11, 11), np.inf)
+    cost[1:5, 1:5] = 1.0                  # sala da esquerda
+    cost[5:10, 5:10] = 1.0                # sala da direita, encostada so no vertice
+    with pytest.raises(Exception) as erro:
+        algorithm.least_cost_path(cost, (2, 2), (7, 7))
+    assert "vertice" in str(erro.value).lower(), str(erro.value)
+
+    # abrindo uma celula de passagem, a rota existe e a mensagem some
+    cost[5, 4] = 1.0
+    caminho, _ = algorithm.least_cost_path(cost, (2, 2), (7, 7))
+    assert (5, 4) in caminho

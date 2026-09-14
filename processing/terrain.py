@@ -18,16 +18,30 @@ import numpy as np
 
 
 # Acima disto a derivacao de relevo passa a ser um risco para o processo do
-# QGIS, nao so uma espera. Medido com tracemalloc em grades de 1000x1000: o
-# pico transitorio e de 114 bytes por celula em derive_terrain e 134 em
-# vector_ruggedness, porque o MDE e promovido a float64 e cada gradiente cria
-# varios temporarios de grade cheia. As duas passam por esta checagem, com o
-# valor da mais cara. 8 milhoes de celulas ficam em torno de 1 GB (aviso); 100
-# milhoes passam de 13 GB e derrubam qualquer maquina de campo (erro, com
-# instrucao de recortar).
+# QGIS, nao so uma espera. O MDE e promovido a float64 e cada gradiente cria
+# varios temporarios de grade cheia.
+#
+# A constante valia 134, medida com tracemalloc so dentro de derive_terrain e
+# vector_ruggedness em grades de 1000x1000. Isso media a derivacao, nao a
+# execucao: a auditoria mediu 205,2 bytes por celula no caminho completo e a
+# promessa de "13,4 GB" em 100 milhoes de celulas era 53% menor que o consumo
+# real. Remedido aqui com resource.getrusage(RUSAGE_SELF).ru_maxrss, pico de
+# processo menos a linha de base, numa grade de 3.000 x 3.000 = 9.000.000 de
+# celulas (medir_memoria.py, um subprocesso limpo por caso):
+#
+#   derivando do MDE, sem hidrologia .................... 130,7 B/celula
+#   rasters proprios, sem hidrologia .................... 103,5 B/celula
+#   derivando do MDE + drenagem + umidade + rugosidade .. 206,4 B/celula
+#   rasters proprios + drenagem + umidade + rugosidade .. 206,7 B/celula
+#
+# Vale o pior caminho, 206,7, arredondado para 230 -- 11% de folga declarada,
+# porque o pico depende do alocador e da fragmentacao e subestimar aqui e o
+# erro que derruba a sessao do usuario. Com isso 8 milhoes de celulas ficam em
+# torno de 1,8 GB (aviso) e 100 milhoes passam de 23 GB (erro, com instrucao de
+# recortar).
 WARN_TERRAIN_CELLS = 8_000_000
 MAX_TERRAIN_CELLS = 100_000_000
-BYTES_POR_CELULA = 134
+BYTES_POR_CELULA = 230
 
 
 def check_terrain_size(dem_array, feedback=None):

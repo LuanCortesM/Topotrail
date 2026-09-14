@@ -58,21 +58,47 @@ WETNESS_PERCENTILE = 95.0
 # falsificaram isso: 5,9% a 14,4% dos pontos caem nas classes 4 e 5, e a maior
 # declividade efetivamente caminhada foi de 115,8% -- acima do limite que a
 # legenda declarava intransponivel. Ver docs/VALIDACAO.md.
+#
+# Os limites aparecem como {b1}..{b4} e sao preenchidos com os que a execucao
+# realmente usou, por format_class_labels(). Antes as porcentagens estavam
+# escritas a mao no texto, e com slope_breaks = 2,4,6,8 o arquivo saia com a
+# classe 1 valendo "< 2%" e a legenda gravada dentro dele dizendo "< 20%":
+# quem abrisse o mapa no QGIS leria uma legenda que contradiz o dado.
 CLASS_LABELS = {
-    CLASS_EASY: "1 - Suave (< 20%)",
-    CLASS_MODERATE: "2 - Moderada (20-35%)",
-    CLASS_STEEP: "3 - Forte (35-60%)",
-    CLASS_SCRAMBLE: "4 - Muito forte (60-100%)",
-    CLASS_IMPASSABLE: "5 - Escarpada (> 100%)",
+    CLASS_EASY: "1 - Suave (< {b1}%)",
+    CLASS_MODERATE: "2 - Moderada ({b1}-{b2}%)",
+    CLASS_STEEP: "3 - Forte ({b2}-{b3}%)",
+    CLASS_SCRAMBLE: "4 - Muito forte ({b3}-{b4}%)",
+    CLASS_IMPASSABLE: "5 - Escarpada (> {b4}%)",
 }
 
 CLASS_LABELS_EN = {
-    CLASS_EASY: "1 - Gentle (< 20%)",
-    CLASS_MODERATE: "2 - Moderate (20-35%)",
-    CLASS_STEEP: "3 - Steep (35-60%)",
-    CLASS_SCRAMBLE: "4 - Very steep (60-100%)",
-    CLASS_IMPASSABLE: "5 - Escarpment (> 100%)",
+    CLASS_EASY: "1 - Gentle (< {b1}%)",
+    CLASS_MODERATE: "2 - Moderate ({b1}-{b2}%)",
+    CLASS_STEEP: "3 - Steep ({b2}-{b3}%)",
+    CLASS_SCRAMBLE: "4 - Very steep ({b3}-{b4}%)",
+    CLASS_IMPASSABLE: "5 - Escarpment (> {b4}%)",
 }
+
+
+def format_class_labels(labels, slope_breaks=DEFAULT_SLOPE_BREAKS):
+    """Preenche os limites de classe nos rotulos com os que estao em vigor.
+
+    Um rotulo sem marcador nenhum atravessa sem alteracao, para nao quebrar uma
+    traducao antiga que ainda traga as porcentagens escritas a mao. Com os
+    limites de fabrica o texto sai identico ao de antes -- 20.0 vira "20".
+    """
+    valores = {}
+    for indice, limite in enumerate(slope_breaks, start=1):
+        valores["b{}".format(indice)] = "{:g}".format(float(limite))
+    formatados = {}
+    for code, label in labels.items():
+        try:
+            formatados[code] = label.format(**valores)
+        except (KeyError, IndexError, ValueError):
+            formatados[code] = label
+    return formatados
+
 
 # Cor por classe, do verde ao vermelho escuro. Gravadas no proprio GeoTIFF para
 # que o mapa abra legivel no QGIS sem o usuario ter de estiliza-lo.
@@ -119,10 +145,13 @@ def classify(slope_percent, valid_mask, roughness=None, wetness=None,
 
     # Os rotulos entram por parametro em vez de serem importados: este modulo e
     # NumPy puro e roda em teste sem QGIS nenhum, e nao deve depender do
-    # carregador de idiomas. Sem rotulos, cai no portugues.
-    labels = labels or CLASS_LABELS
+    # carregador de idiomas. Sem rotulos, cai no portugues. Os limites sao
+    # preenchidos aqui, com os limites que esta classificacao usou, e nao os de
+    # fabrica: a legenda tem de descrever o dado que foi gravado.
+    labels = format_class_labels(labels or CLASS_LABELS, breaks)
 
-    metrics = {"limites_declividade_pct": list(breaks)}
+    metrics = {"limites_declividade_pct": list(breaks),
+               "rotulos": dict(labels)}
     if cell_size_m:
         metrics["tamanho_celula_m"] = float(cell_size_m)
         if cell_size_m > COARSE_CELL_WARNING_M and feedback:
@@ -147,12 +176,19 @@ def classify(slope_percent, valid_mask, roughness=None, wetness=None,
         finite = roughness[usable & np.isfinite(roughness)]
         if finite.size:
             limit = float(np.percentile(finite, ROUGHNESS_PERCENTILE))
-            metrics["limiar_rugosidade_m"] = limit
+            # O VRM (Sappington et al. 2007) e adimensional e vive em [0, 1]:
+            # e 1 menos o modulo do vetor resultante das normais da vizinhanca,
+            # dividido pelo numero de normais. Nao ha metro nenhum nele. O
+            # limiar era impresso e gravado como "0,01 m" -- unidade errada,
+            # e com duas casas decimais uma grandeza que se distingue na
+            # terceira e na quarta.
+            metrics["limiar_rugosidade_vrm"] = limit
             moved = worsen(np.isfinite(roughness) & (roughness > limit), "rugosidade")
             if feedback:
                 feedback.pushInfo(
-                    "Rugosidade acima de {:.2f} m (P{:.0f} da cena) rebaixou {:,} celulas "
-                    "uma classe.".format(limit, ROUGHNESS_PERCENTILE, moved)
+                    "Rugosidade (VRM, adimensional) acima de {:.4f} (P{:.0f} da cena) "
+                    "rebaixou {:,} celulas uma classe.".format(
+                        limit, ROUGHNESS_PERCENTILE, moved)
                 )
 
     if wetness is not None:

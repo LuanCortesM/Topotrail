@@ -10,18 +10,60 @@ Tres regioes com relevo muito diferente, mais casos de robustez:
 Cada caso tem asserts; o resultado sai em bateria.json e RELATORIO.md.
 """
 import os, sys, json, time, math, shutil, traceback
-sys.path.insert(0, "/home/claude/work/exp")
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-import qgis_env, processing  # noqa
-from qgis.core import QgsProcessingFeedback, QgsSettings, QgsVectorLayer, QgsCoordinateReferenceSystem
-from osgeo import gdal, ogr, osr
-import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import entorno  # noqa: E402
+
+# Nenhum caminho desta maquina entra aqui. Cada raiz de dado vem de
+# --nome=<caminho> ou da variavel de ambiente correspondente, e o que faltar
+# sai numa lista unica, com o que se procurava dentro. Antes o script trazia
+# /home/claude/work/exp e /mnt/user-data/uploads/... escritos no corpo e
+# importava qgis_env, um modulo que nunca existiu no repositorio: nem o import
+# resolvia para quem clonasse o projeto.
+DADOS = entorno.Dados()
+ENTRADAS = DADOS.raiz(
+    "entradas", "TOPOTRAIL_ENTRADAS",
+    "Pontos e trilha de referencia da travessia Marins-Itaguare.",
+    ("waypoints.json", "inicio.geojson", "fim.geojson", "picos.geojson",
+     "picos_desordem.geojson", "marins.geojson", "itaguare.geojson",
+     "trilha_real.gpkg"))
+CARTA = DADOS.raiz(
+    "cartas", "TOPOTRAIL_CARTAS",
+    "Cartas topograficas da Mantiqueira (MDE e derivadas, 1 arco-segundo).",
+    ("22S465ZN.tif", "22S465SN.tif", "22S465HN.tif", "22S465VN.tif"))
+TRILHAS = DADOS.raiz(
+    "trilhas", "TOPOTRAIL_TRILHAS",
+    "Trilhas de GPS de campo em KML.",
+    ("trajeto_1_janeiro.kml", "dia_20_e_21_junho.kml"))
+CAATINGA = DADOS.raiz(
+    "caatinga", "TOPOTRAIL_CAATINGA",
+    "Parque Estadual das Carnaubas (Ceara): MDE, pontos e poligonal.",
+    ("carnaubas_dem.tif", "pontos_carnaubas.json", "carnaubas.gpkg"))
+EXTREMOS = DADOS.raiz(
+    "extremos", "TOPOTRAIL_EXTREMOS",
+    "MDEs dos casos extremos: Himalaia sintetico, Nepal e polar 86 N.",
+    (os.path.join("everest_np", "dem.tif"),
+     os.path.join("nepal_himalaia", "dem.tif"),
+     os.path.join("nepal_himalaia", "slope_deg.tif"),
+     os.path.join("polar_86n", "dem.tif")))
+# A bateria e um relatorio unico: rodar metade dela produziria um bateria.json
+# que parece completo e nao e. Por isso para aqui, com a lista do que falta --
+# e antes de criar qualquer diretorio de saida.
+DADOS.exigir("A bateria precisa dos dados de campo, que nao vao no repositorio.")
+B = DADOS.saida("saida", "TOPOTRAIL_SAIDA",
+                os.path.join(entorno.RAIZ_DO_REPOSITORIO, "validation_out"))
+
+_app, processing = entorno.iniciar_qgis()
+from qgis.core import QgsProcessingFeedback, QgsSettings, QgsVectorLayer, QgsCoordinateReferenceSystem  # noqa: E402
+from osgeo import gdal, ogr, osr  # noqa: E402
+import numpy as np  # noqa: E402
 
 gdal.UseExceptions(); ogr.UseExceptions()
-B = "/home/claude/work/bateria"; OUT = f"{B}/out"
+OUT = f"{B}/out"
 shutil.rmtree(OUT, ignore_errors=True); os.makedirs(OUT)
-CARTA = "/mnt/user-data/uploads/02 TOPOTRAIL/Cartas"
-TRILHAS = "/mnt/user-data/uploads/02 TOPOTRAIL/Shapes/Trilhas para Teste"
+CAAT_DEM = f"{CAATINGA}/carnaubas_dem.tif"
+CAAT_PONTOS = f"{CAATINGA}/pontos_carnaubas.json"
+CAAT_POLIGONAL = f"{CAATINGA}/carnaubas.gpkg"
 RESULTS = []
 
 
@@ -128,7 +170,7 @@ def point_file(path, lonlat_list):
     o = None; return path
 
 
-WP = json.load(open(f"{B}/waypoints.json"))
+WP = json.load(open(f"{ENTRADAS}/waypoints.json"))
 MARINS = WP["Pico do Marins"][0][:2]; MARINZINHO = WP["Pico do Marinzinho"][0][:2]; ITAGUARE = WP["Pico Itaguaré"][0][:2]
 
 # =====================================================================
@@ -139,12 +181,12 @@ a_mq, gt_mq, _ = raster(dem_mq)
 print(f"\n== Mantiqueira: MDE {a_mq.shape}, {np.nanmin(a_mq):.0f}-{np.nanmax(a_mq):.0f} m ==")
 
 # A. travessia completa com todos os produtos, passando pelos tres cumes na ordem real
-r, fb, e, s = run(base(dem_mq, f"{OUT}/mq_A.gpkg", f"{B}/inicio.geojson", f"{B}/fim.geojson",
-                       VIA_POINTS_FILE=f"{B}/picos.geojson", STREAMS_FROM_DEM=True, WEIGHT_WETNESS=0.5, WEIGHT_ROUGHNESS=0.5,
+r, fb, e, s = run(base(dem_mq, f"{OUT}/mq_A.gpkg", f"{ENTRADAS}/inicio.geojson", f"{ENTRADAS}/fim.geojson",
+                       VIA_POINTS_FILE=f"{ENTRADAS}/picos.geojson", STREAMS_FROM_DEM=True, WEIGHT_WETNESS=0.5, WEIGHT_ROUGHNESS=0.5,
                        ALTITUDE_BAND_THRESHOLD=True, WALKABILITY_ZONES=False, MIN_PATCH_AREA_HA=5.0))
 if e: record("MQ-A travessia completa", False, str(e)[-300:], s)
 else:
-    rt = vec(r["OUTPUT_ROUTE"]); ag = agreement(r["OUTPUT_ROUTE"], f"{B}/trilha_real.gpkg")
+    rt = vec(r["OUTPUT_ROUTE"]); ag = agreement(r["OUTPUT_ROUTE"], f"{ENTRADAS}/trilha_real.gpkg")
     dist = {n: round(distance_to_route(r["OUTPUT_ROUTE"], p), 1) for n, p in (("Marins", MARINS), ("Marinzinho", MARINZINHO), ("Itaguare", ITAGUARE))}
     tr, _, _ = raster(r["OUTPUT_TRANSITABILITY"]); tw = tr[np.isfinite(tr) & (tr > 0)]
     classes = {int(c): int((tw == c).sum()) for c in range(1, 6)}
@@ -159,14 +201,14 @@ else:
     ROUTE_A = r["OUTPUT_ROUTE"]; LEN_A = rt["attrs"]["compr_m"]
 
 # A2. teto vadeavel = 0,5 km2 (nenhum curso da rede e cruzavel): erro claro que cita o teto
-r, fb, e, s = run(base(dem_mq, f"{OUT}/mq_A2.gpkg", f"{B}/inicio.geojson", f"{B}/fim.geojson",
-                       VIA_POINTS_FILE=f"{B}/picos.geojson", STREAMS_FROM_DEM=True, STREAM_FORD_MAX_KM2=0.5, GENERATE_ZONES=False, SLOPE_MAX=55.0))
+r, fb, e, s = run(base(dem_mq, f"{OUT}/mq_A2.gpkg", f"{ENTRADAS}/inicio.geojson", f"{ENTRADAS}/fim.geojson",
+                       VIA_POINTS_FILE=f"{ENTRADAS}/picos.geojson", STREAMS_FROM_DEM=True, STREAM_FORD_MAX_KM2=0.5, GENERATE_ZONES=False, SLOPE_MAX=55.0))
 record("MQ-A2 nenhum curso vadeavel: a drenagem vira barreira e o erro explica", e is not None and "vadeavel" in str(e),
        dict(erro=str(e).strip().splitlines()[-1][:220] if e else "rodou sem erro"), s)
 
 # B. cumes em ordem embaralhada + otimizacao -> mesma rota que A
-r, fb, e, s = run(base(dem_mq, f"{OUT}/mq_B.gpkg", f"{B}/inicio.geojson", f"{B}/fim.geojson",
-                       VIA_POINTS_FILE=f"{B}/picos_desordem.geojson", OPTIMISE_ORDER=True, GENERATE_ZONES=False))
+r, fb, e, s = run(base(dem_mq, f"{OUT}/mq_B.gpkg", f"{ENTRADAS}/inicio.geojson", f"{ENTRADAS}/fim.geojson",
+                       VIA_POINTS_FILE=f"{ENTRADAS}/picos_desordem.geojson", OPTIMISE_ORDER=True, GENERATE_ZONES=False))
 if e: record("MQ-B ordem otimizada", False, str(e)[-300:], s)
 else:
     rt = vec(r["OUTPUT_ROUTE"]); rel = abs(rt["attrs"]["compr_m"] - LEN_A) / LEN_A
@@ -177,8 +219,8 @@ else:
 # C. rasters proprios da carta (SN/HN/VN) vs derivados; Shapefile; CRS de saida 31983
 for name, path in (("slope", "22S465SN.tif"), ("curvh", "22S465HN.tif"), ("curvv", "22S465VN.tif")):
     clip(f"{CARTA}/{path}", f"{OUT}/mq_{name}.tif", (-45.19, -22.545, -45.035, -22.43))
-r0, fb0, e0, s0 = run(base(dem_mq, f"{OUT}/mq_C0.gpkg", f"{B}/marins.geojson", f"{B}/itaguare.geojson", GENERATE_ZONES=False))
-r1, fb1, e1, s1 = run(base(dem_mq, f"{OUT}/mq_C1.shp", f"{B}/marins.geojson", f"{B}/itaguare.geojson",
+r0, fb0, e0, s0 = run(base(dem_mq, f"{OUT}/mq_C0.gpkg", f"{ENTRADAS}/marins.geojson", f"{ENTRADAS}/itaguare.geojson", GENERATE_ZONES=False))
+r1, fb1, e1, s1 = run(base(dem_mq, f"{OUT}/mq_C1.shp", f"{ENTRADAS}/marins.geojson", f"{ENTRADAS}/itaguare.geojson",
                            DERIVE_FROM_DEM=False, INPUT_SLOPE=f"{OUT}/mq_slope.tif", INPUT_CURVH=f"{OUT}/mq_curvh.tif",
                            INPUT_CURVV=f"{OUT}/mq_curvv.tif", SLOPE_UNIT=0, OUTPUT_FORMAT=0, OUTPUT_CRS="EPSG:31983"))
 if e0 or e1: record("MQ-C rasters proprios", False, str(e0 or e1)[-300:], s0 + s1)
@@ -191,12 +233,12 @@ else:
                 unidade_declividade=fb1.grep("graus", "Declividade")[:2]), s0 + s1)
 
 # D. restricao = faixa de 40 m da trilha real (evitar): a rota tem de sair da trilha; KML; japones
-faixa = buffered_trail_gpkg(f"{B}/trilha_real.gpkg", f"{OUT}/faixa_trilha.gpkg", 40.0, 32723)
-r, fb, e, s = run(base(dem_mq, f"{OUT}/mq_D.kml", f"{B}/inicio.geojson", f"{B}/fim.geojson",
+faixa = buffered_trail_gpkg(f"{ENTRADAS}/trilha_real.gpkg", f"{OUT}/faixa_trilha.gpkg", 40.0, 32723)
+r, fb, e, s = run(base(dem_mq, f"{OUT}/mq_D.kml", f"{ENTRADAS}/inicio.geojson", f"{ENTRADAS}/fim.geojson",
                        CONSTRAINT_LAYER=faixa, CONSTRAINT_BUFFER_M=0.0, CONSTRAINT_MODE=0, OUTPUT_FORMAT=2), lang="ja")
 if e: record("MQ-D restricao evita a trilha real", False, str(e)[-300:], s)
 else:
-    ag = agreement(r["OUTPUT_ROUTE"], f"{B}/trilha_real.gpkg", buffers=(40.0,))
+    ag = agreement(r["OUTPUT_ROUTE"], f"{ENTRADAS}/trilha_real.gpkg", buffers=(40.0,))
     aux = open(r["OUTPUT_TRANSITABILITY"] + ".aux.xml", encoding="utf-8").read()
     kml = vec(r["OUTPUT_VECTOR"]); ksrs = osr.SpatialReference(); ksrs.ImportFromWkt(kml["wkt"])
     record("MQ-D restricao 'evitar' sobre a trilha real; KML; legenda em japones", ag["40m"]["rota_no_buffer_da_trilha"] < 0.05 and "緩" in aux and ksrs.GetAuthorityCode(None) == "4326",
@@ -206,7 +248,7 @@ else:
 # E. modo penalizar (8x) e modelos de custo alternativos rodam e dao rotas diferentes
 lens = {}
 for model in (0, 1, 2):
-    r, fb, e, s = run(base(dem_mq, f"{OUT}/mq_E{model}.gpkg", f"{B}/marins.geojson", f"{B}/itaguare.geojson", ROUTE_COST_MODEL=model,
+    r, fb, e, s = run(base(dem_mq, f"{OUT}/mq_E{model}.gpkg", f"{ENTRADAS}/marins.geojson", f"{ENTRADAS}/itaguare.geojson", ROUTE_COST_MODEL=model,
                            CONSTRAINT_LAYER=faixa, CONSTRAINT_MODE=1, GENERATE_ZONES=False))
     lens[model] = None if e else (round(vec(r["OUTPUT_ROUTE"])["attrs"]["compr_m"]), vec(r["OUTPUT_ROUTE"])["attrs"].get("tempo_h"))
 record("MQ-E tres modelos de custo + restricao 'penalizar'", all(v is not None for v in lens.values()) and lens[2][1] is not None and lens[0][1] is None,
@@ -215,10 +257,10 @@ record("MQ-E tres modelos de custo + restricao 'penalizar'", all(v is not None f
 # =====================================================================
 # CEARA: Parque Estadual das Carnaubas (Copernicus GLO-90 real)
 # =====================================================================
-dem_ce = "/home/claude/work/caat/carnaubas_dem.tif"
+dem_ce = CAAT_DEM
 a_ce, _, _ = raster(dem_ce)
 print(f"\n== Ceara: MDE {a_ce.shape}, {np.nanmin(a_ce):.0f}-{np.nanmax(a_ce):.0f} m ==")
-pts = json.load(open("/home/claude/work/caat/pontos_carnaubas.json"))
+pts = json.load(open(CAAT_PONTOS))
 ce_a = point_file(f"{OUT}/ce_a.geojson", [pts["origem"][:2]]); ce_b = point_file(f"{OUT}/ce_b.geojson", [pts["destino"][:2]])
 # trilha real do Ceara (trajeto 1 de janeiro) como gpkg
 tr1 = ogr.GetDriverByName("LIBKML").Open(f"{TRILHAS}/trajeto_1_janeiro.kml")
@@ -241,7 +283,7 @@ ce_t1 = point_file(f"{OUT}/ce_t1.geojson", [last.GetPoint_2D(last.GetPointCount(
 # A. analise completa: drenagem, umidade, faixas altimetricas, zonas caminhaveis, poligonal do parque penalizada
 r, fb, e, s = run(base(dem_ce, f"{OUT}/ce_A.gpkg", ce_a, ce_b, STREAMS_FROM_DEM=True, STREAM_MIN_BASIN_KM2=0.5, WEIGHT_WETNESS=1.0,
                        ALTITUDE_BAND_THRESHOLD=True, ALTITUDE_BAND_SIZE_M=100.0, WALKABILITY_ZONES=True,
-                       CONSTRAINT_LAYER="/home/claude/work/caat/carnaubas.gpkg", CONSTRAINT_BUFFER_M=0.0, CONSTRAINT_MODE=1,
+                       CONSTRAINT_LAYER=CAAT_POLIGONAL, CONSTRAINT_BUFFER_M=0.0, CONSTRAINT_MODE=1,
                        ROUTE_MARGIN_M=6000.0, MIN_PATCH_AREA_HA=10.0), lang="en")
 if e: record("CE-A Carnaubas completo", False, str(e)[-300:], s)
 else:
@@ -276,7 +318,7 @@ record("CE-C destino fora do MDE (GPS ate Sobral) da erro claro", e is not None 
 # =====================================================================
 # HIMALAIA: MDE sintetico com estatistica do Everest (3200-8848 m)
 # =====================================================================
-dem_hi = "/home/claude/work/exp/extremos/everest_np/dem.tif"
+dem_hi = f"{EXTREMOS}/everest_np/dem.tif"
 a_hi, gt_hi, _ = raster(dem_hi)
 print(f"\n== Himalaia (sintetico): MDE {a_hi.shape}, {np.nanmin(a_hi):.0f}-{np.nanmax(a_hi):.0f} m ==")
 def lonlat(gt, r, c): return (gt[0] + (c + 0.5) * gt[1], gt[3] + (r + 0.5) * gt[5])
@@ -302,7 +344,7 @@ else:
     rt = vec(r["OUTPUT_ROUTE"]); record("HI-B MDE em pes (unidade vertical) reproduz a rota em metros", abs(rt["attrs"]["compr_m"] - HI_LEN) / HI_LEN < 0.01,
                                        dict(compr_m=round(rt["attrs"]["compr_m"]), compr_metros=round(HI_LEN)), s)
 # C. Nepal sintetico com raster de declividade em GRAUS fornecido
-np_dir = "/home/claude/work/exp/paises/nepal_himalaia"; a_np, gt_np, _ = raster(f"{np_dir}/dem.tif")
+np_dir = f"{EXTREMOS}/nepal_himalaia"; a_np, gt_np, _ = raster(f"{np_dir}/dem.tif")
 np_a = point_file(f"{OUT}/np_a.geojson", [lonlat(gt_np, 100, 100)]); np_b = point_file(f"{OUT}/np_b.geojson", [lonlat(gt_np, a_np.shape[0] - 100, a_np.shape[1] - 100)])
 r, fb, e, s = run(base(f"{np_dir}/dem.tif", f"{OUT}/np_C.gpkg", np_a, np_b, DERIVE_FROM_DEM=False, INPUT_SLOPE=f"{np_dir}/slope_deg.tif",
                        INPUT_CURVH=f"{np_dir}/curv_h.tif", INPUT_CURVV=f"{np_dir}/curv_v.tif", SLOPE_UNIT=1, SLOPE_MAX=150.0, ROUTE_MARGIN_M=20000.0, GENERATE_ZONES=False), lang="fr")
@@ -312,14 +354,14 @@ record("HI-C Nepal: rasters proprios em graus (fr)", e is None and vec(r["OUTPUT
 # =====================================================================
 # EXTRAS: polar (aviso UTM), Web Mercator, camada de memoria, idiomas restantes
 # =====================================================================
-dem_po = "/home/claude/work/exp/extremos/polar_86n/dem.tif"; a_po, gt_po, _ = raster(dem_po)
+dem_po = f"{EXTREMOS}/polar_86n/dem.tif"; a_po, gt_po, _ = raster(dem_po)
 po_a = point_file(f"{OUT}/po_a.geojson", [lonlat(gt_po, 200, 200)]); po_b = point_file(f"{OUT}/po_b.geojson", [lonlat(gt_po, 700, 700)])
 r, fb, e, s = run(base(dem_po, f"{OUT}/po.gpkg", po_a, po_b, GENERATE_ZONES=False, ROUTE_MARGIN_M=20000.0), lang="es")
 record("EX-1 latitude 86 N: roda e avisa que a UTM esta fora do dominio", e is None and any("84" in w for w in fb.grep("AVISO")),
        dict(erro=str(e)[-200:]) if e else dict(aviso=fb.grep("84")[:1], compr_m=round(vec(r["OUTPUT_ROUTE"])["attrs"]["compr_m"])), s)
 
 merc = f"{OUT}/mq_3857.tif"; gdal.Warp(merc, dem_mq, dstSRS="EPSG:3857", dstNodata=-9999)
-r, fb, e, s = run(base(merc, f"{OUT}/merc.gpkg", f"{B}/marins.geojson", f"{B}/itaguare.geojson", GENERATE_ZONES=False))
+r, fb, e, s = run(base(merc, f"{OUT}/merc.gpkg", f"{ENTRADAS}/marins.geojson", f"{ENTRADAS}/itaguare.geojson", GENERATE_ZONES=False))
 ref_len = lens[2][0] if lens.get(2) else None
 record("EX-2 MDE em Web Mercator e reprojetado para UTM (rota igual a do MDE geografico)", e is None and any("Mercator" in w for w in fb.grep("AVISO")) and abs(vec(r["OUTPUT_ROUTE"])["attrs"]["compr_m"] - LEN_A * 0 - vec(r0["OUTPUT_ROUTE"])["attrs"]["compr_m"]) / vec(r0["OUTPUT_ROUTE"])["attrs"]["compr_m"] < 0.05,
        dict(erro=str(e)[-200:]) if e else dict(aviso=fb.grep("Mercator")[:1], compr_m=round(vec(r["OUTPUT_ROUTE"])["attrs"]["compr_m"]), compr_ref=round(vec(r0["OUTPUT_ROUTE"])["attrs"]["compr_m"])), s)
@@ -327,7 +369,7 @@ record("EX-2 MDE em Web Mercator e reprojetado para UTM (rota igual a do MDE geo
 mem = QgsVectorLayer("Polygon?crs=EPSG:32723", "mem", "memory")
 from qgis.core import QgsFeature, QgsGeometry
 fz = QgsFeature(); fz.setGeometry(QgsGeometry.fromWkt(vec(faixa)["geom"].ExportToWkt())); mem.dataProvider().addFeatures([fz])
-r, fb, e, s = run(base(dem_mq, f"{OUT}/mem.gpkg", f"{B}/inicio.geojson", f"{B}/fim.geojson", CONSTRAINT_LAYER=mem, CONSTRAINT_MODE=0, GENERATE_ZONES=False))
+r, fb, e, s = run(base(dem_mq, f"{OUT}/mem.gpkg", f"{ENTRADAS}/inicio.geojson", f"{ENTRADAS}/fim.geojson", CONSTRAINT_LAYER=mem, CONSTRAINT_MODE=0, GENERATE_ZONES=False))
 record("EX-3 camada de restricao em memoria (sem arquivo)", e is None and bool(fb.grep("Camada de restricao")), dict(erro=str(e)[-200:]) if e else dict(log=fb.grep("Camada de restricao")[:1]), s)
 
 QgsSettings().setValue("TopoTrail/language", "pt")
