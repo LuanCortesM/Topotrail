@@ -21,7 +21,6 @@ import pathlib
 import sys
 import types
 
-import numpy as np
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -148,6 +147,7 @@ def _install_stubs():
     _module("qgis")
     _module("qgis.core", **{name: type(name, (_Base,), {}) for name in qgis_names})
     _module("qgis.PyQt")
+
     class _Any:
         """Aceita qualquer atributo.
 
