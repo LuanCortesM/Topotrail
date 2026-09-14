@@ -3059,6 +3059,26 @@ def save_access_route(
         route_attributes["tempo_h"] = float(accumulated_cost)
         route_attributes["tempo_hms"] = "{:d}h{:02d}".format(
             int(accumulated_cost), int(round((accumulated_cost % 1.0) * 60)))
+        # A duracao de Tobler e otimista para trabalho de campo por um fator de
+        # 1,7 a 3,1, medido contra 65 km de trajetos de levantamento com marcacao
+        # de tempo. Como multiplicar a velocidade maxima por uma constante divide
+        # todos os custos pela mesma constante, a ROTA nao muda -- so a duracao.
+        # Por isso a estimativa de campo e uma simples reescala, e sai ao lado da
+        # de Tobler em vez de substitui-la: o usuario ve as duas e escolhe.
+        fator_campo = TOBLER_MAX_SPEED_KMH / FIELD_SURVEY_SPEED_KMH
+        tempo_campo = float(accumulated_cost) * fator_campo
+        route_attributes["tempo_campo_h"] = tempo_campo
+        route_attributes["tempo_campo_hms"] = "{:d}h{:02d}".format(
+            int(tempo_campo), int(round((tempo_campo % 1.0) * 60)))
+        route_attributes["velocidade_campo_kmh"] = float(FIELD_SURVEY_SPEED_KMH)
+        if feedback:
+            feedback.pushInfo(
+                "Duracao estimada: {:.2f} h em ritmo de Tobler ({:.1f} km/h de velocidade "
+                "maxima) e {:.2f} h em ritmo de levantamento de campo ({:.1f} km/h, medido "
+                "em campanha herpetologica). A rota e a mesma nos dois casos: a velocidade "
+                "maxima altera a duracao, nao o tracado.".format(
+                    float(accumulated_cost), TOBLER_MAX_SPEED_KMH,
+                    tempo_campo, FIELD_SURVEY_SPEED_KMH))
     if elevation_array is not None:
         route_altitudes = [
             float(elevation_array[row + row_min, col + col_min])

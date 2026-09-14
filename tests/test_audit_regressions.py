@@ -4,6 +4,8 @@ Cada teste reproduz o defeito como ele foi medido, com o numero que saia antes
 da correcao no comentario, para que a suite conte a historia.
 """
 
+import inspect
+
 import numpy as np
 from pathlib import Path
 
@@ -268,3 +270,26 @@ def test_a_stream_crossed_diagonally_still_shows_up_in_the_list(algorithm):
     travessias = algorithm.detect_stream_crossings(rota, mask, area, classe)
     assert len(travessias) == 1, "a travessia diagonal nao foi detectada"
     assert travessias[0]["area_km2"] == 3.0
+
+
+def test_the_field_pace_estimate_is_offered_beside_the_tobler_one(algorithm):
+    """A velocidade de campo de 2,4 km/h precisa existir no produto, nao so no texto.
+
+    Ate a 1.2.0, FIELD_SURVEY_SPEED_KMH era constante morta: aparecia na
+    documentacao e no capitulo da dissertacao -- "o plugin passou a expor uma
+    velocidade de referencia de campo" -- e nao era lida por nenhum parametro,
+    nenhuma chave de traducao e nenhuma linha de registro. O capitulo descrevia
+    um software que nao existia.
+
+    A reescala e licita exatamente pelo motivo que o capitulo argumenta:
+    multiplicar a velocidade maxima por uma constante divide todos os custos
+    pela mesma constante, de modo que a ordenacao dos caminhos nao muda e a rota
+    e identica celula a celula. So a duracao muda.
+    """
+    assert algorithm.FIELD_SURVEY_SPEED_KMH == 2.4
+    fator = algorithm.TOBLER_MAX_SPEED_KMH / algorithm.FIELD_SURVEY_SPEED_KMH
+    assert fator == pytest.approx(2.5)
+
+    fonte = inspect.getsource(algorithm)
+    assert "tempo_campo_h" in fonte, "a estimativa de campo nao chega a camada de rota"
+    assert "velocidade_campo_kmh" in fonte

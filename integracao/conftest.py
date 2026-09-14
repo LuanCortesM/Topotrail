@@ -61,6 +61,28 @@ def osr():
     return modulo
 
 
+@pytest.fixture(autouse=True)
+def idioma_limpo():
+    """Devolve o idioma do algoritmo ao padrao entre um teste e outro.
+
+    O idioma vive em QgsSettings, que e estado global do processo: um teste que
+    roda em chines deixava o seguinte lendo a legenda em chines, e a falha
+    aparecia no teste errado, so quando a suite rodava inteira e nessa ordem.
+    """
+    try:
+        from qgis.core import QgsSettings
+    except Exception:
+        yield
+        return
+    chave = "TopoTrail/language"
+    anterior = QgsSettings().value(chave, "")
+    QgsSettings().setValue(chave, "pt")
+    try:
+        yield
+    finally:
+        QgsSettings().setValue(chave, anterior)
+
+
 @pytest.fixture(scope="session")
 def plugin():
     """O pacote do plugin como ele e importado dentro do QGIS."""
