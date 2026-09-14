@@ -5,7 +5,7 @@ Tres regioes com relevo muito diferente, mais casos de robustez:
     GPS real da travessia com os cumes marcados pelo proprio caminhante);
   * Ceara -- Parque Estadual das Carnaubas (Copernicus GLO-90 real; trilhas GPS de
     campo; poligonal do parque);
-  * Himalaia -- MDE sintetico com a estatistica do Everest (o download do tile
+  * Himalaia -- MDE sintetico escalado para a faixa de altitude do Everest (o download do tile
     real e bloqueado neste ambiente; o caso vale pelo regime de declividade).
 Cada caso tem asserts; o resultado sai em bateria.json e RELATORIO.md.
 """
@@ -316,7 +316,11 @@ r, fb, e, s = run(base(dem_ce, f"{OUT}/ce_C.gpkg", ce_a, ce_far, GENERATE_ZONES=
 record("CE-C destino fora do MDE (GPS ate Sobral) da erro claro", e is not None and "fora da extensao" in str(e), dict(ponto=fx, erro=str(e).strip().split("\n")[-1][:200]), s)
 
 # =====================================================================
-# HIMALAIA: MDE sintetico com estatistica do Everest (3200-8848 m)
+# HIMALAIA: MDE sintetico na faixa de altitude do Everest (3200-8848 m).
+# NAO reproduz o relevo real: medido contra um transecto SRTM do Khumbu, e cerca
+# de duas vezes mais ingreme (declividade mediana 54,6% contra 27,6%) e tem
+# autocorrelacao do desnivel -0,13 contra +0,63 do terreno real -- ruido, nao
+# forma de relevo. Serve como teste de esforco, que e um caso pior que o real.
 # =====================================================================
 dem_hi = f"{EXTREMOS}/everest_np/dem.tif"
 a_hi, gt_hi, _ = raster(dem_hi)

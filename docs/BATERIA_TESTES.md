@@ -6,7 +6,7 @@ Corrida em QGIS 3.34 headless, plugin instalado como o usuário instala, sem geo
 |---|---|---|
 | Serra da Mantiqueira — Marins × Itaguaré | MDE real de 1″ (folha 22S465 do TOPODATA/INPE, refinamento do SRTM; Valeriano & Rossetti 2012), 600–2401 m; trilha GPS real da travessia, com Pico do Marins, Marinzinho e Itaguaré marcados pelo caminhante; rasters de declividade e curvatura da própria carta | O caso de uso da dissertação: montanha, três destinos, comparação com trilha real |
 | Ceará — P. E. das Carnaúbas | Copernicus GLO-90 real, 10–915 m; trajetos GPS de campo; poligonal do parque | Relevo baixo e seco, pixel de 90 m, drenagem e umidade importam, restrição por polígono |
-| Himalaia | MDE sintético com a estatística do Everest (3200–8848 m, 90 m). O download do tile Copernicus real é bloqueado neste ambiente. | Regime extremo de declividade: o que acontece quando quase tudo é classe 4–5 |
+| Himalaia | MDE sintético escalado para a faixa de altitude do Everest (3200–8848 m, 90 m); o download do tile Copernicus real é bloqueado neste ambiente. Não reproduz o relevo do Khumbu: medido contra um transecto SRTM real, é cerca de duas vezes mais íngreme e tem autocorrelação de desnível negativa, isto é, ruído e não forma de relevo. | Regime extremo de declividade: o que acontece quando quase tudo é classe 4–5 |
 | Extras | Latitude 86° N; MDE em Web Mercator; camada de restrição em memória | Limites da UTM, CRS não métrico, camada sem arquivo |
 
 ## Resultado: 15 de 15 casos aprovados

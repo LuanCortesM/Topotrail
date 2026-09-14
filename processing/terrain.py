@@ -219,12 +219,13 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
     # amplitude verdadeira numa onda de quatro celulas contra 40% -- mas quebra
     # uma propriedade que importa mais aqui: com o operador encadeado o Hessiano
     # discreto tem posto 1 sobre qualquer superficie de curvas de nivel retas,
-    # de modo que a curvatura plana de uma encosta lisa fica abaixo de 1% da
-    # curvatura de perfil real em qualquer orientacao, e exatamente zero nos
-    # eixos de simetria da grade. Misturando familias de estencil isso se perde:
-    # medido numa encosta corrugada a 45 graus com ondas de seis celulas, a
-    # curvatura plana espuria subiu de 1,8e-15 para 9,6e-3 1/m -- um vale de
-    # 105 m de raio onde nao ha vale nenhum. Como o modelo penaliza curvatura
+    # de modo que a curvatura plana de uma encosta lisa fica pequena em qualquer
+    # orientacao: exatamente zero nos eixos de simetria da grade e, numa varredura
+    # de angulos sobre uma encosta corrugada com ondas de seis celulas, no maximo
+    # 0,41% da curvatura de perfil real, a 21 graus. Misturando familias de
+    # estencil isso se perde: na MESMA superficie a 45 graus, onde o operador
+    # encadeado da zero exato, a curvatura plana espuria do estencil misto sobe
+    # para 8,6% do sinal real -- uma feicao concava onde a superficie e lisa. Como o modelo penaliza curvatura
     # afastada de zero, encostas obliquas passariam a ser penalizadas por uma
     # forma que a superficie nao tem.
     #

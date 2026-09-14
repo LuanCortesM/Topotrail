@@ -243,11 +243,12 @@ def test_plan_curvature_is_zero_on_straight_contours_at_any_orientation(terrain,
     identicamente nula, em qualquer angulo em relacao aos eixos da grade.
     Numericamente isso depende de as tres segundas derivadas virem do mesmo
     operador: com o gradiente aplicado duas vezes o Hessiano discreto tem posto
-    1, e o residuo fica abaixo de 1% da curvatura de perfil real -- exatamente
-    zero nos eixos de simetria da grade (0, 45 e 90 graus) e cerca de 1e-4 nas
-    orientacoes intermediarias. Misturando um estencil de tres pontos nas
-    derivadas puras com o termo cruzado do gradiente, o residuo sobe para cerca
-    de 13%: um vale de 105 m de raio aparecendo numa encosta lisa.
+    1, e o residuo fica pequeno em qualquer orientacao -- exatamente zero nos
+    eixos de simetria da grade (0, 45 e 90 graus) e no maximo 0,41% da curvatura
+    de perfil real nas orientacoes intermediarias, medido a 21 graus numa
+    varredura. Misturando um estencil de tres pontos nas derivadas puras com o
+    termo cruzado do gradiente, o residuo sobe para 8,6% na mesma superficie a
+    45 graus: uma feicao concava aparecendo numa encosta lisa.
 
     O teste anterior usava uma crista alinhada ao eixo y -- uma das orientacoes
     em que ate o esquema misto continua exato -- e por isso nao podia detectar
