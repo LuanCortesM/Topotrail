@@ -293,3 +293,27 @@ def test_the_field_pace_estimate_is_offered_beside_the_tobler_one(algorithm):
     fonte = inspect.getsource(algorithm)
     assert "tempo_campo_h" in fonte, "a estimativa de campo nao chega a camada de rota"
     assert "velocidade_campo_kmh" in fonte
+
+
+def test_the_diagnostic_log_describes_one_run_and_not_a_pile_of_them(algorithm, tmp_path):
+    """O registro de diagnostico e prova de proveniencia de UMA execucao.
+
+    Ele acumulava: rodar de novo sobre a mesma saida acrescentava eventos ao
+    arquivo antigo, sem nada que separasse as execucoes, e a leitura mais
+    natural -- a primeira linha -- passava a ser a da mais antiga. Foi assim que
+    um registro gravado pela versao 1.2.0 continuou anunciando 1.2.0 depois de a
+    rota ter sido recalculada pela 1.3.0, enquanto os rasters e as camadas do
+    mesmo conjunto ja eram os novos.
+    """
+    import json
+
+    caminho = str(tmp_path / "saida_diagnostico_topotrail.log")
+    algorithm.append_diagnostic_log(caminho, "processamento_iniciado", versao="antiga")
+    algorithm.append_diagnostic_log(caminho, "etapa", n=1)
+    algorithm.append_diagnostic_log(caminho, "processamento_iniciado", versao="nova")
+    algorithm.append_diagnostic_log(caminho, "etapa", n=2)
+
+    eventos = [json.loads(linha) for linha in open(caminho, encoding="utf-8")]
+    assert [e["event"] for e in eventos] == ["processamento_iniciado", "etapa"]
+    assert eventos[0]["versao"] == "nova", "a primeira linha e a da execucao antiga"
+    assert eventos[1]["n"] == 2

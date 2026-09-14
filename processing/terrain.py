@@ -247,11 +247,13 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
         # cada vez mais perto de um ponto plano. Como o modelo pontua a forma
         # pela distancia a zero, o terreno mais suave -- justamente o que se
         # quer premiar -- recebia a pior nota de forma. Medido na cena da
-        # Mantiqueira do capitulo: corr(log da declividade, nota de forma) =
-        # +0,52, decil mais suave 0,736 contra 0,964 no mais ingreme, com o
-        # criterio de forma trabalhando CONTRA o de declividade sob o mesmo
-        # peso. Com a curvatura tangencial a correlacao vai a -0,17, que e o
-        # sinal esperado: terreno mais ingreme e um pouco mais dissecado.
+        # Mantiqueira do capitulo, na grade de trabalho da execucao canonica
+        # (543 x 434 celulas de 29,36 m): corr(log da declividade, nota de
+        # forma) = +0,58, decil mais suave 0,704 contra 0,958 no mais ingreme,
+        # com o criterio de forma trabalhando CONTRA o de declividade sob o
+        # mesmo peso. Com a curvatura tangencial a correlacao cai para +0,06 e
+        # os decis extremos ficam em 0,779 e 0,805: o criterio de forma deixa
+        # de acompanhar a declividade.
         plan = np.where(
             p > 1e-12,
             (zxx * zy ** 2 - 2.0 * zyx * zx * zy + zyy * zx ** 2) / (p * np.sqrt(q)),

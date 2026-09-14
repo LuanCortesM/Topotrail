@@ -278,6 +278,17 @@ def file_diagnostics(path):
 
 
 def append_diagnostic_log(log_path, event, **data):
+    """Grava um evento no registro de diagnostico da execucao.
+
+    O evento "processamento_iniciado" RECOMECA o arquivo. O registro documenta
+    uma execucao -- e a prova de proveniencia que permite reproduzir uma rota a
+    partir dele --, e as demais saidas do mesmo conjunto (rasters, camadas) sao
+    sobrescritas a cada execucao. Acumulando, o arquivo passava a conter varias
+    execucoes sem nada que as separasse, e a leitura mais natural, a primeira
+    linha, era a da execucao mais antiga: foi assim que um registro gravado pela
+    versao 1.2.0 continuou anunciando 1.2.0 depois de a rota ter sido
+    recalculada pela 1.3.0.
+    """
     if not log_path:
         return
     output_dir = os.path.dirname(log_path)
@@ -288,7 +299,8 @@ def append_diagnostic_log(log_path, event, **data):
         "event": event,
         **data,
     }
-    with open(log_path, "a", encoding="utf-8") as log_file:
+    modo = "w" if event == "processamento_iniciado" else "a"
+    with open(log_path, modo, encoding="utf-8") as log_file:
         log_file.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
 
 

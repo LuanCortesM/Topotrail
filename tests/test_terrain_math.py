@@ -313,10 +313,11 @@ def test_plan_curvature_stays_bounded_where_the_ground_goes_flat(terrain, transf
     plano: no alto de uma calota lisa ela diverge como 1/r embora a superficie
     ali nao tenha nada de abrupto. Como o modelo pontua a forma pela distancia
     a zero, o terreno mais suave -- que e o que se quer premiar -- recebia a
-    pior nota de forma. Medido na cena real da Mantiqueira do capitulo:
-    corr(log da declividade, nota de forma) = +0,52, decil mais suave 0,736
-    contra 0,964 no mais ingreme, com o criterio de forma trabalhando CONTRA o
-    de declividade sob o mesmo peso.
+    pior nota de forma. Medido na cena real da Mantiqueira do capitulo, na grade
+    de trabalho da execucao canonica: corr(log da declividade, nota de forma) =
+    +0,58, decil mais suave 0,704 contra 0,958 no mais ingreme, com o criterio
+    de forma trabalhando CONTRA o de declividade sob o mesmo peso; com a
+    tangencial a correlacao cai para +0,06.
 
     A curvatura tangencial de Mitasova & Hofierka (1993) e a curvatura NORMAL na
     direcao da curva de nivel: numa calota z = 500 - a r^2 ela vale

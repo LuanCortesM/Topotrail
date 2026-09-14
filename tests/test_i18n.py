@@ -193,3 +193,23 @@ def test_no_label_is_clipped_in_any_language():
                         f"({widget.width()} px para {widget.sizeHint().width()})")
     finally:
         dialog.close()
+
+
+@pytest.mark.parametrize("code", _codes())
+def test_the_window_does_not_claim_the_defaults_were_calibrated(code):
+    """A janela nao pode afirmar o que o capitulo desmente.
+
+    Ate a 1.2.0 a etapa de criterios dizia, nos seis idiomas, que "os valores
+    padrao foram calibrados contra trilhas reais". Nao foram: o que a validacao
+    de campo calibrou sao duas constantes internas do modelo de custo, que nem
+    aparecem nessa etapa. Os pesos, o limite de declividade e o percentil de
+    corte continuam sendo juizo do usuario -- e uma janela que afirma o
+    contrario convida a publicar parametros como se fossem medidos.
+    """
+    proibido = ("calibrad", "calibrat", "calibré", "calibre", "較正", "校准")
+    textos = _load(code)
+    for chave in ("s3_sub", "note_tuning"):
+        valor = textos.get(chave, "")
+        baixo = valor.lower()
+        assert not any(termo.lower() in baixo for termo in proibido), (
+            "{}.{} volta a afirmar calibracao: {!r}".format(code, chave, valor))
