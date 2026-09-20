@@ -152,10 +152,11 @@ TOBLER_MAX_SPEED_KMH = 6.0
 TOBLER_DECAY = 3.5
 TOBLER_OPTIMUM_SLOPE = 0.05
 
-# Ritmo mediano medido em trajetos de trabalho de campo na caatinga, com paradas
-# de ate 120 s contadas como caminhada. Os trajetos de GPS que sustentam esta
-# constante foram registrados e cedidos por Sabrina Barros da Silva (S.B. Silva),
-# em trabalho de campo independente deste projeto.
+# Ritmo mediano medido em trajetos de inventario botanico na caatinga, com
+# paradas de ate 120 s contadas como caminhada. Os trajetos de GPS que sustentam
+# esta constante foram registrados e cedidos por Sabrina Barros da Silva
+# (S.B. Silva), em inventario conduzido para a dissertacao dela. E o ritmo de um
+# levantamento botanico no semiarido, nao uma constante universal de campo.
 # Oferecido como alternativa explicita a 6,0 km/h para quem quer que a duracao
 # estimada se pareca com a duracao real.
 FIELD_SURVEY_SPEED_KMH = 2.4
@@ -192,10 +193,11 @@ TERRAIN_SLOWDOWN_MAX = 2.0
 # DUAS VEZES MAIS drenagem do que o acaso geometrico, e nao menos. Nao ha
 # evitacao revelada a calibrar. Em terreno semiarido o leito seco costuma ser a
 # melhor superficie de caminhada -- plano, desobstruido e sem a vegetacao
-# espinhosa do interfluvio --, mas o motivo nao e estabelecido por estes dados e
-# o objetivo de quem percorreu os trajetos nao e conhecido. O que a medicao
-# sustenta e o fato. Penalizar drenagem por padrao afastaria a rota de um terreno
-# que, nesses trajetos, foi procurado e nao evitado. Por isso a restricao e opcional
+# espinhosa do interfluvio -- e, tratando-se de inventario botanico, a faixa
+# marginal de drenagem concentra umidade e flora distintas do interfluvio, sendo
+# ali alvo de amostragem e nao obstaculo. As duas explicacoes sao interpretacao;
+# o que a medicao sustenta e o fato. Penalizar drenagem por padrao afastaria a
+# rota de um terreno que, nesses trajetos, foi procurado e nao evitado. Por isso a restricao e opcional
 # e permanece desligada por padrao. Ver docs/VALIDACAO.md, secao 6.
 #
 # O que fazer com celulas restritas (cursos d'agua, camada vetorial do usuario).
@@ -3101,7 +3103,7 @@ def save_access_route(
             feedback.pushInfo(
                 "Duracao estimada: {:.2f} h em ritmo de Tobler ({:.1f} km/h de velocidade "
                 "maxima) e {:.2f} h em ritmo de levantamento de campo ({:.1f} km/h, medido "
-                "em trajetos de campo na caatinga). A rota e a mesma nos dois casos: a velocidade "
+                "em inventario botanico na caatinga). A rota e a mesma nos dois casos: a velocidade "
                 "maxima altera a duracao, nao o tracado.".format(
                     float(accumulated_cost), TOBLER_MAX_SPEED_KMH,
                     tempo_campo, FIELD_SURVEY_SPEED_KMH))

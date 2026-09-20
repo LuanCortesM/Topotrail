@@ -38,15 +38,14 @@ marca: **[1.3.0]**. Os números do capítulo da dissertação são os da 1.3.0.
 
 ## 1. Dados
 
-Doze trajetos de GPS de trabalho de campo, somando
+Doze trajetos de GPS de inventário de campo, somando
 **110 horas** e **224 km** de deslocamento, em duas regiões e dois biomas. A
 proveniência é distinta nas duas: os trajetos da **Serra da Mantiqueira** são de
 campanhas do autor (Projeto Herpeto Mantiqueira); os nove da **caatinga** foram
-registrados e cedidos por **Sabrina Barros da Silva**, a quem pertencem, em
-trabalho de campo independente deste projeto e sem relação com levantamento de
-fauna; são eles que sustentam toda a calibração descrita neste documento. Deles
-se aproveita apenas a geometria e a cronometria do deslocamento a pé, e nada se
-supõe sobre o objetivo de quem caminhou. Qualquer decisão
+registrados e cedidos por **Sabrina Barros da Silva**, a quem pertencem, durante
+inventário botânico conduzido para a dissertação dela; são eles que sustentam
+toda a calibração descrita neste documento. Deles se aproveita apenas a geometria
+e a cronometria do deslocamento a pé — nenhum dado florístico é utilizado. Qualquer decisão
 sobre redistribuição desses nove cabe a ela.
 
 | Região | Trajetos | Extensão | Duração | MDE usado | Célula |
@@ -77,9 +76,10 @@ Para cada janela: distância horizontal percorrida, desnível lido **no MDE**
 diferença de duas altitudes ruidosas em 180 m é dominada por ruído; além disso
 o MDE é o que o próprio plugin usa, então uma calibração contra o GPS não
 transferiria), gradiente = desnível / distância, velocidade = distância /
-tempo. Janelas contendo pausa maior que 120 s são descartadas: uma parada longa em
-trabalho de campo não é caminhar devagar, é não caminhar, e uma janela que a
-contenha atribui ao terreno uma lentidão que o terreno não causou.
+tempo. Janelas contendo pausa maior que 120 s são descartadas: num inventário — botânico
+na caatinga, de herpetofauna na Mantiqueira — parar para coletar, medir ou
+registrar não é caminhar devagar, é não caminhar, e uma janela que contenha essa
+parada atribui ao terreno uma lentidão que o terreno não causou.
 
 ## 3. Resultado: a função de Tobler
 
@@ -270,9 +270,10 @@ na trilha real contra a linha reta entre os mesmos extremos, 7 trajetos, 61,5 km
 Os trajetos cruzaram **o dobro** da drenagem que o acaso geométrico produziria.
 Não há evitação a calibrar — há o contrário. Em paisagem semiárida o leito seco
 é frequentemente a melhor superfície de caminhada — plano, desobstruído e sem a
-vegetação espinhosa do interflúvio —, mas o motivo não é estabelecido por estes
-dados e o objetivo de quem percorreu os trajetos não é conhecido. O que a
-medição sustenta é o fato.
+vegetação espinhosa do interflúvio — e, tratando-se de inventário botânico, a
+faixa marginal de drenagem concentra umidade e flora distintas do interflúvio,
+sendo ali alvo de amostragem e não obstáculo. As duas explicações são
+interpretação; o que a medição sustenta é o fato.
 
 **Decisão:** o fator não é calibrável com estes dados e passa a ser documentado
 como intensidade declarada pelo usuário, não como constante medida. A restrição

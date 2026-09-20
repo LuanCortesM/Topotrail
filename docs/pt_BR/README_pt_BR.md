@@ -387,8 +387,9 @@ Botânica Tropical e ao Instituto de Pesquisas Jardim Botânico do Rio de Janeir
 **Projeto associado:** Herpeto Mantiqueira.
 
 **Dados de campo:** os trajetos de GPS da caatinga que sustentam a calibração
-empírica descrita em [`../VALIDACAO.md`](../VALIDACAO.md) foram registrados e
-cedidos por **Sabrina Barros da Silva**, a quem pertencem; os da Serra da
+empírica descrita em [`../VALIDACAO.md`](../VALIDACAO.md) foram registrados por
+**Sabrina Barros da Silva** durante o inventário botânico da dissertação dela, a
+quem pertencem, e cedidos para análise e teste deste plugin; os da Serra da
 Mantiqueira são de campanhas do próprio autor. Nenhum dos dois conjuntos é
 redistribuído com o código, por conterem localidades de ocorrência de espécies.
 

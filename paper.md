@@ -114,8 +114,9 @@ repository and each release is archived on Zenodo.
 
 # Acknowledgements
 
-I thank Sabrina Barros da Silva, who recorded and shared the caatinga GPS tracks
-on which the entire empirical calibration of this software rests, Leandro Freitas
+I thank Sabrina Barros da Silva, who recorded the caatinga GPS tracks during the
+botanical inventory of her own dissertation and shared them for the analyses on
+which the entire empirical calibration of this software rests, Leandro Freitas
 for supervising the research of which the software is a product, the Escola
 Nacional de Botânica Tropical and the Instituto de Pesquisas Jardim Botânico do
 Rio de Janeiro for institutional support, and the Herpeto Mantiqueira field teams
