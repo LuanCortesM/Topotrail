@@ -25,8 +25,9 @@ also what the plugin itself will use, so a calibration against GPS elevation
 would not transfer to the model.
 
 Windows containing a pause longer than PAUSE_S are dropped rather than
-included: these are herpetological survey tracks, and a stop to handle an
-animal is not slow walking, it is not walking.
+included: a long stop during fieldwork is not slow walking, it is not walking,
+and a window containing one charges the terrain for a delay the terrain did not
+cause.
 """
 
 import numpy as np

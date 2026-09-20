@@ -152,9 +152,10 @@ TOBLER_MAX_SPEED_KMH = 6.0
 TOBLER_DECAY = 3.5
 TOBLER_OPTIMUM_SLOPE = 0.05
 
-# Ritmo mediano medido em levantamento herpetologico na caatinga, com paradas
+# Ritmo mediano medido em trajetos de trabalho de campo na caatinga, com paradas
 # de ate 120 s contadas como caminhada. Os trajetos de GPS que sustentam esta
-# constante foram registrados e cedidos por Sabrina Barros da Silva (S.B. Silva).
+# constante foram registrados e cedidos por Sabrina Barros da Silva (S.B. Silva),
+# em trabalho de campo independente deste projeto.
 # Oferecido como alternativa explicita a 6,0 km/h para quem quer que a duracao
 # estimada se pareca com a duracao real.
 FIELD_SURVEY_SPEED_KMH = 2.4
@@ -187,12 +188,14 @@ TERRAIN_SLOWDOWN_MAX = 2.0
 
 # ATENCAO ao usar cursos d'agua como restricao em paisagem sazonalmente seca.
 # Nos trajetos de campo da caatinga, as trilhas reais cruzaram 1,37 canais por
-# km contra 0,68 da linha reta entre os mesmos extremos: as equipes cruzaram
+# km contra 0,68 da linha reta entre os mesmos extremos: os trajetos cruzaram
 # DUAS VEZES MAIS drenagem do que o acaso geometrico, e nao menos. Nao ha
 # evitacao revelada a calibrar. Em terreno semiarido o leito seco costuma ser a
-# melhor superficie de caminhada, e num levantamento herpetologico a drenagem e
-# alvo de amostragem, nao obstaculo. Penalizar drenagem por padrao afastaria a
-# rota justamente do que o usuario quer visitar. Por isso a restricao e opcional
+# melhor superficie de caminhada -- plano, desobstruido e sem a vegetacao
+# espinhosa do interfluvio --, mas o motivo nao e estabelecido por estes dados e
+# o objetivo de quem percorreu os trajetos nao e conhecido. O que a medicao
+# sustenta e o fato. Penalizar drenagem por padrao afastaria a rota de um terreno
+# que, nesses trajetos, foi procurado e nao evitado. Por isso a restricao e opcional
 # e permanece desligada por padrao. Ver docs/VALIDACAO.md, secao 6.
 #
 # O que fazer com celulas restritas (cursos d'agua, camada vetorial do usuario).
@@ -3098,7 +3101,7 @@ def save_access_route(
             feedback.pushInfo(
                 "Duracao estimada: {:.2f} h em ritmo de Tobler ({:.1f} km/h de velocidade "
                 "maxima) e {:.2f} h em ritmo de levantamento de campo ({:.1f} km/h, medido "
-                "em campanha herpetologica). A rota e a mesma nos dois casos: a velocidade "
+                "em trajetos de campo na caatinga). A rota e a mesma nos dois casos: a velocidade "
                 "maxima altera a duracao, nao o tracado.".format(
                     float(accumulated_cost), TOBLER_MAX_SPEED_KMH,
                     tempo_campo, FIELD_SURVEY_SPEED_KMH))

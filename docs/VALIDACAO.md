@@ -38,12 +38,15 @@ marca: **[1.3.0]**. Os números do capítulo da dissertação são os da 1.3.0.
 
 ## 1. Dados
 
-Doze trajetos de GPS registrados em levantamento de herpetofauna, somando
+Doze trajetos de GPS de trabalho de campo, somando
 **110 horas** e **224 km** de deslocamento, em duas regiões e dois biomas. A
 proveniência é distinta nas duas: os trajetos da **Serra da Mantiqueira** são de
 campanhas do autor (Projeto Herpeto Mantiqueira); os nove da **caatinga** foram
-registrados e cedidos por **Sabrina Barros da Silva**, a quem pertencem, e são
-eles que sustentam toda a calibração descrita neste documento. Qualquer decisão
+registrados e cedidos por **Sabrina Barros da Silva**, a quem pertencem, em
+trabalho de campo independente deste projeto e sem relação com levantamento de
+fauna; são eles que sustentam toda a calibração descrita neste documento. Deles
+se aproveita apenas a geometria e a cronometria do deslocamento a pé, e nada se
+supõe sobre o objetivo de quem caminhou. Qualquer decisão
 sobre redistribuição desses nove cabe a ela.
 
 | Região | Trajetos | Extensão | Duração | MDE usado | Célula |
@@ -74,9 +77,9 @@ Para cada janela: distância horizontal percorrida, desnível lido **no MDE**
 diferença de duas altitudes ruidosas em 180 m é dominada por ruído; além disso
 o MDE é o que o próprio plugin usa, então uma calibração contra o GPS não
 transferiria), gradiente = desnível / distância, velocidade = distância /
-tempo. Janelas contendo pausa maior que 120 s são descartadas: numa campanha
-herpetológica, parar para manejar um animal não é caminhar devagar, é não
-caminhar.
+tempo. Janelas contendo pausa maior que 120 s são descartadas: uma parada longa em
+trabalho de campo não é caminhar devagar, é não caminhar, e uma janela que a
+contenha atribui ao terreno uma lentidão que o terreno não causou.
 
 ## 3. Resultado: a função de Tobler
 
@@ -264,10 +267,12 @@ na trilha real contra a linha reta entre os mesmos extremos, 7 trajetos, 61,5 km
 | Trilhas reais | 84 | **1,37** |
 | Linha reta (controle) | 16 | 0,68 |
 
-As equipes cruzaram **o dobro** da drenagem que o acaso geométrico produziria.
+Os trajetos cruzaram **o dobro** da drenagem que o acaso geométrico produziria.
 Não há evitação a calibrar — há o contrário. Em paisagem semiárida o leito seco
-é frequentemente a melhor superfície de caminhada, e num levantamento
-herpetológico a drenagem é alvo de amostragem, não obstáculo.
+é frequentemente a melhor superfície de caminhada — plano, desobstruído e sem a
+vegetação espinhosa do interflúvio —, mas o motivo não é estabelecido por estes
+dados e o objetivo de quem percorreu os trajetos não é conhecido. O que a
+medição sustenta é o fato.
 
 **Decisão:** o fator não é calibrável com estes dados e passa a ser documentado
 como intensidade declarada pelo usuário, não como constante medida. A restrição
