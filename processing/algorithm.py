@@ -153,8 +153,10 @@ TOBLER_DECAY = 3.5
 TOBLER_OPTIMUM_SLOPE = 0.05
 
 # Ritmo mediano medido em levantamento herpetologico na caatinga, com paradas
-# de ate 120 s contadas como caminhada. Oferecido como alternativa explicita a
-# 6,0 km/h para quem quer que a duracao estimada se pareca com a duracao real.
+# de ate 120 s contadas como caminhada. Os trajetos de GPS que sustentam esta
+# constante foram registrados e cedidos por Sabrina Barros da Silva (S.B. Silva).
+# Oferecido como alternativa explicita a 6,0 km/h para quem quer que a duracao
+# estimada se pareca com a duracao real.
 FIELD_SURVEY_SPEED_KMH = 2.4
 
 # Quanto o terreno ruim retarda a caminhada, alem da inclinacao. Adequabilidade

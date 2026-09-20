@@ -114,11 +114,12 @@ repository and each release is archived on Zenodo.
 
 # Acknowledgements
 
-I thank Leandro Freitas for supervising the research of which this software is a
-product, the Escola Nacional de Botânica Tropical and the Instituto de Pesquisas
-Jardim Botânico do Rio de Janeiro for institutional support, and the Herpeto
-Mantiqueira field teams, whose recorded tracks made the empirical calibration
-possible. Parts of the implementation were written with the assistance of a large
+I thank Sabrina Barros da Silva, who recorded and shared the caatinga GPS tracks
+on which the entire empirical calibration of this software rests, Leandro Freitas
+for supervising the research of which the software is a product, the Escola
+Nacional de Botânica Tropical and the Instituto de Pesquisas Jardim Botânico do
+Rio de Janeiro for institutional support, and the Herpeto Mantiqueira field teams
+for the Serra da Mantiqueira tracks. Parts of the implementation were written with the assistance of a large
 language model used as a programming tool; all methodological decisions, and
 responsibility for the correctness of the result, are the author's.
 

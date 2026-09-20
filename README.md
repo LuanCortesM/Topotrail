@@ -614,6 +614,12 @@ Tropical and the Instituto de Pesquisas Jardim Botânico do Rio de Janeiro.
 
 **Associated project:** Herpeto Mantiqueira.
 
+**Field data:** the caatinga GPS tracks behind the empirical calibration in
+[`docs/VALIDACAO.md`](docs/VALIDACAO.md) were recorded and shared by **Sabrina
+Barros da Silva**, and belong to her; the Serra da Mantiqueira tracks are from
+the author's own campaigns. Neither set is redistributed with the code, because
+both carry species occurrence localities.
+
 **Contact:** herpetomantiqueira@gmail.com — the project address rather than a
 personal one, so it outlives changes of institution.
 

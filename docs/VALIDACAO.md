@@ -38,14 +38,18 @@ marca: **[1.3.0]**. Os números do capítulo da dissertação são os da 1.3.0.
 
 ## 1. Dados
 
-Onze trajetos de GPS cedidos pelo autor, registrados em levantamento de campo
-(Projeto Herpeto Mantiqueira e campanhas na caatinga), somando **110 horas** e
-**224 km** de deslocamento, em duas regiões e dois biomas:
+Doze trajetos de GPS registrados em levantamento de herpetofauna, somando
+**110 horas** e **224 km** de deslocamento, em duas regiões e dois biomas. A
+proveniência é distinta nas duas: os trajetos da **Serra da Mantiqueira** são de
+campanhas do autor (Projeto Herpeto Mantiqueira); os nove da **caatinga** foram
+registrados e cedidos por **Sabrina Barros da Silva**, a quem pertencem, e são
+eles que sustentam toda a calibração descrita neste documento. Qualquer decisão
+sobre redistribuição desses nove cabe a ela.
 
 | Região | Trajetos | Extensão | Duração | MDE usado | Célula |
 |---|---|---|---|---|---|
 | Serra da Mantiqueira (SP/MG) | 2 com estampa de tempo + 1 travessia sem | 1,2 km | 1,7 h | cartas topográficas 1″ | 30 m |
-| Caatinga (PI/CE) | 9 | 223 km | 108,7 h | Copernicus DEM GLO‑90 | 90 m |
+| Caatinga, oeste do CE (S.B. Silva) | 9 | 223 km | 108,7 h | Copernicus DEM GLO‑90 | 90 m |
 
 Nove trajetos são `gx:Track` do KML com estampa de tempo por fixo (22 mil fixos
 datados); a travessia Marins–Itaguaré tem geometria mas não tem tempo, e serve
