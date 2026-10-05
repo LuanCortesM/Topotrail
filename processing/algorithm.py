@@ -2571,6 +2571,15 @@ def tobler_hours(delta_z, horizontal_m):
     return (horizontal_m / 1000.0) / speed_kmh
 
 
+def format_hours(hours):
+    """Duracao em horas decimais como '5h07'.
+
+    Arredonda o total de minutos, e nao so a fracao: 4,996 h e 5h00, nao 4h60.
+    """
+    total = int(round(float(hours) * 60.0))
+    return "{:d}h{:02d}".format(*divmod(total, 60))
+
+
 def _liga_apenas_pelo_canto(cost_array, start_rc, end_rc):
     """Os dois pontos se ligariam se o passo diagonal pudesse cortar o canto?
 
@@ -3085,8 +3094,7 @@ def save_access_route(
     if anisotropic:
         # No modelo de Tobler o custo acumulado tem unidade: horas.
         route_attributes["tempo_h"] = float(accumulated_cost)
-        route_attributes["tempo_hms"] = "{:d}h{:02d}".format(
-            int(accumulated_cost), int(round((accumulated_cost % 1.0) * 60)))
+        route_attributes["tempo_hms"] = format_hours(accumulated_cost)
         # A duracao de Tobler e otimista para trabalho de campo por um fator de
         # 1,7 a 3,1, medido contra 65 km de trajetos de levantamento com marcacao
         # de tempo. Como multiplicar a velocidade maxima por uma constante divide
@@ -3096,8 +3104,7 @@ def save_access_route(
         fator_campo = TOBLER_MAX_SPEED_KMH / FIELD_SURVEY_SPEED_KMH
         tempo_campo = float(accumulated_cost) * fator_campo
         route_attributes["tempo_campo_h"] = tempo_campo
-        route_attributes["tempo_campo_hms"] = "{:d}h{:02d}".format(
-            int(tempo_campo), int(round((tempo_campo % 1.0) * 60)))
+        route_attributes["tempo_campo_hms"] = format_hours(tempo_campo)
         route_attributes["velocidade_campo_kmh"] = float(FIELD_SURVEY_SPEED_KMH)
         if feedback:
             feedback.pushInfo(
@@ -3229,9 +3236,8 @@ def save_access_route(
             if anisotropic:
                 feedback.pushInfo(
                     "Tempo estimado de caminhada (Tobler, anisotropico): {:.2f} h "
-                    "({:d}h{:02d}), velocidade media {:.2f} km/h.".format(
-                        accumulated_cost, int(accumulated_cost),
-                        int(round((accumulated_cost % 1.0) * 60)),
+                    "({}), velocidade media {:.2f} km/h.".format(
+                        accumulated_cost, format_hours(accumulated_cost),
                         (length / 1000.0) / max(accumulated_cost, 1e-9))
                 )
     append_diagnostic_log(

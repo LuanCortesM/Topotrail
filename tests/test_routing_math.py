@@ -518,3 +518,12 @@ def test_a_corner_only_contact_is_diagnosed_as_such(algorithm):
     cost[5, 4] = 1.0
     caminho, _ = algorithm.least_cost_path(cost, (2, 2), (7, 7))
     assert (5, 4) in caminho
+
+
+@pytest.mark.parametrize("horas, texto", [
+    (0.0, "0h00"), (0.5, "0h30"), (1.999, "2h00"), (4.9960, "5h00"),
+    (4.9916, "4h59"), (6.48, "6h29"), (10.0 + 59.6 / 60, "11h00"),
+])
+def test_duration_text_carries_the_minutes_into_the_hour(algorithm, horas, texto):
+    # Arredondar so a fracao gravava "4h60" no atributo tempo_hms.
+    assert algorithm.format_hours(horas) == texto
