@@ -163,7 +163,7 @@ so it can be scripted or placed in a model.
 
 **If you have no DEM to hand, start with [`exemplo/`](exemplo/README.md).** It
 ships a small synthetic DEM, the origin, destination and an intermediate point,
-a script that runs the whole chain in headless QGIS with all 45 parameters
+a script that runs the whole chain in headless QGIS with all 52 parameters
 written out, and the output values to compare against — route length, walking
 time, accumulated ascent and number of watercourse crossings.
 

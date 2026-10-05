@@ -152,7 +152,7 @@ O plugin também está disponível como algoritmo de Processing
 
 **Se você não tem um MDE à mão, comece pelo [`exemplo/`](../../exemplo/README.md).**
 Ele traz um MDE sintético pequeno, a origem, o destino e um ponto intermediário,
-um script que roda a cadeia inteira em QGIS sem interface com os 45 parâmetros
+um script que roda a cadeia inteira em QGIS sem interface com os 52 parâmetros
 escritos por extenso, e os valores de saída para comparação — comprimento da
 rota, tempo de caminhada, ganho acumulado e número de travessias.
 

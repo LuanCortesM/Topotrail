@@ -43,7 +43,7 @@ ESPERADO = {
 TOLERANCIA = 0.001
 
 def parametros(mde, origem, destino, intermediarios, saida):
-    """Os 45 parametros do algoritmo, todos declarados por extenso.
+    """Os 52 parametros do algoritmo, todos declarados por extenso.
 
     Nenhum fica implicito de proposito: o valor que produz o resultado tem de
     estar escrito em algum lugar que o leitor possa conferir. Onde o valor e o
@@ -109,6 +109,17 @@ def parametros(mde, origem, destino, intermediarios, saida):
 
         # --- transitabilidade ---
         "TRANSITABILITY_BREAKS": "20, 35, 60, 100",   # padrao, em porcentagem
+
+        # --- limites de normalizacao (0 = percentil da propria cena) ---
+        "CURVH_LIMIT": 0.0,               # padrao: P99 da cena
+        "CURVV_LIMIT": 0.0,               # padrao: P99 da cena
+        "WETNESS_LIMIT": 0.0,             # padrao: P95 da cena (so com peso > 0)
+        "ROUGHNESS_LIMIT": 0.0,           # padrao: P95 da cena (so com peso > 0)
+        "WORKING_CELL_M": 0.0,            # padrao: celula escolhida pelo GDAL para o recorte
+
+        # --- tempo de campo e alternativas ---
+        "FIELD_SPEED_KMH": 2.4,           # padrao: ritmo medido em inventario botanico
+        "ROUTE_ALTERNATIVES_PCT": 0.0,    # padrao: corredor de alternativas desligado
 
         # --- saida ---
         "OUTPUT_FILE": saida,

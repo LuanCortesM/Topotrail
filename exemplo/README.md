@@ -44,7 +44,7 @@ values next to the expected ones, ending in `CONFERE` (they match) or
 `NAO CONFERE` followed by the ones that differ. Exit status is 0 only when they
 all match.
 
-All 45 Processing parameters are written out in full in `executar.py`, each one
+All 52 Processing parameters are written out in full in `executar.py`, each one
 commented with whether it is the plugin default. Two are not defaults, and they
 are the two that matter for this example:
 
@@ -169,7 +169,7 @@ barrier to go round, and all five transitability classes are occupied.
 
 `exemplo_diagnostico_topotrail.log` is one JSON record per stage. It carries the
 plugin version, the versions of Python, GDAL and the operating system, every one
-of the 45 parameters as they were resolved, and the distribution statistics of
+of the 52 parameters as they were resolved, and the distribution statistics of
 each intermediate raster. Most of the values listed above can be read straight
 out of it, and it is the intended way to trace a route in a report back to the
 run that produced it.

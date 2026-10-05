@@ -235,6 +235,12 @@ DEFAULT_STREAM_FORD_MAX_KM2 = 50.0            # acima disto: barreira para a rot
 # 2^n * n^2 em tempo e n^2 execucoes do A* para montar a matriz de pares.
 MAX_OPTIMISED_WAYPOINTS = 8
 
+# Corredor de alternativas: celulas por onde passa algum caminho ate X% mais
+# caro que o otimo. Teto da folga e do tamanho da grade (o calculo percorre a
+# grade inteira duas vezes, em vez de parar no destino como o A*).
+MAX_ALTERNATIVES_PCT = 50.0
+MAX_ALTERNATIVES_CELLS = 4000000
+
 # Sentido de um criterio raster fornecido pelo usuario: valores altos podem ser
 # bons (cobertura vegetal densa que dá sombra) ou ruins (pedregosidade).
 CRITERION_LOWER_IS_BETTER = 0
@@ -728,12 +734,17 @@ def ensure_projected_working_crs(
     temp_dir=None,
     log_path=None,
     strict_crs_mode=STRICT_CRS_MODE,
+    cell_size_m=None,
 ):
     """Prepare a DEM for metric processing and return path/CRS diagnostics.
 
     Inputs: DEM path readable by GDAL, optional feedback/log path and fallback
     CRS. Area, distance, route and buffer operations require a projected CRS in
     meters. Geographic DEMs are warped to automatic UTM based on raster center.
+    With `cell_size_m`, the working grid has that cell and its edges on
+    multiples of it (target-aligned pixels): any clip of the same DEM then gets
+    the same cells. Without it the cell size and origin follow the clip extent,
+    and two clips of the same area are resampled onto different grids.
     CRS-less DEMs fail in strict_crs_mode, which is the scientific default. If
     strict_crs_mode is False, CRS-less DEMs are assigned default_crs with warning
     and log entry before the same decision. Returns a dict with prepared path,
@@ -807,6 +818,7 @@ def ensure_projected_working_crs(
             dstSRS=working_crs, resampleAlg=gdal.GRA_Bilinear, format="GTiff",
             creationOptions=["COMPRESS=LZW"],
             srcNodata=original_metadata.get("nodata"), dstNodata=DEM_FILL_NODATA,
+            **_grade_alinhada(cell_size_m),
         )
         warp_raster_checked(source_path, prepared_path, warp_options, "reprojecao do DEM para CRS metrico")
         reprojected = True
@@ -857,14 +869,30 @@ def ensure_projected_working_crs(
             creationOptions=["COMPRESS=LZW"],
             srcNodata=original_metadata.get("nodata"),
             dstNodata=DEM_FILL_NODATA,
+            **_grade_alinhada(cell_size_m),
         )
         warp_raster_checked(source_path, prepared_path, warp_options, "reprojecao do DEM para CRS metrico")
         reprojected = True
         messages.append(f"DEM reprojetado para CRS de trabalho metrico: {working_crs}.")
     elif not original_srs.IsProjected():
         raise _erro("O CRS do DEM nao e geografico nem projetado. Defina um CRS valido antes de processar.")
+    elif cell_size_m and cell_size_m > 0:
+        prepared_path = os.path.join(temp_dir, "dem_trabalho_alinhado.tif")
+        reason = "CRS projetado mantido; reamostrado para a celula de trabalho pedida"
+        warp_options = gdal.WarpOptions(
+            dstSRS=working_crs, resampleAlg=gdal.GRA_Bilinear, format="GTiff",
+            creationOptions=["COMPRESS=LZW"],
+            srcNodata=original_metadata.get("nodata"), dstNodata=DEM_FILL_NODATA,
+            **_grade_alinhada(cell_size_m),
+        )
+        warp_raster_checked(source_path, prepared_path, warp_options, "reamostragem para a celula de trabalho")
+        messages.append(f"DEM em CRS projetado mantido ({working_crs}), em celula de {cell_size_m:g} m alinhada.")
     else:
         messages.append(f"DEM em CRS projetado mantido: {working_crs}.")
+    if cell_size_m and cell_size_m > 0:
+        messages.append(
+            "Celula de trabalho fixa de {:g} m, alinhada a multiplos dela: recortes diferentes "
+            "da mesma area caem na mesma grade.".format(cell_size_m))
 
     prepared_metadata = raster_metadata(prepared_path)
     diagnostics = {
@@ -885,6 +913,13 @@ def ensure_projected_working_crs(
         if feedback:
             feedback.pushInfo(message)
     return diagnostics
+
+
+def _grade_alinhada(cell_size_m):
+    """Opcoes de warp para uma celula fixa com bordas em multiplos dela."""
+    if not cell_size_m or cell_size_m <= 0:
+        return {}
+    return {"xRes": float(cell_size_m), "yRes": float(cell_size_m), "targetAlignedPixels": True}
 
 
 def validate_raster_grid_compatibility(reference_raster, candidate_raster, tolerance=1e-6):
@@ -1743,6 +1778,23 @@ def report_absurd_criterion_values(array, name, feedback=None, log_path=None,
     return total
 
 
+def curvature_limit(array, target=0.0):
+    """Limite de normalizacao da curvatura: o P99 do desvio ao alvo NA CENA.
+
+    E relativo de proposito (a curvatura depende da resolucao do MDE), e por
+    isso muda com o recorte. Quem compara recortes deve fixar o limite pelo
+    parametro, com o valor registrado no log de uma execucao de referencia.
+    """
+    valid = np.asarray(array)[np.isfinite(array)]
+    if valid.size == 0:
+        return 1.0
+    deviations = np.abs(valid - target)
+    limit = float(np.percentile(deviations, CURVATURE_DEVIATION_PERCENTILE))
+    if limit <= 0:
+        limit = float(np.max(deviations))
+    return limit if limit > 0 else 1.0
+
+
 def normalize_curvature_preference(
     array,
     feedback=None,
@@ -1758,12 +1810,7 @@ def normalize_curvature_preference(
         raise _erro(f"{name} não contém valores válidos")
 
     if limit is None or limit <= 0:
-        deviations = np.abs(valid_data - target)
-        limit = float(np.nanpercentile(deviations, CURVATURE_DEVIATION_PERCENTILE))
-        if limit <= 0:
-            limit = float(np.nanmax(deviations))
-        if limit <= 0:
-            limit = 1.0
+        limit = curvature_limit(valid_data, target)
 
     if feedback and limit > CRITERION_PLAUSIBLE_ABS:
         # Segunda rede, para o caso de a sentinela ter entrado por outro
@@ -2197,15 +2244,24 @@ def save_risk_raster(risk_array, transform, proj, output_path, feedback=None):
     return risk_path
 
 
-def robust_abs_norm(array, valid_mask, percentile=CURVATURE_RISK_PERCENTILE):
+def robust_limit(array, valid_mask, percentile=CURVATURE_RISK_PERCENTILE):
+    """Limite de normalizacao robusta: o percentil do modulo NA CENA."""
     values = np.abs(array[valid_mask & np.isfinite(array)])
     if values.size == 0:
-        return np.full(array.shape, np.nan, dtype=np.float32)
+        return 1.0
     limit = float(np.nanpercentile(values, percentile))
     if not np.isfinite(limit) or limit <= 0:
-        limit = float(np.nanmax(values)) if values.size else 1.0
+        limit = float(np.nanmax(values))
     if not np.isfinite(limit) or limit <= 0:
         limit = 1.0
+    return limit
+
+
+def robust_abs_norm(array, valid_mask, percentile=CURVATURE_RISK_PERCENTILE, limit=None):
+    if not np.any(valid_mask & np.isfinite(array)):
+        return np.full(array.shape, np.nan, dtype=np.float32)
+    if limit is None or not np.isfinite(limit) or limit <= 0:
+        limit = robust_limit(array, valid_mask, percentile)
     return np.clip(np.abs(array) / limit, 0, 1).astype(np.float32)
 
 
@@ -2791,7 +2847,7 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
 
 def multi_leg_route(cost_array, waypoints_rc, elevation=None, pixel_size_m=None,
                     anisotropic=False, optimise_order=False, feedback=None,
-                    crossing_factor=None):
+                    crossing_factor=None, return_order=False):
     """Rota otima passando por uma sequencia de pontos, na ordem dada.
 
     Uma travessia raramente e um par origem-destino. "Subir o Marins, depois o
@@ -2804,7 +2860,8 @@ def multi_leg_route(cost_array, waypoints_rc, elevation=None, pixel_size_m=None,
     visita os pontos naquela sequencia. Nao e o mesmo que o melhor circuito
     possivel -- para isso existe `optimise_order`.
 
-    Devolve (celulas, custo_total, custos_por_trecho).
+    Devolve (celulas, custo_total, custos_por_trecho), e a sequencia de pontos
+    efetivamente usada quando return_order=True.
     """
     if len(waypoints_rc) < 2:
         raise ValueError("Uma rota precisa de pelo menos dois pontos.")
@@ -2834,6 +2891,8 @@ def multi_leg_route(cost_array, waypoints_rc, elevation=None, pixel_size_m=None,
             feedback.pushInfo(
                 "  trecho {} de {}: {} celulas, custo {:.4f}".format(
                     index + 1, len(waypoints_rc) - 1, len(leg), cost))
+    if return_order:
+        return cells, float(sum(leg_costs)), leg_costs, list(waypoints_rc)
     return cells, float(sum(leg_costs)), leg_costs
 
 
@@ -2922,6 +2981,158 @@ def optimise_waypoint_order(cost_array, waypoints_rc, elevation=None,
     return ordered
 
 
+# Os oito passos da grade, com as duas celulas de canto de cada diagonal --
+# o mesmo modelo de least_cost_path, vetorizado.
+_PASSOS_DA_GRADE = (
+    (-1, 0, 1.0, False), (1, 0, 1.0, False), (0, -1, 1.0, False), (0, 1, 1.0, False),
+    (-1, -1, np.sqrt(2.0), True), (-1, 1, np.sqrt(2.0), True),
+    (1, -1, np.sqrt(2.0), True), (1, 1, np.sqrt(2.0), True),
+)
+
+
+def route_graph_edges(cost_array, elevation=None, pixel_size_m=None,
+                      anisotropic=False, crossing_factor=None):
+    """Arestas (origem, destino, custo) da grade, com o modelo de passo do A*.
+
+    Mesmas regras de least_cost_path: celula de custo infinito e intransponivel;
+    a diagonal exige as duas celulas de canto transponiveis e paga o fator de
+    vau do canto; no modelo de Tobler o custo e o tempo do passo, que depende do
+    sentido. Os indices sao os da grade achatada (linha * colunas + coluna).
+    """
+    rows, cols = cost_array.shape
+    custo = np.asarray(cost_array, dtype=np.float64)
+    finito = np.isfinite(custo)
+    fator = None
+    if crossing_factor is not None:
+        fator = np.asarray(crossing_factor)
+        if fator.dtype == bool:
+            fator = np.where(fator, CONSTRAINT_PENALTY_FACTOR, 1.0)
+        fator = fator.astype(np.float64)
+    if anisotropic:
+        if elevation is None or pixel_size_m is None:
+            raise ValueError("O modelo anisotropico precisa da altitude e do tamanho do pixel.")
+        altitude = np.asarray(elevation)
+    indice = np.arange(rows * cols, dtype=np.int64).reshape(rows, cols)
+    origens, destinos, pesos = [], [], []
+    for d_row, d_col, passo, diagonal in _PASSOS_DA_GRADE:
+        r0, r1 = max(0, -d_row), rows - max(0, d_row)
+        c0, c1 = max(0, -d_col), cols - max(0, d_col)
+        if r1 <= r0 or c1 <= c0:
+            continue
+        a = (slice(r0, r1), slice(c0, c1))
+        b = (slice(r0 + d_row, r1 + d_row), slice(c0 + d_col, c1 + d_col))
+        ok = finito[a] & finito[b]
+        if diagonal:
+            # Com o destino dentro da grade, os dois cantos tambem estao.
+            k1 = (slice(r0 + d_row, r1 + d_row), slice(c0, c1))
+            k2 = (slice(r0, r1), slice(c0 + d_col, c1 + d_col))
+            ok &= finito[k1] & finito[k2]
+        media = (custo[a][ok] + custo[b][ok]) / 2.0
+        if anisotropic:
+            dz = (altitude[b] - altitude[a])[ok].astype(np.float64)
+            horizontal = passo * float(pixel_size_m)
+            velocidade = TOBLER_MAX_SPEED_KMH * np.exp(
+                -TOBLER_DECAY * np.abs(dz / horizontal + TOBLER_OPTIMUM_SLOPE))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                horas = np.where(velocidade > 1e-6, (horizontal / 1000.0) / velocidade, np.inf)
+            peso = horas * media
+        else:
+            peso = media * passo
+        if fator is not None and diagonal:
+            canto = np.maximum(np.maximum(fator[k1][ok], fator[k2][ok]), 1.0)
+            no_passo = np.maximum(fator[a][ok], fator[b][ok])
+            peso = np.where(canto > no_passo, peso * (canto / np.maximum(no_passo, 1e-12)), peso)
+        fica = np.isfinite(peso)
+        origens.append(indice[a][ok][fica])
+        destinos.append(indice[b][ok][fica])
+        pesos.append(peso[fica])
+    return np.concatenate(origens), np.concatenate(destinos), np.concatenate(pesos)
+
+
+def cost_distances(edges, n_cells, source, reverse=False):
+    """Custo minimo de `source` a todas as celulas (ou de todas ate ela, com reverse).
+
+    Dijkstra completo -- nao para no destino. Com SciPy usa csgraph (C); sem
+    ele, um Dijkstra em Python sobre a mesma lista de arestas.
+    """
+    origens, destinos, pesos = edges
+    if reverse:
+        origens, destinos = destinos, origens
+    if morphology.has_scipy():
+        from scipy.sparse import csr_matrix
+        from scipy.sparse.csgraph import dijkstra
+
+        grafo = csr_matrix((pesos, (origens, destinos)), shape=(n_cells, n_cells))
+        return dijkstra(grafo, directed=True, indices=int(source))
+    ordem = np.argsort(origens, kind="stable")
+    inicio = np.searchsorted(origens[ordem], np.arange(n_cells + 1)).tolist()
+    vizinho = destinos[ordem].tolist()
+    custo = pesos[ordem].tolist()
+    dist = [float("inf")] * n_cells
+    dist[int(source)] = 0.0
+    feito = [False] * n_cells
+    fila = [(0.0, int(source))]
+    while fila:
+        d, no = heapq.heappop(fila)
+        if feito[no]:
+            continue
+        feito[no] = True
+        for k in range(inicio[no], inicio[no + 1]):
+            outro = vizinho[k]
+            candidato = d + custo[k]
+            if candidato < dist[outro]:
+                dist[outro] = candidato
+                heapq.heappush(fila, (candidato, outro))
+    return np.asarray(dist)
+
+
+def near_optimal_corridor(edges, shape, legs, slack):
+    """Celulas por onde passa algum caminho ate `slack` (fracao) mais caro.
+
+    Para cada trecho (s, e): custo(s->x) + custo(x->e) <= (1 + slack) * otimo.
+    Devolve (mascara, folga relativa por celula), com a folga minima entre os
+    trechos. O conjunto e conexo -- e uniao de caminhos de s a e --, e a rota
+    otima esta sempre dentro dele.
+    """
+    n_cells = int(shape[0] * shape[1])
+    folga = np.full(n_cells, np.inf)
+    for inicio, fim in legs:
+        de_inicio = cost_distances(edges, n_cells, inicio)
+        ate_fim = cost_distances(edges, n_cells, fim, reverse=True)
+        otimo = de_inicio[fim]
+        if not np.isfinite(otimo) or otimo <= 0:
+            continue
+        with np.errstate(invalid="ignore"):
+            folga = np.minimum(folga, (de_inicio + ate_fim) / otimo - 1.0)
+    folga = folga.reshape(shape)
+    return folga <= slack + 1e-9, folga
+
+
+def save_slack_raster(slack_pct, transform, proj, output_path, feedback=None):
+    """Grava a folga (%) de cada celula sobre a rota otima. -9999 = sem caminho."""
+    base_path, _ = os.path.splitext(output_path)
+    caminho = f"{base_path}_folga.tif"
+    driver = gdal.GetDriverByName("GTiff")
+    if os.path.exists(caminho):
+        try:
+            driver.Delete(caminho)
+        except RuntimeError:
+            caminho = available_output_path(caminho)
+    rows, cols = slack_pct.shape
+    dataset = driver.Create(caminho, cols, rows, 1, gdal.GDT_Float32, options=["COMPRESS=LZW"])
+    if dataset is None:
+        raise _erro("Nao foi possivel criar o raster de folga.")
+    dataset.SetGeoTransform(transform)
+    if proj:
+        dataset.SetProjection(proj)
+    banda = dataset.GetRasterBand(1)
+    banda.SetNoDataValue(-9999.0)
+    banda.WriteArray(np.where(np.isfinite(slack_pct), slack_pct, -9999.0).astype(np.float32))
+    banda.FlushCache()
+    dataset = None
+    return caminho
+
+
 def save_access_route(
     score_array,
     transform,
@@ -2943,6 +3154,8 @@ def save_access_route(
     stream_mask=None,
     stream_area=None,
     stream_class=None,
+    field_speed_kmh=FIELD_SURVEY_SPEED_KMH,
+    alternatives_pct=0.0,
 ):
     """Generate least-cost route and metric corridor files.
 
@@ -3080,11 +3293,11 @@ def save_access_route(
             transform, score_array.shape, proj), 1e-9)))
 
     local_sequence = [(r - row_min, c - col_min) for r, c in sequence]
-    path_cells, accumulated_cost, leg_costs = multi_leg_route(
+    path_cells, accumulated_cost, leg_costs, ordem = multi_leg_route(
         cost_crop, local_sequence, elevation=elevation_crop,
         pixel_size_m=pixel_size_m, anisotropic=anisotropic,
         optimise_order=optimise_order, feedback=feedback,
-        crossing_factor=penalty_crop)
+        crossing_factor=penalty_crop, return_order=True)
     if len(path_cells) < 2:
         raise _erro(
             "O ponto inicial e o ponto final caem na mesma celula do raster. "
@@ -3110,11 +3323,11 @@ def save_access_route(
         # todos os custos pela mesma constante, a ROTA nao muda -- so a duracao.
         # Por isso a estimativa de campo e uma simples reescala, e sai ao lado da
         # de Tobler em vez de substitui-la: o usuario ve as duas e escolhe.
-        fator_campo = TOBLER_MAX_SPEED_KMH / FIELD_SURVEY_SPEED_KMH
+        fator_campo = TOBLER_MAX_SPEED_KMH / float(field_speed_kmh)
         tempo_campo = float(accumulated_cost) * fator_campo
         route_attributes["tempo_campo_h"] = tempo_campo
         route_attributes["tempo_campo_hms"] = format_hours(tempo_campo)
-        route_attributes["velocidade_campo_kmh"] = float(FIELD_SURVEY_SPEED_KMH)
+        route_attributes["velocidade_campo_kmh"] = float(field_speed_kmh)
         if feedback:
             feedback.pushInfo(
                 "Duracao estimada: {:.2f} h em ritmo de Tobler ({:.1f} km/h de velocidade "
@@ -3122,7 +3335,7 @@ def save_access_route(
                 "em inventario botanico na caatinga). A rota e a mesma nos dois casos: a velocidade "
                 "maxima altera a duracao, nao o tracado.".format(
                     float(accumulated_cost), TOBLER_MAX_SPEED_KMH,
-                    tempo_campo, FIELD_SURVEY_SPEED_KMH))
+                    tempo_campo, float(field_speed_kmh)))
     if elevation_array is not None:
         route_altitudes = [
             float(elevation_array[row + row_min, col + col_min])
@@ -3236,6 +3449,14 @@ def save_access_route(
         elif feedback:
             feedback.pushInfo("A rota nao cruza nenhum curso d'agua da rede extraida.")
 
+    alternatives = None
+    if alternatives_pct and alternatives_pct > 0:
+        alternatives = _save_alternatives(
+            cost_crop, elevation_crop, pixel_size_m, anisotropic, penalty_crop,
+            ordem, path_cells, alternatives_pct, transform, proj, row_min, col_min,
+            base_path, target_crs, crs_wkt, buffer_m, float(accumulated_cost),
+            feedback, log_path)
+
     if feedback:
         length = route_length_m
         feedback.pushInfo(f"Rota de acesso salva: {route_path}")
@@ -3264,7 +3485,80 @@ def save_access_route(
         travessias=len(crossings),
     )
 
-    return route_path, corridor_path, crossings_path
+    return route_path, corridor_path, crossings_path, alternatives
+
+
+def _save_alternatives(cost_crop, elevation_crop, pixel_size_m, anisotropic, penalty_crop,
+                       ordem, path_cells, alternatives_pct, transform, proj, row_min,
+                       col_min, base_path, target_crs, crs_wkt, buffer_m, custo_otimo,
+                       feedback=None, log_path=None):
+    """Corredor de rotas quase otimas: vetor + raster de folga. None se pulado.
+
+    Mostra o que a linha unica esconde: quando ha dois corredores de custo
+    quase igual, uma perturbacao minima (outro recorte do MDE, outro pixel)
+    troca um pelo outro. Medido na trilha da Reserva Chico Nunes: 3,9 km e
+    6,1 km com 5h10 e 5h13 -- 1% de diferenca de custo.
+    """
+    if cost_crop.size > MAX_ALTERNATIVES_CELLS:
+        if feedback:
+            feedback.pushWarning(
+                "Corredor de alternativas nao calculado: a area de busca tem {:,} celulas, "
+                "acima do teto de {:,}. Reduza a margem de busca.".format(
+                    cost_crop.size, MAX_ALTERNATIVES_CELLS))
+        return None
+    slack = float(alternatives_pct) / 100.0
+    cols = cost_crop.shape[1]
+    arestas = route_graph_edges(cost_crop, elevation_crop, pixel_size_m, anisotropic,
+                                crossing_factor=penalty_crop)
+    trechos = [(int(a[0]) * cols + int(a[1]), int(b[0]) * cols + int(b[1]))
+               for a, b in zip(ordem[:-1], ordem[1:])]
+    mascara, folga = near_optimal_corridor(arestas, cost_crop.shape, trechos, slack)
+
+    px = abs(float(transform[1]))
+    py = abs(float(transform[5]))
+    na_rota = np.zeros(cost_crop.shape, dtype=bool)
+    linhas, colunas = zip(*path_cells)
+    na_rota[list(linhas), list(colunas)] = True
+    afastamento = morphology.distance_transform_edt(~na_rota, sampling=(py, px))
+    afastamento_max = float(afastamento[mascara].max()) if mascara.any() else 0.0
+    area_ha = float(mascara.sum()) * px * py / 10000.0
+
+    recorte = (float(transform[0]) + col_min * float(transform[1]), float(transform[1]), 0.0,
+               float(transform[3]) + row_min * float(transform[5]), 0.0, float(transform[5]))
+    poligonos = vectorize_binary_raster(mascara.astype(np.uint8), recorte, proj)
+    geometria = None
+    for g in poligonos.geometries:
+        geometria = g.Clone() if geometria is None else geometria.Union(g)
+    if geometria is None:
+        return None
+    atributos = {"tipo": "corredor_alternativas", "folga_pct": float(alternatives_pct),
+                 "area_ha": round(area_ha, 2), "afastamento_max_m": round(afastamento_max, 1),
+                 "custo_otimo": float(custo_otimo)}
+    conjunto = FeatureSet([geometria], [atributos], crs_wkt)
+    if target_crs:
+        conjunto = conjunto.to_crs(target_crs)
+    caminho_vetor = _saida_gpkg_utilizavel(f"{base_path}_alternativas.gpkg", "alternativas", feedback)
+    conjunto.to_file(caminho_vetor, driver="GPKG", layer_name="alternativas")
+    # Folga em %, ate o triplo da pedida: mostra tambem os vales que quase entraram.
+    folga_pct = np.where(folga <= 3.0 * slack, 100.0 * np.maximum(folga, 0.0), np.nan)
+    caminho_raster = save_slack_raster(folga_pct, recorte, proj, base_path + ".tif")
+
+    append_diagnostic_log(log_path, "corredor_alternativas", folga_pct=float(alternatives_pct),
+                          celulas=int(mascara.sum()), area_ha=area_ha,
+                          afastamento_max_m=afastamento_max,
+                          vetor=caminho_vetor, raster=caminho_raster)
+    if feedback:
+        feedback.pushInfo(
+            "Corredor de alternativas (ate {:g}% acima do custo otimo): {:.1f} ha; o caminho "
+            "alternativo mais distante passa a {:,.0f} m da rota.".format(
+                alternatives_pct, area_ha, afastamento_max))
+        if afastamento_max > max(4.0 * float(buffer_m), 10.0 * px):
+            feedback.pushWarning(
+                "Ha caminhos com custo ate {:g}% maior que passam a {:,.0f} m da rota: ela nao "
+                "e bem determinada pelo modelo, e outro recorte do MDE ou outro pixel pode "
+                "troca-la por um desses corredores. Leia o corredor de alternativas, nao so a "
+                "linha.".format(alternatives_pct, afastamento_max))
+    return caminho_vetor, caminho_raster
 
 
 def _qgs_enum(cls, group, value):
@@ -3277,6 +3571,19 @@ def _qgs_enum(cls, group, value):
     seja, o plugin prometia QGIS 4 com codigo que estouraria la.
     """
     return getattr(getattr(cls, group, cls), value)
+
+
+def _flag_avancado():
+    """Flag de parametro avancado no QGIS 3.22-3.34 e no 3.36+/4."""
+    try:
+        from qgis.core import Qgis
+        return _qgs_enum(Qgis, "ProcessingParameterFlag", "Advanced")
+    except (ImportError, AttributeError):
+        try:
+            from qgis.core import QgsProcessingParameterDefinition
+            return QgsProcessingParameterDefinition.FlagAdvanced
+        except (ImportError, AttributeError):
+            return None
 
 
 def _class_labels():
@@ -3368,6 +3675,27 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
     OUTPUT_CORRIDOR = "OUTPUT_CORRIDOR"
     OUTPUT_CROSSINGS = "OUTPUT_CROSSINGS"
     OUTPUT_DEBUG_LOG = "OUTPUT_DEBUG_LOG"
+    CURVH_LIMIT = "CURVH_LIMIT"
+    CURVV_LIMIT = "CURVV_LIMIT"
+    WETNESS_LIMIT = "WETNESS_LIMIT"
+    ROUGHNESS_LIMIT = "ROUGHNESS_LIMIT"
+    FIELD_SPEED_KMH = "FIELD_SPEED_KMH"
+    ROUTE_ALTERNATIVES_PCT = "ROUTE_ALTERNATIVES_PCT"
+    WORKING_CELL_M = "WORKING_CELL_M"
+    OUTPUT_ALTERNATIVES = "OUTPUT_ALTERNATIVES"
+    OUTPUT_SLACK = "OUTPUT_SLACK"
+
+    # Recolhidos em "Parametros avancados" no dialogo do Processing: sao ajustes
+    # de especialista, com padrao que serve a maioria dos estudos.
+    ADVANCED = (
+        "INPUT_SLOPE", "INPUT_CURVH", "INPUT_CURVV", "SLOPE_UNIT", "THRESHOLD",
+        "AUTO_PERCENTILE", "ALTITUDE_BAND_THRESHOLD", "ALTITUDE_BAND_SIZE_M",
+        "WALKABILITY_ZONES", "ROUTE_CONTRAST", "ROUTE_MARGIN_M",
+        "STREAM_MIN_BASIN_KM2", "STREAM_FORD_MAX_KM2", "CONSTRAINT_BUFFER_M",
+        "EXTRA_CRITERION_WEIGHT", "EXTRA_CRITERION_DIRECTION",
+        "TRANSITABILITY_BREAKS", "CURVH_LIMIT", "CURVV_LIMIT", "WETNESS_LIMIT",
+        "ROUGHNESS_LIMIT", "FIELD_SPEED_KMH", "WORKING_CELL_M",
+    )
 
     def tr(self, key):
         """Traduz um rotulo do Processing pelo mesmo mecanismo da janela.
@@ -3712,6 +4040,48 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             )
         )
 
+        # Limites de normalizacao. Zero = automatico, pelo percentil da cena,
+        # que e o comportamento de sempre; o valor usado sai no log
+        # (limites_normalizacao) e pode ser fixado aqui para que recortes
+        # diferentes da mesma area normalizem igual.
+        for key, label in [
+            (self.CURVH_LIMIT, "alg_lim_curvh"),
+            (self.CURVV_LIMIT, "alg_lim_curvv"),
+            (self.WETNESS_LIMIT, "alg_lim_wet"),
+            (self.ROUGHNESS_LIMIT, "alg_lim_rough"),
+        ]:
+            self.addParameter(
+                QgsProcessingParameterNumber(
+                    key, self.tr(label),
+                    _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
+                    defaultValue=0.0, minValue=0.0,
+                )
+            )
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.WORKING_CELL_M,
+                self.tr("alg_cell"),
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
+                defaultValue=0.0, minValue=0.0,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.FIELD_SPEED_KMH,
+                self.tr("alg_field_speed"),
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
+                defaultValue=FIELD_SURVEY_SPEED_KMH, minValue=0.1, maxValue=TOBLER_MAX_SPEED_KMH,
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.ROUTE_ALTERNATIVES_PCT,
+                self.tr("alg_alternatives"),
+                _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
+                defaultValue=0.0, minValue=0.0, maxValue=MAX_ALTERNATIVES_PCT,
+            )
+        )
+
         self.addParameter(
             QgsProcessingParameterFileDestination(
                 self.OUTPUT_FILE,
@@ -3756,6 +4126,14 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_CORRIDOR, self.tr("alg_o_corridor")))
         self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_CROSSINGS, self.tr("alg_o_crossings")))
         self.addOutput(QgsProcessingOutputFile(self.OUTPUT_DEBUG_LOG, self.tr("alg_o_log")))
+        self.addOutput(QgsProcessingOutputVectorLayer(self.OUTPUT_ALTERNATIVES, self.tr("alg_o_alternatives")))
+        self.addOutput(QgsProcessingOutputRasterLayer(self.OUTPUT_SLACK, self.tr("alg_o_slack")))
+        avancado = _flag_avancado()
+        definicao_de = getattr(self, "parameterDefinition", None)
+        for key in (self.ADVANCED if avancado is not None and definicao_de else ()):
+            definicao = definicao_de(key)
+            if definicao is not None:
+                definicao.setFlags(definicao.flags() | avancado)
 
     def processAlgorithm(self, parameters, context, feedback):
         """Executa a analise e garante a limpeza dos diretorios temporarios.
@@ -3865,6 +4243,15 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         curvv_weight = self.parameterAsDouble(parameters, self.WEIGHT_CURVV, context)
         wetness_weight = self.parameterAsDouble(parameters, self.WEIGHT_WETNESS, context)
         roughness_weight = self.parameterAsDouble(parameters, self.WEIGHT_ROUGHNESS, context)
+        curvh_limit = self.parameterAsDouble(parameters, self.CURVH_LIMIT, context)
+        curvv_limit = self.parameterAsDouble(parameters, self.CURVV_LIMIT, context)
+        wetness_limit = self.parameterAsDouble(parameters, self.WETNESS_LIMIT, context)
+        roughness_limit = self.parameterAsDouble(parameters, self.ROUGHNESS_LIMIT, context)
+        field_speed_kmh = self.parameterAsDouble(parameters, self.FIELD_SPEED_KMH, context)
+        if not field_speed_kmh or field_speed_kmh <= 0:
+            field_speed_kmh = FIELD_SURVEY_SPEED_KMH
+        alternatives_pct = self.parameterAsDouble(parameters, self.ROUTE_ALTERNATIVES_PCT, context) or 0.0
+        working_cell_m = self.parameterAsDouble(parameters, self.WORKING_CELL_M, context) or 0.0
         total_weight = (altitude_weight + slope_weight + curvh_weight + curvv_weight
                         + wetness_weight + roughness_weight + extra_weight)
 
@@ -3931,6 +4318,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 "restricao_buffer_m": constraint_buffer_m,
                 "derivar_do_mde_solicitado": derive_from_dem,
                 "unidade_vertical": ("pes" if vertical_unit == VERTICAL_UNIT_FEET else "metros"),
+                "velocidade_campo_kmh": field_speed_kmh,
+                "folga_alternativas_pct": alternatives_pct,
+                "celula_trabalho_m": working_cell_m or "automatica",
             },
         )
         if bool(start_point_file) != bool(end_point_file):
@@ -3973,6 +4363,11 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             message = "O percentil automatico deve estar entre 0 e 100."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise _erro(message)
+        if not (0 <= alternatives_pct <= MAX_ALTERNATIVES_PCT):
+            message = "A folga do corredor de alternativas deve estar entre 0 e {:.0f}%.".format(
+                MAX_ALTERNATIVES_PCT)
+            append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
+            raise _erro(message)
         if route_buffer_m <= 0 or route_margin_m <= 0:
             message = "Corredor e margem de busca devem ser maiores que zero."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
@@ -4009,6 +4404,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             feedback=feedback,
             temp_dir=temp_work_dir,
             log_path=debug_log_path,
+            cell_size_m=working_cell_m,
         )
         dem_path = dem_crs_info["dem_path"]
         prepared_rasters = {"dem": dem_path}
@@ -4149,8 +4545,20 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
 
         altitude_norm = normalize_linear(dem_data, min_altitude, max_altitude, feedback, "Altitude")
         slope_norm = normalize_cost(slope_data, 0, slope_score_max, feedback, "Declividade")
-        curvh_norm = normalize_curvature_preference(curvh_data, feedback, "Curvatura horizontal")
-        curvv_norm = normalize_curvature_preference(curvv_data, feedback, "Curvatura vertical")
+        limites = {
+            "curvatura_horizontal": (curvh_limit if curvh_limit > 0 else curvature_limit(curvh_data)),
+            "curvatura_vertical": (curvv_limit if curvv_limit > 0 else curvature_limit(curvv_data)),
+        }
+        origem_limites = {
+            "curvatura_horizontal": "parametro" if curvh_limit > 0 else "cena P{:g}".format(
+                CURVATURE_DEVIATION_PERCENTILE),
+            "curvatura_vertical": "parametro" if curvv_limit > 0 else "cena P{:g}".format(
+                CURVATURE_DEVIATION_PERCENTILE),
+        }
+        curvh_norm = normalize_curvature_preference(
+            curvh_data, feedback, "Curvatura horizontal", limit=limites["curvatura_horizontal"])
+        curvv_norm = normalize_curvature_preference(
+            curvv_data, feedback, "Curvatura vertical", limit=limites["curvatura_vertical"])
 
         valid_mask = ~np.isnan(dem_data) & ~np.isnan(slope_data) & ~np.isnan(curvh_data) & ~np.isnan(curvv_data)
         altitude_range_mask = (dem_data >= min_altitude) & (dem_data <= max_altitude)
@@ -4347,10 +4755,27 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                     "O peso da umidade do terreno exige a hidrografia extraida do MDE. "
                     "Marque \"Considerar cursos d'agua extraidos do MDE\" ou zere esse peso."
                 )
-            wetness_norm = (1.0 - robust_abs_norm(twi_data, valid_mask)).astype(np.float32)
+            limites["umidade_twi"] = (wetness_limit if wetness_limit > 0
+                                      else robust_limit(twi_data, valid_mask))
+            origem_limites["umidade_twi"] = ("parametro" if wetness_limit > 0
+                                             else "cena P{:g}".format(CURVATURE_RISK_PERCENTILE))
+            wetness_norm = (1.0 - robust_abs_norm(
+                twi_data, valid_mask, limit=limites["umidade_twi"])).astype(np.float32)
         roughness_norm = None
         if roughness_weight > 0:
-            roughness_norm = (1.0 - robust_abs_norm(roughness_data, valid_mask)).astype(np.float32)
+            limites["rugosidade_vrm"] = (roughness_limit if roughness_limit > 0
+                                         else robust_limit(roughness_data, valid_mask))
+            origem_limites["rugosidade_vrm"] = ("parametro" if roughness_limit > 0
+                                                else "cena P{:g}".format(CURVATURE_RISK_PERCENTILE))
+            roughness_norm = (1.0 - robust_abs_norm(
+                roughness_data, valid_mask, limit=limites["rugosidade_vrm"])).astype(np.float32)
+        # Os limites que fazem a nota -- e o custo da rota -- depender do recorte.
+        # Gravados para que um estudo os fixe entre recortes da mesma area.
+        append_diagnostic_log(debug_log_path, "limites_normalizacao",
+                              limites=limites, origem=origem_limites)
+        if feedback:
+            feedback.pushInfo("Limites de normalizacao: " + "; ".join(
+                "{} = {:.6g} ({})".format(k, v, origem_limites[k]) for k, v in limites.items()))
 
         altitude_component = altitude_weight * altitude_norm
         slope_component = slope_weight * slope_norm
@@ -4456,8 +4881,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         route_path = None
         corridor_path = None
         crossings_path = None
+        alternatives = None
         if start_point_file and end_point_file:
-            route_path, corridor_path, crossings_path = save_access_route(
+            route_path, corridor_path, crossings_path, alternatives = save_access_route(
                 route_score,
                 transform,
                 proj,
@@ -4477,6 +4903,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 optimise_order=optimise_order,
                 stream_mask=stream_mask if stream_mask.any() else None,
                 stream_area=stream_area, stream_class=stream_class,
+                field_speed_kmh=field_speed_kmh,
+                alternatives_pct=alternatives_pct,
             )
             append_diagnostic_log(
                 debug_log_path,
@@ -4547,6 +4975,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             result[self.OUTPUT_CORRIDOR] = corridor_path
         if crossings_path:
             result[self.OUTPUT_CROSSINGS] = crossings_path
+        if alternatives:
+            result[self.OUTPUT_ALTERNATIVES] = alternatives[0]
+            result[self.OUTPUT_SLACK] = alternatives[1]
         result[self.OUTPUT_DEBUG_LOG] = debug_log_path
         # QgsProcessingParameterFileDestination declara automaticamente uma
         # saida com o mesmo nome do parametro, e ate aqui ela nunca era
