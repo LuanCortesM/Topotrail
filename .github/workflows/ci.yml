@@ -11,14 +11,19 @@ permissions:
 
 jobs:
   checks:
-    name: Lint, compile and test
+    name: Lint and unit tests (Python ${{ matrix.python-version }}${{ matrix.scipy && '' || ', no SciPy' }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         # 3.9 is the oldest interpreter shipped with a supported QGIS LTR;
-        # 3.12 is what current QGIS builds use.
+        # 3.12 is what current QGIS builds use. The no-SciPy run is the plugin
+        # as it loads on a Debian/Ubuntu QGIS without python3-scipy.
         python-version: ["3.9", "3.12"]
+        scipy: [true]
+        include:
+          - python-version: "3.12"
+            scipy: false
 
     steps:
       - uses: actions/checkout@v4
@@ -28,14 +33,14 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install development tools
-        # numpy and scipy are what the plugin needs at run time (QGIS ships
-        # them); pyproj only serves the test stubs that stand in for GDAL's OSR.
-        run: python -m pip install --upgrade pip ruff pytest bandit flake8 numpy scipy pyproj
+        # pyproj only serves the test stubs that stand in for GDAL's OSR.
+        run: |
+          python -m pip install --upgrade pip ruff pytest bandit flake8 numpy pyproj
+          if [ "${{ matrix.scipy }}" = "true" ]; then python -m pip install scipy; fi
+
       # PyQt6 is not a dependency of the plugin: it only serves the test that
       # builds the window under Qt6, which is what QGIS 4 uses. If no wheel
-      # exists for this interpreter the step is allowed to fail and the test
-      # skips itself -- a missing wheel should not fail the build, but it does
-      # mean QGIS 4 compatibility went unverified on that interpreter.
+      # exists for this interpreter the test skips itself.
       - name: Install PyQt6 for the QGIS 4 compatibility test
         continue-on-error: true
         run: |
@@ -57,7 +62,49 @@ jobs:
         run: python -m compileall -q processing ui topotrail.py __init__.py topotrail_config.py
 
       - name: Test
-        run: pytest
+        run: pytest -rs
+
+  qgis:
+    # The plugin inside real QGIS: the Processing algorithm end to end, the
+    # four-step window driven as a user drives it, the reproducible example,
+    # and the zip installed and loaded through qgis.utils like the Plugin
+    # Manager does. From the oldest declared version to the current release.
+    name: Real QGIS ${{ matrix.qgis }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        qgis: ["final-3_22_16", "ltr", "stable"]
+    container:
+      image: qgis/qgis:${{ matrix.qgis }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Tools inside the image
+        run: |
+          apt-get update -q
+          apt-get install -y -q git python3-pip
+          python3 -m pip install pytest \
+            || python3 -m pip install --break-system-packages pytest
+
+      - uses: actions/checkout@v4
+
+      - name: Versions
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          python3 -c "import sys, numpy; from qgis.core import Qgis; from osgeo import gdal; print('QGIS', Qgis.version(), '| Python', sys.version.split()[0], '| GDAL', gdal.__version__, '| NumPy', numpy.__version__)"
+          python3 -c "import scipy; print('SciPy', scipy.__version__)" || echo "SciPy: absent (NumPy fallback in use)"
+
+      - name: Unit and integration tests
+        run: python3 -m pytest -rs
+
+      - name: Reproducible example
+        run: python3 exemplo/executar.py
+
+      - name: Packaged zip installs and loads like the Plugin Manager does
+        run: |
+          python3 tools/empacotar.py --saida dist
+          python3 tools/instalar_e_carregar.py dist/TopoTrail-*.zip
 
   metadata:
     name: Validate CITATION.cff
