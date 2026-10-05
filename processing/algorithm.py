@@ -12,14 +12,15 @@ from datetime import datetime
 # QGIS' Python bootstrap may try to register every PATH directory as a DLL
 # directory. The Microsoft WindowsApps shim can be unreadable in this setup,
 # so keep it out of this process before importing qgis.* modules.
-os.environ["PATH"] = ";".join(
-    path for path in os.environ.get("PATH", "").split(";")
-    if "Microsoft\\WindowsApps" not in path
-)
+if sys.platform == "win32":
+    os.environ["PATH"] = os.pathsep.join(
+        path for path in os.environ.get("PATH", "").split(os.pathsep)
+        if "Microsoft\\WindowsApps" not in path
+    )
 
 import numpy as np  # noqa: E402
 from osgeo import gdal, ogr, osr  # noqa: E402
-from scipy import ndimage  # noqa: E402
+from . import morphology  # noqa: E402
 from .hydrology import analyse_hydrology  # noqa: E402
 from .terrain import (  # noqa: E402
     check_terrain_size,
@@ -323,6 +324,19 @@ def dependency_diagnostics():
         "gdal": gdal_version,
         "sistema": platform.platform(),
     }
+
+
+def ogr_memory_driver():
+    """Driver vetorial em memoria: 'MEM' no GDAL >= 3.11, 'Memory' antes dele.
+
+    O GDAL 3.11 unificou os dois sob 'MEM' e marcou 'Memory' como obsoleto; ele
+    sera removido, e o QGIS 4 ja vem com GDAL 3.11+.
+    """
+    for nome in ("MEM", "Memory"):
+        driver = ogr.GetDriverByName(nome)
+        if driver is not None and driver.GetMetadataItem("DCAP_VECTOR") == "YES":
+            return driver
+    raise _erro("O GDAL desta instalacao nao tem driver vetorial em memoria.")
 
 
 def srs_from_projection(projection, default_crs=None):
@@ -1163,8 +1177,7 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
         merged = merged.Buffer(float(buffer_m))
 
     rows, cols = shape
-    driver = ogr.GetDriverByName("Memory")
-    datasource = driver.CreateDataSource("restricoes")
+    datasource = ogr_memory_driver().CreateDataSource("restricoes")
     layer = datasource.CreateLayer("restricoes", srs=target_srs,
                                    geom_type=ogr.wkbMultiPolygon)
     feature = ogr.Feature(layer.GetLayerDefn())
@@ -1437,7 +1450,7 @@ def stream_crossing_factors(stream_mask, basin_km2, ford_max_km2, transform, cha
         source_area = np.where(channel, basin_km2, 0.0)
     px = abs(float(transform[1]))
     py = abs(float(transform[5]))
-    _, (rr, cc) = ndimage.distance_transform_edt(~channel, sampling=(py, px), return_indices=True)
+    _, (rr, cc) = morphology.distance_transform_edt(~channel, sampling=(py, px), return_indices=True)
     nearest_area = source_area[rr, cc]
     area = np.where(stream_mask, nearest_area, np.nan).astype(np.float32)
     inside = stream_mask
@@ -2000,7 +2013,7 @@ def filter_small_regions(binary_array, transform, proj, min_area_ha, feedback=No
 
     pixel_area_m2 = estimate_pixel_area_m2(transform, binary_array.shape, proj)
     min_pixels = max(1, int(np.ceil((min_area_ha * 10000.0) / pixel_area_m2)))
-    labels, region_count = ndimage.label(binary_array == 1, structure=np.ones((3, 3), dtype=np.uint8))
+    labels, region_count = morphology.label(binary_array == 1, connectivity=8)
 
     if region_count == 0:
         return binary_array
@@ -2248,8 +2261,7 @@ def vectorize_binary_raster(binary_array, transform, proj, feedback=None):
         dataset = None
 
         # Poligoniza para uma camada em memoria: nada toca o disco alem do raster.
-        mem_driver = ogr.GetDriverByName("Memory")
-        vector_ds = mem_driver.CreateDataSource("mask")
+        vector_ds = ogr_memory_driver().CreateDataSource("mask")
         if vector_ds is None:
             raise _erro("Não foi possível criar vetor temporário")
         layer = vector_ds.CreateLayer("polygons", srs=srs, geom_type=ogr.wkbPolygon)
@@ -2594,17 +2606,11 @@ def _liga_apenas_pelo_canto(cost_array, start_rc, end_rc):
     Por isso o resultado so serve para ESCOLHER A MENSAGEM, nunca para permitir
     ou proibir um passo.
     """
-    try:
-        from scipy import ndimage
-    except Exception:
-        return False
     passavel = np.isfinite(cost_array)
     if not (passavel[start_rc] and passavel[end_rc]):
         return False
-    oito = np.ones((3, 3), dtype=bool)
-    quatro = np.array([[False, True, False], [True, True, True], [False, True, False]])
-    rotulos_oito, _ = ndimage.label(passavel, structure=oito)
-    rotulos_quatro, _ = ndimage.label(passavel, structure=quatro)
+    rotulos_oito, _ = morphology.label(passavel, connectivity=8)
+    rotulos_quatro, _ = morphology.label(passavel, connectivity=4)
     return bool(rotulos_oito[start_rc] == rotulos_oito[end_rc]
                 and rotulos_quatro[start_rc] != rotulos_quatro[end_rc])
 
@@ -4168,7 +4174,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 # na diagonal.
                 px = abs(float(transform[1]))
                 py = abs(float(transform[5]))
-                distance = ndimage.distance_transform_edt(~channels, sampling=(py, px))
+                distance = morphology.distance_transform_edt(~channels, sampling=(py, px))
                 channels = distance <= float(constraint_buffer_m)
             stream_mask = channels.astype(bool)
             restricted_mask |= stream_mask

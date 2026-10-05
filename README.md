@@ -125,17 +125,18 @@ Download a release ZIP from the
 - QGIS **3.22** or later (QGIS 4 / Qt6 supported).
 - Input rasters must have a defined CRS.
 
-That is all. TopoTrail uses only what every QGIS installation already ships —
-**GDAL/OGR, NumPy and SciPy** — so there is nothing to `pip install` on
-Windows, Linux or macOS. Install the plugin and it runs. (`requirements.txt`
-documents the version floors of those bundled libraries for reference; it is
-not an install target.)
+That is all. TopoTrail needs only what every QGIS installation ships —
+**GDAL/OGR and NumPy** — so there is nothing to `pip install` on Windows,
+Linux or macOS. SciPy is used when present; where it is missing (it is not a
+dependency of the Debian/Ubuntu QGIS packages, for instance) an equivalent NumPy
+implementation takes over and the results are the same. (`requirements.txt`
+documents version floors for reference; it is not an install target.)
 
 Verify from the QGIS Python Console, if you like:
 
 ```python
-from osgeo import gdal; import numpy, scipy
-print(gdal.__version__, numpy.__version__, scipy.__version__)
+from osgeo import gdal; import numpy
+print(gdal.__version__, numpy.__version__)
 ```
 
 ## Quick start

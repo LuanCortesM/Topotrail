@@ -1,5 +1,6 @@
 # Version floors of libraries every QGIS installation already ships.
 # Reference only -- nothing here needs to be installed by the user.
 numpy>=1.19.0
-scipy>=1.5.0
 gdal>=3.0.0
+# Optional: used when present, otherwise an equivalent NumPy fallback runs.
+scipy>=1.5.0

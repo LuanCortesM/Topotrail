@@ -225,6 +225,11 @@ def transitability():
     return _load_by_path("transitability")
 
 
+@pytest.fixture(scope="session")
+def morphology():
+    return _load_by_path("morphology")
+
+
 @pytest.fixture
 def transform_10m():
     """GeoTransform for a 10 m grid: origin (0, 1000), y decreasing."""
