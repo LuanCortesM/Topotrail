@@ -38,6 +38,7 @@
   "alg_metres": "Metros",
   "alg_minarea": "Área mínima del fragmento (ha)",
   "alg_name": "TopoTrail — Análisis Multicriterio",
+  "menu_action": "TopoTrail — Planificación de senderos y accesos",
   "alg_o_corridor": "Corredor de acceso",
   "alg_o_crossings": "Cruces de cursos de agua en la ruta",
   "alg_o_log": "Registro de diagnóstico de TopoTrail",

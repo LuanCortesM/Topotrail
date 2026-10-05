@@ -38,6 +38,7 @@
   "alg_metres": "メートル",
   "alg_minarea": "パッチの最小面積（ha）",
   "alg_name": "TopoTrail — 多基準分析",
+  "menu_action": "TopoTrail — トレイルとアクセスの計画",
   "alg_o_corridor": "アクセス回廊",
   "alg_o_crossings": "経路上の水路横断地点",
   "alg_o_log": "TopoTrail 診断ログ",

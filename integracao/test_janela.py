@@ -6,13 +6,27 @@ apareceram dois defeitos que nenhum teste do algoritmo via: o log da janela era
 escrito da thread da tarefa (proibido no Qt) e cancelar terminava numa caixa de
 erro.
 """
+import importlib
 import os
-import sys
 import time
 
 import pytest
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def iface_simulado():
+    """QgisInterface de mentira, sem efeito colateral.
+
+    Nao e qgis.testing.mocked.get_iface(): ela chama start_app(), que com um
+    QGIS ja aberto cria um segundo QgsApplication e registra um exitQgis que
+    derruba o processo na saida.
+    """
+    from unittest import mock
+
+    iface = mock.MagicMock()
+    iface.mainWindow.return_value = None
+    return iface
 EXEMPLO = os.path.join(RAIZ, "exemplo")
 LIMITE_S = 300
 
@@ -21,7 +35,6 @@ LIMITE_S = 300
 def janela(qgis_app, processing_qgis, plugin, monkeypatch):
     from qgis.PyQt.QtWidgets import QMessageBox
     from qgis.core import QgsProject
-    from qgis.testing.mocked import get_iface
 
     caixas = []
     for tipo in ("information", "warning", "critical"):
@@ -30,16 +43,18 @@ def janela(qgis_app, processing_qgis, plugin, monkeypatch):
             staticmethod(lambda *a, _t=tipo, **k: caixas.append((_t, a[2] if len(a) > 2 else ""))))
 
     pacote = __import__(os.path.basename(RAIZ))
-    extensao = pacote.classFactory(get_iface())
+    extensao = pacote.classFactory(iface_simulado())
     extensao.initGui()
-    dialogo = sys.modules[os.path.basename(RAIZ) + ".ui.topotrail_dialog"].TopotrailDialog(
-        extensao.iface)
+    modulo = importlib.import_module(os.path.basename(RAIZ) + ".ui.topotrail_dialog")
+    dialogo = modulo.TopotrailDialog(extensao.iface)
     dialogo.resize(940, 720)
     dialogo.show()
     qgis_app.processEvents()
     yield dialogo, caixas
-    dialogo.close()
+    dialogo.shutdown()
+    dialogo.deleteLater()
     extensao.unload()
+    qgis_app.processEvents()
     QgsProject.instance().removeAllMapLayers()
 
 

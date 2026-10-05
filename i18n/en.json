@@ -38,6 +38,7 @@
   "alg_metres": "Metres",
   "alg_minarea": "Minimum patch area (ha)",
   "alg_name": "TopoTrail — Multicriteria Analysis",
+  "menu_action": "TopoTrail — Trail and access planning",
   "alg_o_corridor": "Access corridor",
   "alg_o_crossings": "Watercourse crossings along the route",
   "alg_o_log": "TopoTrail diagnostic log",

@@ -1857,6 +1857,22 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             self._log_line(self.t("cancelled"))
             self._task.cancel()
 
+    def shutdown(self):
+        """Fecha a janela de vez, no unload do plugin.
+
+        Uma execucao em curso e cancelada e solta: o fim dela nao pode mais
+        chamar de volta uma janela que vai ser destruida.
+        """
+        task, self._task = self._task, None
+        if task is not None:
+            try:
+                task.executed.disconnect()
+            except (TypeError, RuntimeError) as exc:
+                log_quietly("soltar a tarefa em curso no unload", exc)
+            task.cancel()
+        self.cleanup_temp_point_files()
+        self.close()
+
     def _on_progress(self, value):
         self.progress.setRange(0, 100)
         self.progress.setValue(int(value))

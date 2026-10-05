@@ -38,6 +38,7 @@
   "alg_metres": "米",
   "alg_minarea": "斑块最小面积（公顷）",
   "alg_name": "TopoTrail — 多准则分析",
+  "menu_action": "TopoTrail — 步道与通道规划",
   "alg_o_corridor": "通行廊道",
   "alg_o_crossings": "路线上的河流穿越点",
   "alg_o_log": "TopoTrail 诊断日志",
