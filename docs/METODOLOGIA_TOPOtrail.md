@@ -1,7 +1,7 @@
 # TopoTrail Methodology
 
 Formulas, named empirical constants and normalisation rules, as implemented in
-version **1.3.0**. Every statement here was checked against `processing/` in
+version **1.4.0**. Every statement here was checked against `processing/` in
 this repository; where a constant is named, the name is the one used in the
 code, so it can be found and read in context.
 
@@ -60,6 +60,18 @@ checks it and corrects it:
   north-up grid, because finite-difference gradients assume that;
 * with `STRICT_CRS_MODE` on, which is the shipped default, a DEM with **no**
   CRS stops the run: the CRS must be fixed at the data source.
+
+**Working cell (since 1.4.0).** By default the reprojection lets GDAL choose the
+cell size and the grid origin from the extent of the input, so two clips of the
+same geographic DEM are resampled onto different cells (measured: 29.6084,
+29.6098 and 29.6142 m, with origins offset by 3 to 21 m, for clip margins of
+3.4–3.6 km around the same trail). Every derived attribute then differs cell by
+cell, and where two corridors have almost the same cost the route can switch
+between them. `WORKING_CELL_M > 0` fixes the cell and aligns the grid to its own
+multiples (`gdal.Warp(..., xRes=c, yRes=c, targetAlignedPixels=True)`); a
+projected DEM is then also resampled to that cell. Any clip of the same DEM
+lands on the same cells, and the interior of the analysis no longer depends on
+the extent of the clip.
 
 Optional slope and curvature rasters of your own are validated against the DEM
 and aligned to its grid, resolution, extent and CRS where necessary. Alignment
@@ -189,7 +201,12 @@ Every criterion becomes a score between 0 and 1 before being combined.
 Curvature scoring: the score is `floor + (1 - floor) * (1 - min(|C - 0| / L, 1))`
 where the floor is `CURVATURE_SCORE_FLOOR = 0.2` and the tolerated deviation `L`
 is the 99th percentile (`CURVATURE_DEVIATION_PERCENTILE`) of the scene's own
-deviations. The preferred terrain is the gently shaped one, neither strongly
+deviations, unless fixed with `CURVH_LIMIT` / `CURVV_LIMIT`. Wetness and
+ruggedness are normalised by the 95th percentile of their absolute values
+(`CURVATURE_RISK_PERCENTILE`), unless fixed with `WETNESS_LIMIT` /
+`ROUGHNESS_LIMIT`. These four values depend on the extent of the scene; every
+run records the ones it used in the log (`limites_normalizacao`), so that a
+study can fix them across clips of the same area. The preferred terrain is the gently shaped one, neither strongly
 concave nor strongly convex, and the most extreme forms still score 0.2 rather
 than 0.
 
@@ -390,6 +407,33 @@ A metric buffer around the route, with the radius declared by the user
 (`ROUTE_BUFFER_M`, default 100 m) — a radius of 100 m therefore produces a
 corridor 200 m wide.
 
+### Alternatives corridor (since 1.4.0)
+
+The route is the single cheapest path, and nothing in it says how much cheaper
+it is than the next one. With `ROUTE_ALTERNATIVES_PCT = p > 0` the plugin
+computes, on the same graph as the A\* (same eight steps, same corner rule, same
+anisotropic Tobler time and ford factors), the accumulated cost from the origin
+`d_o(x)` and the accumulated cost to the destination `d_d(x)` — a complete
+Dijkstra each way, the second on the reversed graph, because walking time
+depends on direction. With `C*` the optimal cost:
+
+```text
+slack(x) = (d_o(x) + d_d(x)) / C* - 1
+corridor = { x : slack(x) <= p / 100 }
+```
+
+`slack(x)` is how much costlier the best path *through x* is than the route. The
+corridor is a union of origin–destination paths, hence connected, and always
+contains the route; for several legs it is the union per leg. It is the
+least-cost corridor of connectivity planning (Beier et al. 2008), here on the
+anisotropic walking-time graph. Outputs: `…_alternativas.gpkg`, with `area_ha`
+and `afastamento_max_m` (the largest distance from the route to a corridor
+cell), and `…_folga.tif`, `slack` in percent up to `3p`. When
+`afastamento_max_m > max(4 · ROUTE_BUFFER_M, 10 cells)` the run warns that the
+route is ill-determined. With SciPy the two Dijkstras run in
+`scipy.sparse.csgraph`; without it, in Python on the same edge list. The grid is
+capped at `MAX_ALTERNATIVES_CELLS = 4 000 000` cells.
+
 ## Graded watercourse crossings
 
 Where drainage extraction is on, each channel cell receives a cost multiplier as
@@ -496,6 +540,10 @@ alongside any result taken from the plugin.
 Barnes, R., Lehman, C. & Mulla, D. (2014) Priority-flood: an optimal
 depression-filling and watershed-labeling algorithm for digital elevation models.
 *Computers & Geosciences* 62: 117–127.
+
+Beier, P., Majka, D.R. & Spencer, W.D. (2008) Forks in the road: choices in
+procedures for designing wildland linkages. *Conservation Biology* 22: 836–851.
+https://doi.org/10.1111/j.1523-1739.2008.00942.x
 
 Beven, K.J. & Kirkby, M.J. (1979) A physically based, variable contributing area
 model of basin hydrology. *Hydrological Sciences Bulletin* 24: 43–69.

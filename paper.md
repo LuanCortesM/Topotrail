@@ -36,15 +36,16 @@ destinations, costed as walking time through Tobler's anisotropic hiking
 function [@tobler1993]; a metric corridor around that route; and the watercourse
 crossings the route makes, each one listed with its contributing area and
 flagged for field checking. Every run writes a JSON diagnostic log recording the
-plugin version, the versions of its dependencies, all forty-five parameters and
+plugin version, the versions of its dependencies, all fifty-two parameters and
 the distribution statistics of every intermediate raster, so that a route
 printed in a report can be traced back to the analysis that produced it.
 
 The plugin is available both as a four-step wizard and as a Processing algorithm
 (`topotrail:topotrail`), so it can be scripted or embedded in a model. It runs on
 QGIS 3.22 through QGIS 4, in six interface languages, and requires nothing beyond
-the NumPy [@harris2020], SciPy [@virtanen2020] and GDAL/OGR [@gdal2024] that
-every QGIS [@qgis2023] installation already ships.
+the NumPy [@harris2020] and GDAL/OGR [@gdal2024] that every QGIS [@qgis2023]
+installation ships; SciPy [@virtanen2020] is used when present, with an
+equivalent NumPy implementation where it is not.
 
 # Statement of need
 
@@ -101,6 +102,22 @@ solved exactly by dynamic programming [@heldkarp1962]. Criteria are combined by
 weighted linear combination in the standard GIS multicriteria form
 [@saaty1977; @malczewski2006], with per-cell weight renormalisation where a
 criterion does not cover a pixel.
+
+A single least-cost line can hide that it is ill-determined: two corridors whose
+costs differ by a fraction of a percent are equally good answers, and a minimal
+perturbation of the input switches one for the other. The plugin can therefore
+also return the near-optimal corridor, every cell lying on some path at most a
+chosen percentage costlier than the optimum, from forward and backward
+accumulated-cost surfaces over the same anisotropic step model, in the manner of
+the least-cost corridors of connectivity planning [@beier2008]. A related source
+of irreproducibility is the working grid: a geographic DEM reprojected to UTM is
+resampled onto a grid whose cell and origin follow the extent of the clip, so two
+clips of the same area yield different cells. A fixed, target-aligned working
+cell removes that dependence; on field cases where the route changed with the
+clip margin it became identical across margins. The test suite runs in
+continuous integration both without QGIS and inside official QGIS 3.22, 3.44 and
+4.2 images, driving the Processing algorithm, the wizard and the packaged
+plugin.
 
 # Research application
 

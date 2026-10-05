@@ -58,24 +58,37 @@ TopoTrail runs inside the QGIS Python environment. It is not installed with pip.
 4. The [Plugin Reloader](https://plugins.qgis.org/plugins/plugin_reloader/)
    plugin saves a great deal of time while iterating.
 
-The plugin has no runtime dependency beyond what QGIS ships (NumPy, SciPy,
-GDAL/OGR). Keep it that way: a module-level import of anything else makes the
+The plugin has no runtime dependency beyond what every QGIS ships (NumPy,
+GDAL/OGR). SciPy is optional: `processing/morphology.py` uses it when present and
+falls back to NumPy otherwise, because the Debian/Ubuntu QGIS packages do not
+depend on it. Keep it that way: a module-level import of anything else makes the
 plugin fail to load on a clean QGIS install, and the test suite checks for it.
 
 ## Checks that run on every pull request
 
-Continuous integration runs on GitHub Actions and does not require QGIS:
+Continuous integration runs on GitHub Actions in two layers. Without QGIS, on
+Python 3.9 and 3.12, with and without SciPy:
 
 ```bash
-python -m pip install ruff pytest
+python -m pip install ruff pytest numpy scipy pyproj
 ruff check .                 # error-level lint only, see pyproject.toml
 python -m compileall -q processing ui topotrail.py __init__.py
-pytest -q
+pytest -q                    # integracao/ skips itself without QGIS
 ```
 
-Run these locally before opening a pull request. Anything that needs QGIS itself
-has to be verified by hand — see `docs/qgis4/CHECKLIST_QGIS4.md` for the manual
-checklist.
+And inside the official QGIS 3.22, 3.44 LTR and 4.2 Docker images, with the
+Python of QGIS:
+
+```bash
+python3 -m pytest -rs                            # both suites, real QGIS and GDAL
+python3 exemplo/executar.py                      # the reproducible example
+python3 tools/empacotar.py --saida dist
+python3 tools/instalar_e_carregar.py dist/TopoTrail-*.zip   # install and load the zip
+```
+
+Run these locally before opening a pull request (on Windows, `python-qgis.bat`
+in place of `python3`). What still needs a person in front of a QGIS desktop is
+listed in `docs/qgis4/CHECKLIST_QGIS4.md`.
 
 ## Pull requests
 

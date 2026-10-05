@@ -153,13 +153,25 @@ print(gdal.__version__, numpy.__version__)
    route, give an origin and a destination by file, by coordinates in the
    project CRS, or by clicking on the map — and, if you like, a point layer of
    intermediate destinations.
-5. **Criteria**: the defaults were calibrated against real trails and can be
-   left alone. Check the altitude range for your area.
+5. **Criteria**: the defaults are cautious starting points, not measurements
+   (only two internal constants of the route cost were fitted to field tracks).
+   Adjust them to your terrain, report the values you use, and check the
+   altitude range for your area.
 6. **Run**: choose an output file and format. The results are loaded into the
    project, styled.
 
 The plugin is also available as a Processing algorithm (`topotrail:topotrail`),
-so it can be scripted or placed in a model.
+so it can be scripted, placed in a model or batch, or run from the command line
+with `qgis_process` once the plugin is installed:
+
+```sh
+qgis_process plugins enable TopoTrail
+qgis_process run topotrail:topotrail -- INPUT_DEM=dem.tif \
+    START_POINT_FILE=origin.geojson END_POINT_FILE=destination.geojson OUTPUT_FILE=out.gpkg
+```
+
+Every parameter not given takes its default; `qgis_process help topotrail:topotrail`
+lists all of them.
 
 **If you have no DEM to hand, start with [`exemplo/`](exemplo/README.md).** It
 ships a small synthetic DEM, the origin, destination and an intermediate point,
@@ -191,9 +203,11 @@ time, accumulated ascent and number of watercourse crossings.
 | Relative topographic risk | `…_risco_topografico.tif` | 0–1 per cell |
 | Transitability classes | `…_transitabilidade.tif` | 5 classes, legend and colours written into the file, in the active language |
 | Potential access zones | `….gpkg` / `.shp` / `.kml` | polygons with `area_m2`, `area_ha` |
-| Suggested route | `…_rota.gpkg` | `compr_m`, `tempo_h` (Tobler), altitudes, number of legs |
+| Suggested route | `…_rota.gpkg` | `compr_m`, `tempo_h` (Tobler), `tempo_campo_h` (field pace), altitudes, number of legs |
 | Access corridor | `…_corredor.gpkg` | buffer of the route, in metres |
 | Watercourse crossings | `…_travessias.gpkg` | one point per crossing: basin area, class, cost factor, warning |
+| Alternatives corridor (optional) | `…_alternativas.gpkg` | every cell on some path at most *x*% costlier than the route; `area_ha`, `afastamento_max_m` |
+| Slack over the optimal cost (optional) | `…_folga.tif` | per cell, how much costlier (%) the best path through it is |
 | Diagnostic log | `…_diagnostico_topotrail.log` | one JSON record per step, for reproducibility |
 
 ## Working outside the area it was built for
@@ -405,7 +419,45 @@ watercourses avoided and the two new criteria enabled, 44.5 km at 15h25 and
 was not.
 
 Tobler describes an unburdened walker on an existing path. It is an estimate of
-relative effort, not a schedule.
+relative effort, not a schedule. Next to it the route carries `tempo_campo_h`,
+the same route at a field-survey pace (`FIELD_SPEED_KMH`, by default the
+2.4 km/h measured on botanical-inventory tracks in the caatinga); the pace
+rescales the duration and never changes the route.
+
+## How well-determined is the route?
+
+A least-cost route is the single cheapest line, and that can hide that it is
+barely cheaper than a very different one. On the access trail to the Reserva
+Chico Nunes two corridors, 3.9 km and 6.1 km long, cost 5h10 and 5h13 — a 1%
+difference — and clipping the DEM 50 m wider was enough to switch from one to
+the other. Two options make this visible and controllable.
+
+**Alternatives corridor** (`ROUTE_ALTERNATIVES_PCT`, off by default). Every cell
+that lies on some path at most that percentage costlier than the optimum,
+computed from the accumulated cost from the origin and to the destination, with
+the same anisotropic step model as the route. A narrow corridor hugging the line
+means the route is well determined; a corridor that opens into a second valley
+means the model does not choose between them, and the field should. The layer
+records its area and `afastamento_max_m`, the distance from the route to its
+farthest alternative, and the plugin warns when that distance is large. With 2%
+of slack the Chico Nunes corridor covers 35 ha within 175 m of the route; the
+Batedor trail's covers 465 ha with alternatives 1.1 km away, which is why the
+straight line does as well there as the model.
+
+**Working cell** (`WORKING_CELL_M`, automatic by default). A DEM in geographic
+coordinates (Topodata, SRTM, Copernicus) is reprojected to UTM, and by default
+GDAL picks the cell size and origin from the extent of the clip: two clips of the
+same area are resampled onto different cells. Measured on two field trails over
+five clip margins between 3.40 and 3.60 km, the route length varied from 3.9 to
+6.1 km and from 8.6 to 10.1 km. With a fixed cell of 30 m, aligned to multiples
+of itself, the route was identical in all five clips on both trails. The scene
+statistics that normalise curvature, wetness and ruggedness are recorded in the
+log (`limites_normalizacao`) and can be fixed as well (`CURVH_LIMIT`,
+`CURVV_LIMIT`, `WETNESS_LIMIT`, `ROUGHNESS_LIMIT`); in those cases they were not
+what moved the route.
+
+To compare clips of the same area, or to reproduce a published route exactly,
+fix the working cell and the four limits recorded in the log.
 
 ## Two more things the DEM already knows
 
@@ -517,6 +569,10 @@ recommendations were implemented and when.
 - The route search is confined to a rectangle around origin and destination,
   expanded by the search margin. A globally cheaper path that leaves that
   rectangle will not be found.
+- A least-cost route can be ill-determined: when two corridors cost almost the
+  same, a minimal change in the input switches between them. Read the
+  alternatives corridor, not only the line, and fix the working cell when
+  comparing DEM clips (see *How well-determined is the route?*).
 - The 8-neighbour grid quantises route direction to multiples of 45°, which
   slightly overestimates the length of diagonal, staircase-like paths.
 - Some cost, risk and normalisation constants are empirical modelling decisions
@@ -564,7 +620,12 @@ writes next to your output. It is by far the most useful thing you can send.
 
 Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the
 development setup, the checks that run on every pull request, and what a good
-bug report contains. Participation is governed by the
+bug report contains. Continuous integration runs the unit tests without QGIS
+(Python 3.9 and 3.12, with and without SciPy) and the integration suite inside
+the official QGIS 3.22, 3.44 LTR and 4.2 images: the Processing algorithm end
+to end, the four-step window driven as a user drives it, the reproducible
+example, and the packaged zip installed and loaded the way the Plugin Manager
+does it. Participation is governed by the
 [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Citing TopoTrail
@@ -649,6 +710,15 @@ and every parameter used.
 The full, per-version changelog lives in [`metadata.txt`](metadata.txt) and is
 what the QGIS plugin repository shows. In short:
 
+- **1.4.0** — Runs the same on any computer: SciPy becomes optional (NumPy
+  fallback with identical results), the example and validation scripts run on
+  Windows, Linux and macOS, the algorithm works from `qgis_process`, and CI tests
+  the plugin inside real QGIS 3.22, 3.44 and 4.2. Window: the log no longer
+  touches the interface from the worker thread, cancelling no longer ends in an
+  error, unloading closes the window. GDAL older than 3.7 no longer keeps
+  exceptions switched on for the whole QGIS session. New: alternatives corridor,
+  fixed working cell and fixable normalisation limits; field pace as a
+  parameter; walking time no longer printed as "4h60".
 - **1.3.0** — Corrections from six independent audits of the code and of the
   chapter describing it: a diagonal A\* step now exists only where there is room
   to pass outside it (the route used to slip through the vertex between two
