@@ -7,8 +7,8 @@ import os
 
 import pytest
 
-from conftest import (escrever_dem, escrever_poligonos, escrever_pontos,
-                      parametros_base, relevo)
+from cenas import (escrever_dem, escrever_poligonos, escrever_pontos,
+                   parametros_base, relevo)
 
 
 @pytest.fixture()

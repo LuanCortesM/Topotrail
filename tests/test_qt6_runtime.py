@@ -9,6 +9,7 @@ interpretador, e o resto da suíte usa o QGIS, que hoje é Qt5.
 """
 
 import pathlib
+import shutil
 import subprocess
 import sys
 
@@ -38,8 +39,7 @@ def _interpretador():
     if _tem_pyqt6(sys.executable):
         return sys.executable
     for alternativa in ("python3", "python3.11", "python3.12", "python3.13"):
-        caminho = subprocess.run(["which", alternativa],
-                                 capture_output=True, text=True).stdout.strip()
+        caminho = shutil.which(alternativa)
         if caminho and _tem_pyqt6(caminho):
             return caminho
     return None

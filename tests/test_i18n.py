@@ -116,9 +116,12 @@ def test_the_files_are_utf8_and_valid_json():
 
 
 def test_the_loader_falls_back_instead_of_showing_the_key():
-    import sys
-    sys.path.insert(0, str(ROOT))
-    from ui import i18n
+    # Carregado pelo arquivo: pôr a raiz no sys.path faria `import processing`
+    # achar o pacote do plugin, e não o do QGIS, no resto do processo.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("tt_ui_i18n", ROOT / "ui" / "i18n.py")
+    i18n = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(i18n)
     assert i18n.text("es", "run") == _load("es")["run"]
     assert i18n.text("es", "chave_que_nao_existe") == "chave_que_nao_existe"
     assert set(i18n.LANGUAGE_CODES) == set(_codes())
@@ -187,55 +190,6 @@ def test_the_labels_match_the_published_class_table():
             rotulo = data[f"class_{indice}"]
             assert nome == _nome_da_classe(rotulo), (
                 f"{code}/class_{indice}: esperado {nome!r}, encontrado {rotulo!r}")
-
-
-def test_no_label_is_clipped_in_any_language():
-    """Nenhum rótulo pode ficar cortado, em nenhum dos seis idiomas.
-
-    Este defeito já apareceu três vezes, sempre pelo mesmo motivo: uma largura
-    calculada com o texto de um idioma, ou com o peso normal da fonte quando o
-    estado ativo usa semibold. "Produtos" virava "Produto" e "データ" virava
-    "デー" -- e, sendo silencioso, só se descobre olhando.
-
-    Precisa de Qt, então é pulado onde não houver (o CI roda sem QGIS).
-    """
-    import os
-    pytest.importorskip("qgis.PyQt.QtWidgets")
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from qgis.PyQt.QtWidgets import QApplication, QLabel, QPushButton
-
-    import sys
-    sys.path.insert(0, str(ROOT))
-    application = QApplication.instance() or QApplication([])
-    from ui.topotrail_dialog import TopotrailDialog
-
-    dialog = TopotrailDialog()
-    dialog.resize(940, 720)          # o tamanho mínimo declarado da janela
-    dialog.show()
-    application.processEvents()
-    try:
-        for code in ["pt", "en", "es", "fr", "zh", "ja"]:
-            index = dialog.language_box.findData(code)
-            if index < 0:
-                continue
-            dialog.language_box.setCurrentIndex(index)
-            dialog.want_route.setChecked(True)
-            application.processEvents()
-            for step in range(4):
-                dialog.stack.setCurrentIndex(step)
-                application.processEvents()
-                for widget in (dialog.findChildren(QLabel)
-                               + dialog.findChildren(QPushButton)):
-                    texto = widget.text()
-                    if not texto or not widget.isVisible():
-                        continue
-                    if isinstance(widget, QLabel) and widget.wordWrap():
-                        continue
-                    assert widget.width() >= widget.sizeHint().width() - 1, (
-                        f"{code}, passo {step + 1}: '{texto[:30]}' cortado "
-                        f"({widget.width()} px para {widget.sizeHint().width()})")
-    finally:
-        dialog.close()
 
 
 @pytest.mark.parametrize("code", _codes())

@@ -21,5 +21,6 @@ extend-exclude = ["docs"]
 select = ["E9", "F63", "F7", "F82", "E71", "E722"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# integracao/ se pula sozinha onde nao houver QGIS.
+testpaths = ["tests", "integracao"]
 addopts = "-q"
