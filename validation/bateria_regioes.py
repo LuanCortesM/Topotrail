@@ -17,7 +17,7 @@ import entorno  # noqa: E402
 # Nenhum caminho desta maquina entra aqui. Cada raiz de dado vem de
 # --nome=<caminho> ou da variavel de ambiente correspondente, e o que faltar
 # sai numa lista unica, com o que se procurava dentro. Antes o script trazia
-# /home/claude/work/exp e /mnt/user-data/uploads/... escritos no corpo e
+# caminhos absolutos da maquina de desenvolvimento escritos no corpo e
 # importava qgis_env, um modulo que nunca existiu no repositorio: nem o import
 # resolvia para quem clonasse o projeto.
 DADOS = entorno.Dados()

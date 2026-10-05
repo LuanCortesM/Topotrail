@@ -2,7 +2,7 @@
 
 Os scripts apresentados em docs/BATERIA_TESTES.md e docs/VALIDACAO.md como a
 evidencia empirica do trabalho traziam caminhos absolutos da maquina de
-desenvolvimento (`/home/claude/work/exp`, `/mnt/user-data/uploads/...`) e
+desenvolvimento (raizes em `/home/...` e `/mnt/...`) e
 `bateria_regioes.py` importava `qgis_env`, um modulo que nao existe no
 repositorio: nem o `import` resolvia para quem clonasse o projeto. Para a JOSS
 isso e diretamente checavel -- o revisor precisa conseguir rodar os exemplos.

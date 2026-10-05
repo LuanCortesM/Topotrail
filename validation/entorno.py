@@ -3,7 +3,7 @@
 Existe por dois defeitos apontados na auditoria:
 
 * os scripts de `validation/` traziam caminhos absolutos da maquina de
-  desenvolvimento (`/home/claude/work/exp`, `/mnt/user-data/uploads/...`), de
+  desenvolvimento (raizes em `/home/...` e `/mnt/...`), de
   modo que nao rodavam em maquina nenhuma alem daquela;
 * `bateria_regioes.py` importava `qgis_env`, um modulo que nunca existiu no
   repositorio -- nem o `import` resolvia para quem clonasse o projeto.
