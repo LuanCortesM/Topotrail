@@ -16,6 +16,7 @@ abre e entende.
 import os
 import traceback
 
+from qgis.PyQt.QtCore import QObject, pyqtSignal
 from qgis.PyQt.QtGui import QFont, QFontMetrics, QPixmap
 from qgis.PyQt.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
@@ -39,6 +40,40 @@ from .support import (
 )
 
 PLUGIN_DIR = os.path.dirname(os.path.dirname(__file__))
+
+# Tamanho do texto das etapas, usado na folha de estilo e na medida da pilula.
+STEP_TEXT_PX = 12
+
+
+class _LogRelay(QObject):
+    """Leva as linhas do algoritmo ate a janela, na thread da janela."""
+
+    line = pyqtSignal(str)
+
+
+class _DialogFeedback(QgsProcessingFeedback):
+    """Feedback que nao toca na interface: so emite o texto.
+
+    O algoritmo roda numa QgsProcessingAlgRunnerTask, fora da thread da janela,
+    e escrever no QTextEdit dali e proibido no Qt (pode derrubar o QGIS). O
+    sinal e entregue em fila na thread do objeto que o recebe.
+    """
+
+    def __init__(self, relay):
+        super().__init__()
+        self._relay = relay
+
+    def pushInfo(self, info):
+        super().pushInfo(info)
+        self._relay.line.emit(str(info))
+
+    def pushWarning(self, warning):
+        super().pushWarning(warning)
+        self._relay.line.emit("⚠ " + str(warning))
+
+    def reportError(self, error, fatalError=False):
+        super().reportError(error, fatalError)
+        self._relay.line.emit("✖ " + str(error))
 
 
 def _plugin_version():
@@ -595,6 +630,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self._static_icons = []
         self._temp_point_files = []
         self._task = None
+        self._cancelling = False
         self._feedback = None
         self._labels = []          # (widget, chave) para troca de idioma
         self._format_initialised = False
@@ -642,7 +678,11 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
                 # A largura e reservada para o texto em semibold, que e o peso
                 # do passo ativo: dimensionar pelo peso normal cortava sempre a
                 # etapa em que a pessoa esta -- "Produtos" virava "Produto".
+                # Medida no tamanho da folha de estilo, e nao na fonte padrao
+                # do widget: no Qt5 do Windows ela e menor (MS Shell Dlg 8,25
+                # pt) e "Produtos" saia cortado em 4 px.
                 negrito = QFont(self.step_labels[index].font())
+                negrito.setPixelSize(STEP_TEXT_PX)
                 negrito.setBold(True)
                 self.step_labels[index].setMinimumWidth(
                     QFontMetrics(negrito).horizontalAdvance(name) + 2)
@@ -1211,10 +1251,16 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self.extra_direction = QComboBox()
         inner.addWidget(self._label("extra_layer"))
         inner.addWidget(self.extra_file)
+        # Sentido com o rotulo acima, como os demais campos: na mesma linha do
+        # peso, "Défavorables (valeur faible = mieux)" estourava a largura do
+        # cartao com fontes mais largas que a do Windows.
         row = QHBoxLayout()
         row.addWidget(self._label("extra_weight"))
         row.addWidget(self.extra_weight)
-        row.addWidget(self._label("extra_dir"))
+        row.addStretch(1)
+        inner.addLayout(row)
+        inner.addWidget(self._label("extra_dir"))
+        row = QHBoxLayout()
         row.addWidget(self.extra_direction)
         row.addStretch(1)
         inner.addLayout(row)
@@ -1231,7 +1277,10 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         row = QHBoxLayout()
         row.addWidget(self._label("cons_buffer"))
         row.addWidget(self.constraint_buffer)
-        row.addWidget(self._label("cons_mode"))
+        row.addStretch(1)
+        inner.addLayout(row)
+        inner.addWidget(self._label("cons_mode"))
+        row = QHBoxLayout()
         row.addWidget(self.constraint_mode)
         row.addStretch(1)
         inner.addLayout(row)
@@ -1388,7 +1437,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             #ttPill {{ background: transparent; border-radius: 10px; }}
             #ttPill:hover {{ background: rgba(255,255,255,0.06); }}
             #ttPill[active="true"] {{ background: rgba(255,255,255,0.13); }}
-            #ttStepText {{ color: #83a696; font-size: 12px; }}
+            #ttStepText {{ color: #83a696; font-size: {STEP_TEXT_PX}px; }}
             #ttStepText[active="true"] {{ color: #ffffff; font-weight: 600; }}
             #ttStepText[active="done"] {{ color: #b9d5c7; }}
             #ttBadge {{ border-radius: 12px; font-size: 11px; font-weight: 700;
@@ -1764,13 +1813,11 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self.log_view.clear()
         self.progress.setRange(0, 0)
 
-        feedback = QgsProcessingFeedback()
+        if getattr(self, "_log_relay", None) is None:
+            self._log_relay = _LogRelay(self)
+            self._log_relay.line.connect(self._log_line)
+        feedback = _DialogFeedback(self._log_relay)
         feedback.progressChanged.connect(self._on_progress)
-        try:
-            feedback.pushInfo = self._log_line
-            feedback.pushWarning = lambda text: self._log_line("⚠ " + text)
-        except (AttributeError, TypeError) as exc:
-            log_quietly("redirecionar o log do algoritmo para a janela", exc)
         self._feedback = feedback
 
         alg = QgsApplication.processingRegistry().algorithmById("topotrail:topotrail")
@@ -1799,13 +1846,14 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
                 self._finish_error(error, params)
 
     def _cancel(self):
-        if self._task is not None:
+        # A tarefa so para quando o algoritmo checa o cancelamento; ate la o
+        # botao fica desligado, para nao disparar outra execucao sobre os
+        # mesmos arquivos. O fim chega por _finish, como numa execucao normal.
+        if self._task is not None and not self._cancelling:
+            self._cancelling = True
             self._task.cancel()
             self._log_line(self.t("cancelled"))
-            self._task = None
-            self.progress.setRange(0, 100)
-            self.progress.setValue(0)
-            self._update_nav()
+            self.next_button.setEnabled(False)
 
     def _on_progress(self, value):
         self.progress.setRange(0, 100)
@@ -1817,10 +1865,15 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         QApplication.processEvents()
 
     def _finish(self, ok, results, params):
+        cancelled, self._cancelling = self._cancelling, False
         self._task = None
+        self.next_button.setEnabled(True)
         self.progress.setRange(0, 100)
         self.progress.setValue(100 if ok else 0)
         self._update_nav()
+        if not ok and cancelled:
+            self.cleanup_temp_point_files()
+            return
         if not ok:
             self._finish_error(Exception("\n".join(
                 self.log_view.toPlainText().splitlines()[-8:]) or "?"), params)
