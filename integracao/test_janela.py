@@ -78,8 +78,14 @@ def test_a_janela_roda_e_carrega_as_camadas(janela, qgis_app, tmp_path):
     from qgis.PyQt.QtCore import QThread
     from qgis.core import QgsProject
 
+    from osgeo import gdal
+
     dialogo, caixas = janela
+    excecoes_antes = gdal.GetUseExceptions()
     _preencher(dialogo, str(tmp_path / "janela.gpkg"))
+    # Escolher o MDE le o cabecalho do raster; isso nao pode ligar as excecoes
+    # do GDAL para o QGIS inteiro.
+    assert gdal.GetUseExceptions() == excecoes_antes
     threads = []
     original = dialogo._log_line
     dialogo._log_line = lambda texto: (threads.append(

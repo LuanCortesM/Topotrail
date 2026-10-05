@@ -554,8 +554,9 @@ class _RasterChip(QWidget):
         """Le o cabecalho do raster. Nunca levanta: um arquivo ilegivel aqui e
         informacao para o usuario, nao motivo para derrubar a janela."""
         try:
+            # Sem gdal.UseExceptions(): ligado aqui, valeria para o QGIS inteiro
+            # e quebraria quem espera gdal.Open() -> None.
             from osgeo import gdal
-            gdal.UseExceptions()
             dataset = gdal.Open(path)
             if dataset is None:
                 return self.dialog.t("chip_unreadable")

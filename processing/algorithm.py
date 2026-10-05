@@ -1286,7 +1286,10 @@ def gdal_exceptions_scoped():
                 gerente.__exit__(None, None, None)
             except Exception as exc:
                 _LOG.debug("ExceptionMgr nao restaurou o estado: %s", exc)
-        for modulo, ligado in anteriores:
+        # Ordem inversa da que ligou: no GDAL < 3.7 os manipuladores de erro
+        # formam uma pilha (gdal, ogr), e gdal.DontUseExceptions() com o do ogr
+        # no topo levanta -- o GDAL do QGIS inteiro ficava com excecoes ligadas.
+        for modulo, ligado in reversed(anteriores):
             if ligado is None:
                 continue
             try:

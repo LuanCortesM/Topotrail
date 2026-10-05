@@ -127,8 +127,8 @@ def test_o_algoritmo_liga_e_devolve_o_estado_das_excecoes(plugin, qgis_app, cena
             self.estados.append(
                 (gdal.GetUseExceptions(), ogr.GetUseExceptions()))
 
+    ogr.DontUseExceptions()   # ordem inversa: no GDAL < 3.7 e uma pilha
     gdal.DontUseExceptions()
-    ogr.DontUseExceptions()
     dem, inicio, fim = cena
     algoritmo = plugin.TopotrailAlgorithm()
     algoritmo.initAlgorithm()
@@ -157,14 +157,14 @@ def test_o_ramo_de_erro_amigavel_volta_a_ser_alcancavel(plugin, qgis_app):
             gdal.UseExceptions()
             ogr.UseExceptions()
         else:
-            gdal.DontUseExceptions()
             ogr.DontUseExceptions()
+            gdal.DontUseExceptions()
         with pytest.raises(Exception) as capturado:
             plugin.raster_metadata("/nao/existe.tif")
         assert "Nao foi possivel abrir raster para metadados" in str(capturado.value), (
             ligadas, str(capturado.value))
+    ogr.DontUseExceptions()   # ordem inversa: no GDAL < 3.7 e uma pilha
     gdal.DontUseExceptions()
-    ogr.DontUseExceptions()
 
 
 # ---- 5. legenda gravada no raster segue TRANSITABILITY_BREAKS -------------
