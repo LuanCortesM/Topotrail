@@ -12,8 +12,12 @@ Aqui o QGIS sobe embutido, a partir do proprio repositorio, e todo caminho de
 dado vem de argumento de linha de comando ou de variavel de ambiente, com uma
 mensagem que diz exatamente o que falta e como informar.
 """
+import atexit
+import importlib.util
 import os
+import shutil
 import sys
+import tempfile
 
 RAIZ_DO_REPOSITORIO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -21,62 +25,77 @@ RAIZ_DO_REPOSITORIO = os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 def iniciar_qgis(prefixo=None):
     """Sobe um QGIS headless com o TopoTrail registrado como provider.
 
-    Substitui o `import qgis_env` que apontava para um modulo ausente. O
-    prefixo do QGIS vem de --qgis-prefix / QGIS_PREFIX_PATH e cai em /usr, que
-    e onde a instalacao de pacote costuma ficar no Linux.
+    O prefixo vem de `prefixo`, de QGIS_PREFIX_PATH ou e deduzido do proprio
+    Python (tools/qgis_headless.py), em Windows, Linux ou macOS.
     """
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    runtime = os.environ.setdefault("XDG_RUNTIME_DIR", "/tmp/xdg")
+    if prefixo:
+        os.environ["QGIS_PREFIX_PATH"] = prefixo
     try:
-        os.makedirs(runtime, exist_ok=True)
-    except OSError:
-        pass
-
-    try:
-        from qgis.core import QgsApplication
+        from qgis.core import QgsApplication  # noqa: F401
     except ImportError as erro:
         raise SystemExit(
             "Este script precisa do Python do QGIS. Rode com o interpretador que "
-            "tem qgis.core importavel (no Linux, normalmente /usr/bin/python3; no "
-            "Windows, o do OSGeo4W).\n  detalhe: {}".format(erro))
-
-    aplicacao = QgsApplication.instance()
-    if aplicacao is None:
-        aplicacao = QgsApplication([], False)
-        QgsApplication.setPrefixPath(
-            prefixo or os.environ.get("QGIS_PREFIX_PATH", "/usr"), True)
-        aplicacao.initQgis()
-
-    for candidato in ("/usr/share/qgis/python/plugins",
-                      os.path.join(os.environ.get("QGIS_PREFIX_PATH", "/usr"),
-                                   "share", "qgis", "python", "plugins")):
-        if os.path.isdir(candidato) and candidato not in sys.path:
-            sys.path.append(candidato)
+            "tem qgis.core importavel (Linux: normalmente /usr/bin/python3; "
+            "Windows: python-qgis.bat; macOS: o Python do QGIS.app).\n"
+            "  detalhe: {}".format(erro))
+    headless = _ferramenta("qgis_headless")
+    aplicacao = headless.iniciar()
     try:
-        from processing.core.Processing import Processing
-        import processing
+        processing = headless.processing_do_qgis()
     except ImportError as erro:
         raise SystemExit(
-            "Nao encontrei o plugin Processing do QGIS. Informe o prefixo da "
-            "instalacao em QGIS_PREFIX_PATH (padrao /usr).\n  detalhe: {}"
-            .format(erro))
-    Processing.initialize()
-
-    # O plugin e carregado do proprio repositorio: o pai da raiz entra no
-    # sys.path e o pacote e importado pelo nome da pasta, sem copia em
-    # /tmp/plugins nem instalacao previa.
-    pai = os.path.dirname(RAIZ_DO_REPOSITORIO)
-    if pai not in sys.path:
-        sys.path.insert(0, pai)
-    pacote = __import__(
-        "{}.topotrail".format(os.path.basename(RAIZ_DO_REPOSITORIO)),
-        fromlist=["topotrail"])
-    provedor = pacote.TopotrailProvider()
-    QgsApplication.processingRegistry().addProvider(provedor)
-    # O provedor precisa sobreviver a saida desta funcao: sem uma referencia
-    # viva, o Python o coleta e a Caixa de Ferramentas fica sem o algoritmo.
-    iniciar_qgis.provedor = provedor
+            "Nao encontrei o plugin Processing do QGIS.\n  detalhe: {}".format(erro))
+    headless.registrar_topotrail(RAIZ_DO_REPOSITORIO)
     return aplicacao, processing
+
+
+def _ferramenta(nome):
+    caminho = os.path.join(RAIZ_DO_REPOSITORIO, "tools")
+    if caminho not in sys.path:
+        sys.path.insert(0, caminho)
+    return __import__(nome)
+
+
+def nucleo():
+    """(algorithm, carregar) do plugin deste checkout, sem precisar de QGIS.
+
+    `carregar("terrain")` devolve processing/terrain.py. O QGIS e o GDAL sao
+    substituidos so durante o import do algoritmo (tests/nucleo_sem_qgis.py);
+    o GDAL de verdade que o script usar continua intacto.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "tt_nucleo_sem_qgis",
+        os.path.join(RAIZ_DO_REPOSITORIO, "tests", "nucleo_sem_qgis.py"))
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo.algoritmo(), modulo.carregar
+
+
+# MDEs reprojetados usados pelos scripts de validacao (ver docs/VALIDACAO.md).
+MDES = {
+    "caatinga": "caatinga_utm24s.tif",
+    "mantiqueira": "mantiqueira_utm23s.tif",
+}
+
+
+def campo(*mdes, trilhas=True):
+    """(pasta de trilhas, {regiao: caminho do MDE}, pasta temporaria).
+
+    Para com instrucao, antes de qualquer processamento, se faltar algo.
+    """
+    dados = Dados()
+    base = dados.raiz(
+        "trilhas", "TOPOTRAIL_TRILHAS",
+        "Trajetos de GPS de campo (KML/GPX).") if trilhas else None
+    pasta = dados.raiz(
+        "mdes", "TOPOTRAIL_MDES",
+        "MDEs reprojetados em UTM.",
+        tuple(MDES[regiao] for regiao in mdes)) if mdes else None
+    dados.exigir("Este script precisa dos dados de campo, que nao vao no repositorio.")
+    caminhos = {regiao: os.path.join(pasta, MDES[regiao]) for regiao in mdes}
+    temporaria = tempfile.mkdtemp(prefix="topotrail_validacao_")
+    atexit.register(shutil.rmtree, temporaria, True)
+    return base, caminhos, temporaria
 
 
 class Dados:

@@ -1,15 +1,11 @@
 """O mesmo teste em todos os trajetos, para separar defeito de escopo."""
-import sys, glob, os, numpy as np, tracks, speed_slope as ss, importlib.util
+import entorno
+BASE, MDE, TMP = entorno.campo("caatinga", "mantiqueira")
+import glob, os, numpy as np, tracks, speed_slope as ss
 from osgeo import gdal; gdal.UseExceptions()
-sys.path.insert(0, "/home/claude/work/repo/tests")
-import conftest; conftest._install_stubs()
-alg = sys.modules["tt_algorithm"]
-def load(n):
-    s=importlib.util.spec_from_file_location(n,f"/home/claude/work/repo/processing/{n}.py")
-    m=importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
+alg, load = entorno.nucleo()
 terrain = load("terrain")
 from geom import densify, agreement
-BASE = "/mnt/user-data/uploads/02 TOPOTRAIL/Shapes/Trilhas para Teste"
 BUF = [60, 150, 250, 500]
 
 print(f"\n{'trajeto':26s} {'real':>6s} {'reta':>6s} {'plug':>6s} {'sinu':>5s} "
@@ -20,15 +16,15 @@ for f in sorted(glob.glob(BASE+"/*")):
     for lon, lat, ele, t in tracks.read_any(f):
         if len(lon) < 200: continue
         caat = lon.mean() > -43
-        src = "caatinga_utm24s.tif" if caat else "mantiqueira_utm23s.tif"
+        src = MDE["caatinga"] if caat else MDE["mantiqueira"]
         dem = ss.Dem(src)
         tx, ty = ss.project(lon, lat, dem.epsg); tx, ty = np.asarray(tx), np.asarray(ty)
         straight = np.hypot(tx[-1]-tx[0], ty[-1]-ty[0])
         if straight < 500: continue           # ida e volta ao mesmo ponto: sem sentido
         pad = 1500.0
-        gdal.Warp("/tmp/rg.tif", src, outputBounds=(tx.min()-pad,ty.min()-pad,
+        gdal.Warp(os.path.join(TMP, "rg.tif"), src, outputBounds=(tx.min()-pad,ty.min()-pad,
                                                     tx.max()+pad,ty.max()+pad), dstNodata=-9999)
-        d = gdal.Open("/tmp/rg.tif"); gt = d.GetGeoTransform()
+        d = gdal.Open(os.path.join(TMP, "rg.tif")); gt = d.GetGeoTransform()
         z = d.GetRasterBand(1).ReadAsArray().astype(np.float32); z[z==-9999]=np.nan
         if z.size > 4_000_000: continue
         slope, ch, cv = terrain.derive_terrain(z, gt)

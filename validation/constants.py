@@ -1,16 +1,12 @@
 """As duas constantes que faltavam, contra os mesmos dados de campo."""
-import sys, glob, os, numpy as np, tracks, speed_slope as ss, importlib.util
+import entorno
+BASE, MDE, TMP = entorno.campo("caatinga")
+import glob, os, numpy as np, tracks, speed_slope as ss
 from osgeo import gdal; gdal.UseExceptions()
 from scipy.optimize import curve_fit
-sys.path.insert(0, "/home/claude/work/repo/tests")
-import conftest; conftest._install_stubs()
-alg = sys.modules["tt_algorithm"]
-def load(n):
-    s=importlib.util.spec_from_file_location(n,f"/home/claude/work/repo/processing/{n}.py")
-    m=importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
+alg, load = entorno.nucleo()
 terrain, hydrology = load("terrain"), load("hydrology")
 from geom import densify
-BASE = "/mnt/user-data/uploads/02 TOPOTRAIL/Shapes/Trilhas para Teste"
 
 # ==========================================================================
 # 1. TERRAIN_SLOWDOWN_MAX: a adequabilidade explica o ritmo residual?
@@ -21,7 +17,7 @@ print("="*74)
 print("1. TERRAIN_SLOWDOWN_MAX = 2,0  --  a adequabilidade explica o ritmo?")
 print("="*74)
 
-dem = ss.Dem("caatinga_utm24s.tif"); gt = dem.ds.GetGeoTransform()
+dem = ss.Dem(MDE["caatinga"]); gt = dem.ds.GetGeoTransform()
 z = dem.array.astype(np.float32)
 slope, ch, cv = terrain.derive_terrain(z, gt)
 score = np.where(np.isfinite(z), (alg.normalize_cost(slope,0.,50.)
@@ -91,10 +87,10 @@ for f in sorted(glob.glob(BASE+"/*")):
         straight = np.hypot(x[-1]-x[0], y[-1]-y[0])
         if straight < 500: continue
         pad = 1200.
-        gdal.Warp("/tmp/hy.tif", "caatinga_utm24s.tif",
+        gdal.Warp(os.path.join(TMP, "hy.tif"), MDE["caatinga"],
                   outputBounds=(x.min()-pad,y.min()-pad,x.max()+pad,y.max()+pad),
                   dstNodata=-9999)
-        d = gdal.Open("/tmp/hy.tif"); g2 = d.GetGeoTransform()
+        d = gdal.Open(os.path.join(TMP, "hy.tif")); g2 = d.GetGeoTransform()
         zz = d.GetRasterBand(1).ReadAsArray().astype(np.float32); zz[zz==-9999]=np.nan
         ch_mask, twi, met = hydrology.analyse_hydrology(zz, g2, min_basin_km2=0.5)
         def crossings(px, py):

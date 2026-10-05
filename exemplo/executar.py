@@ -21,11 +21,6 @@ PASTA = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.dirname(PASTA)
 SAIDA = os.path.join(PASTA, "saida")
 
-# O plugin e importado como pacote pelo nome do diretorio do repositorio, que e
-# como o QGIS tambem o importa. Funciona em qualquer checkout, com qualquer nome
-# de pasta.
-PACOTE = os.path.basename(RAIZ)
-
 # Os valores que esta execucao tem de produzir. Sao os mesmos que estao na
 # tabela de exemplo/README.md -- ha um teste que compara as duas listas, para
 # que o texto nao envelheca em silencio -- e os mesmos que
@@ -46,23 +41,6 @@ ESPERADO = {
 
 # Tolerancia relativa das grandezas continuas.
 TOLERANCIA = 0.001
-
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-if not os.environ.get("XDG_RUNTIME_DIR"):
-    # Sem isto o Qt reclama em toda execucao sem sessao grafica. O diretorio tem
-    # de ser exclusivo do usuario e com permissao 0700, ou o aviso volta.
-    import tempfile
-    _runtime = os.path.join(tempfile.gettempdir(),
-                            "topotrail-runtime-{}".format(os.getuid()
-                                                          if hasattr(os, "getuid")
-                                                          else "user"))
-    try:
-        os.makedirs(_runtime, mode=0o700, exist_ok=True)
-        os.chmod(_runtime, 0o700)
-        os.environ["XDG_RUNTIME_DIR"] = _runtime
-    except OSError:
-        pass
-
 
 def parametros(mde, origem, destino, intermediarios, saida):
     """Os 45 parametros do algoritmo, todos declarados por extenso.
@@ -139,59 +117,21 @@ def parametros(mde, origem, destino, intermediarios, saida):
     }
 
 
-def _processing_do_qgis():
-    """Importa o modulo `processing` do QGIS, e nao o homonimo do plugin.
-
-    O TopoTrail tem um subpacote chamado `processing`. Quando a raiz do
-    repositorio esta no sys.path -- e ela esta, por exemplo, sob
-    `python -m pytest` executado da raiz --, `import processing` encontra o do
-    plugin, que nao tem `core`, e o bootstrap falha com uma mensagem que nao diz
-    isso. Aqui a pasta de plugins do QGIS vai para o inicio do sys.path e um
-    modulo homonimo ja importado e descartado antes do import.
-    """
-    candidatos = ("/usr/share/qgis/python/plugins",
-                  os.path.join(sys.prefix, "share", "qgis", "python", "plugins"))
-    for caminho in candidatos:
-        if not os.path.isdir(caminho):
-            continue
-        if caminho in sys.path:
-            sys.path.remove(caminho)
-        sys.path.insert(0, caminho)
-
-    ja_importado = sys.modules.get("processing")
-    arquivo = getattr(ja_importado, "__file__", "") or ""
-    if ja_importado is not None and os.path.abspath(arquivo).startswith(RAIZ + os.sep):
-        for nome in [n for n in list(sys.modules)
-                     if n == "processing" or n.startswith("processing.")]:
-            del sys.modules[nome]
-
-    import processing as processing_qgis
-    from processing.core.Processing import Processing
-    Processing.initialize()
-    return processing_qgis
-
-
 def subir_qgis():
-    from qgis.core import QgsApplication
+    """QGIS sem janela, com o TopoTrail deste checkout registrado.
 
-    aplicacao = QgsApplication.instance()
-    if aplicacao is None:
-        aplicacao = QgsApplication([], False)
-        QgsApplication.setPrefixPath("/usr", True)
-        aplicacao.initQgis()
+    O trabalho dependente de sistema -- prefixo da instalacao, pasta de plugins
+    do QGIS e a colisao com o subpacote `processing` do plugin -- fica em
+    tools/qgis_headless.py, o mesmo que a validacao e a integracao usam.
+    """
+    ferramentas = os.path.join(RAIZ, "tools")
+    if ferramentas not in sys.path:
+        sys.path.insert(0, ferramentas)
+    import qgis_headless
 
-    processing_qgis = _processing_do_qgis()
-
-    pai = os.path.dirname(RAIZ)
-    if pai not in sys.path:
-        sys.path.insert(0, pai)
-    provider = __import__("{}.topotrail".format(PACOTE),
-                          fromlist=["topotrail"]).TopotrailProvider()
-    QgsApplication.processingRegistry().addProvider(provider)
-    # O provider precisa sobreviver ao fim desta funcao: o registro do QGIS
-    # guarda uma referencia fraca e o algoritmo some do registro se ele for
-    # coletado.
-    subir_qgis.provider = provider
+    aplicacao = qgis_headless.iniciar()
+    processing_qgis = qgis_headless.processing_do_qgis()
+    qgis_headless.registrar_topotrail(RAIZ)
     return aplicacao, processing_qgis
 
 

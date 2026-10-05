@@ -1,8 +1,9 @@
+import entorno
+BASE, MDE, TMP = entorno.campo("caatinga", "mantiqueira")
 import glob, os, pickle, numpy as np, tracks, speed_slope as ss
 
-BASE = "/mnt/user-data/uploads/02 TOPOTRAIL/Shapes/Trilhas para Teste"
-CAAT = ss.Dem("caatinga_utm24s.tif")
-MANT = ss.Dem("mantiqueira_utm23s.tif")
+CAAT = ss.Dem(MDE["caatinga"])
+MANT = ss.Dem(MDE["mantiqueira"])
 
 def region(lon):
     # caatinga (Piaui/Ceara) fica perto de -41; Mantiqueira perto de -45

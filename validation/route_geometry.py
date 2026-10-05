@@ -11,20 +11,17 @@ ele nao diz nada -- qualquer rota entre os mesmos extremos acerta alguma coisa
 LINHA RETA entre origem e destino. A linha reta e o modelo nulo: se a rota do
 plugin nao vence a linha reta, o modelo de custo nao esta contribuindo nada.
 """
-import sys, numpy as np, tracks, speed_slope as ss, importlib.util
+import entorno
+BASE, MDE, TMP = entorno.campo("mantiqueira")
+import os, numpy as np, tracks, speed_slope as ss
 from osgeo import gdal
 gdal.UseExceptions()
+alg, load = entorno.nucleo()
 
-sys.path.insert(0, "/home/claude/work/repo/tests")
-import conftest; conftest._install_stubs()
-alg = sys.modules["tt_algorithm"]
-def load(n):
-    s = importlib.util.spec_from_file_location(n, f"/home/claude/work/repo/processing/{n}.py")
-    m = importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
 terrain = load("terrain")
 
-KML = "/mnt/user-data/uploads/02 TOPOTRAIL/Shapes/Trilhas para Teste/travessia-marins-itaguare.kml"
-DEM = "mantiqueira_utm23s.tif"
+KML = os.path.join(BASE, "travessia-marins-itaguare.kml")
+DEM = MDE["mantiqueira"]
 
 
 from geom import densify, agreement
@@ -41,10 +38,10 @@ print(f"Travessia Marins-Itaguare: {len(lon)} vertices, {real_len/1000:.2f} km p
 
 # --- recorte do MDE --------------------------------------------------------
 pad = 2000.0
-gdal.Warp("/tmp/route_dem.tif", DEM, outputBounds=(tx.min()-pad, ty.min()-pad,
+gdal.Warp(os.path.join(TMP, "route_dem.tif"), DEM, outputBounds=(tx.min()-pad, ty.min()-pad,
                                                    tx.max()+pad, ty.max()+pad),
           dstNodata=-9999)
-d = gdal.Open("/tmp/route_dem.tif"); gt = d.GetGeoTransform()
+d = gdal.Open(os.path.join(TMP, "route_dem.tif")); gt = d.GetGeoTransform()
 z = d.GetRasterBand(1).ReadAsArray().astype(np.float32); z[z == -9999] = np.nan
 print(f"Recorte: {z.shape[1]}x{z.shape[0]} celulas de {gt[1]:.0f} m, "
       f"altitude {np.nanmin(z):.0f}-{np.nanmax(z):.0f} m")

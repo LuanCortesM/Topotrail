@@ -4,19 +4,16 @@ Se a concordancia saltar, a explicacao de "incompatibilidade de objetivo" fica
 confirmada: o modelo estava certo e faltava dizer a ele o que se queria. Se nao
 saltar, era defeito do modelo e a explicacao anterior estava errada.
 """
-import sys, numpy as np, tracks, speed_slope as ss, importlib.util
+import entorno
+BASE, MDE, TMP = entorno.campo("mantiqueira")
+import os, numpy as np, tracks, speed_slope as ss
 import xml.etree.ElementTree as ET
 from osgeo import gdal; gdal.UseExceptions()
-sys.path.insert(0, "/home/claude/work/repo/tests")
-import conftest; conftest._install_stubs()
-alg = sys.modules["tt_algorithm"]
-def load(n):
-    s=importlib.util.spec_from_file_location(n,f"/home/claude/work/repo/processing/{n}.py")
-    m=importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
+alg, load = entorno.nucleo()
 terrain = load("terrain")
 from geom import densify, agreement
 
-K='/mnt/user-data/uploads/02 TOPOTRAIL/Shapes/Trilhas para Teste/travessia-marins-itaguare.kml'
+K = os.path.join(BASE, "travessia-marins-itaguare.kml")
 loc=lambda t: t.rsplit('}',1)[-1]
 named={}
 for pm in ET.parse(K).getroot().iter():
@@ -28,13 +25,13 @@ for pm in ET.parse(K).getroot().iter():
     named[name]=(float(c[0]), float(c[1]))
 
 lon,lat,ele,_ = max(tracks.read_any(K), key=lambda t: len(t[0]))
-dem = ss.Dem("mantiqueira_utm23s.tif")
+dem = ss.Dem(MDE["mantiqueira"])
 tx,ty = map(np.asarray, ss.project(lon,lat,dem.epsg))
 rx,ry,real_len = densify(tx,ty,10.)
 pad=2000.
-gdal.Warp("/tmp/wp.tif","mantiqueira_utm23s.tif",
+gdal.Warp(os.path.join(TMP, "wp.tif"),MDE["mantiqueira"],
           outputBounds=(tx.min()-pad,ty.min()-pad,tx.max()+pad,ty.max()+pad),dstNodata=-9999)
-d=gdal.Open("/tmp/wp.tif"); gt=d.GetGeoTransform()
+d=gdal.Open(os.path.join(TMP, "wp.tif")); gt=d.GetGeoTransform()
 z=d.GetRasterBand(1).ReadAsArray().astype(np.float32); z[z==-9999]=np.nan
 slope,ch,cv = terrain.derive_terrain(z,gt)
 score=np.where(np.isfinite(z),(alg.normalize_cost(slope,0.,50.)

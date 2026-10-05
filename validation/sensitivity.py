@@ -1,9 +1,10 @@
 """O resultado negativo e real ou artefato? Tres controles."""
+import entorno
+BASE, MDE, TMP = entorno.campo("caatinga", "mantiqueira")
 import glob, os, numpy as np, tracks, speed_slope as ss
 from scipy.optimize import curve_fit
 
-BASE = "/mnt/user-data/uploads/02 TOPOTRAIL/Shapes/Trilhas para Teste"
-CAAT = ss.Dem("caatinga_utm24s.tif"); MANT = ss.Dem("mantiqueira_utm23s.tif")
+CAAT = ss.Dem(MDE["caatinga"]); MANT = ss.Dem(MDE["mantiqueira"])
 def region(lon): return (CAAT,"caatinga") if lon.mean() > -43 else (MANT,"mantiqueira")
 
 def collect(window_m, pause_s, use_gps_elevation=False, region_name="caatinga",

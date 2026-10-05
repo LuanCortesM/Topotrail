@@ -43,11 +43,49 @@ def test_a_bateria_nao_importa_modulo_que_nao_existe_no_repositorio():
     assert ENTORNO.is_file(), "validation/entorno.py nao existe"
 
 
-def test_a_bateria_nao_tem_caminho_absoluto_de_outra_maquina():
-    for arquivo in (BATERIA, ENTORNO):
+SCRIPTS = sorted((ROOT / "validation").glob("*.py"))
+
+# Scripts que leem dados de campo e, sem eles, tem de parar com instrucao.
+COM_DADOS = ("bateria_regioes.py", "calibrate.py", "classes_on_trails.py",
+             "constants.py", "route_geometry.py", "route_geometry_all.py",
+             "run_extract.py", "sensitivity.py", "transecto_khumbu.py",
+             "travessia_com_cumes.py", "fit_tobler.py")
+
+
+def test_nenhum_script_tem_caminho_absoluto_de_outra_maquina():
+    assert len(SCRIPTS) >= 15
+    for arquivo in SCRIPTS:
         encontrados = [achado for achado in
                        CAMINHOS_DE_OUTRA_MAQUINA.findall(_fonte(arquivo))]
         assert not encontrados, f"{arquivo.name}: {encontrados}"
+        assert not re.search(r"[\"']/tmp/", _fonte(arquivo)), f"{arquivo.name}: /tmp nao existe no Windows"
+
+
+def test_nenhum_script_importa_o_conftest_dos_testes():
+    for arquivo in SCRIPTS:
+        assert not re.search(r"^\s*import\s+conftest\b", _fonte(arquivo), re.MULTILINE), arquivo.name
+
+
+def test_nenhum_script_e_coletado_como_teste():
+    # waypoint_test.py era coletado pelo pytest e quebrava `pytest .`.
+    assert not [a.name for a in SCRIPTS if a.name.startswith("test_") or a.name.endswith("_test.py")]
+
+
+@pytest.mark.parametrize("nome", COM_DADOS)
+def test_sem_dados_cada_script_para_com_instrucao(nome, tmp_path):
+    ambiente = {chave: valor for chave, valor in os.environ.items()
+                if not chave.startswith("TOPOTRAIL_")}
+    antes = {caminho.name for caminho in ROOT.iterdir()}
+    try:
+        concluido = subprocess.run(
+            [sys.executable, str(ROOT / "validation" / nome)], capture_output=True,
+            text=True, cwd=str(tmp_path), env=ambiente, timeout=LIMITE_SEGUNDOS)
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"{nome}: sem dados, tem de parar na hora, com instrucao")
+    saida = concluido.stdout + concluido.stderr
+    assert concluido.returncode != 0, saida[-800:]
+    assert "Traceback" not in saida, saida[-1500:]
+    assert {caminho.name for caminho in ROOT.iterdir()} == antes
 
 
 def test_sem_os_dados_a_bateria_diz_o_que_falta_e_como_informar(tmp_path):

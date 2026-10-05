@@ -1,9 +1,19 @@
-"""Ajusta a funcao de Tobler aos dados observados e compara com os valores publicados."""
-import pickle, numpy as np
-from scipy.optimize import curve_fit
+"""Ajusta a funcao de Tobler aos dados observados e compara com os valores publicados.
+
+Le windows.pkl, que validation/run_extract.py grava no diretorio corrente.
+"""
+import os
+import sys
+
+if not os.path.isfile("windows.pkl"):
+    sys.exit("Falta windows.pkl no diretorio corrente: rode antes validation/run_extract.py.")
+
+import pickle, numpy as np  # noqa: E402,E401
+from scipy.optimize import curve_fit  # noqa: E402
 
 PUB = (6.0, 3.5, 0.05)
-store = pickle.load(open("windows.pkl", "rb"))
+with open("windows.pkl", "rb") as arquivo:
+    store = pickle.load(arquivo)
 
 def model(g, vmax, decay, opt):
     return np.log(vmax) - decay * np.abs(g + opt)

@@ -4,18 +4,15 @@ O teste e simples e falsificavel: uma trilha percorrida a pe por uma equipe de
 campo, com equipamento, e por definicao transitavel. Se o mapa classifica boa
 parte dela como "intransitavel", os limites 20/35/60/100% estao errados.
 """
-import glob, os, sys, numpy as np, tracks, speed_slope as ss
-sys.path.insert(0, "/home/claude/work/repo/processing")
-import importlib.util
-def load(n):
-    s = importlib.util.spec_from_file_location(n, f"/home/claude/work/repo/processing/{n}.py")
-    m = importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
+import entorno
+BASE, MDE, TMP = entorno.campo("mantiqueira", "caatinga")
+import glob, os, numpy as np, tracks, speed_slope as ss
+_, load = entorno.nucleo()
 terrain, transit = load("terrain"), load("transitability")
 
-BASE = "/mnt/user-data/uploads/02 TOPOTRAIL/Shapes/Trilhas para Teste"
 
-for dem_path, label, lo, hi in (("mantiqueira_utm23s.tif", "MANTIQUEIRA (MDE 30 m)", -46, -43),
-                                ("caatinga_utm24s.tif", "CAATINGA (MDE 90 m)", -43, -39)):
+for dem_path, label, lo, hi in ((MDE["mantiqueira"], "MANTIQUEIRA (MDE 30 m)", -46, -43),
+                                (MDE["caatinga"], "CAATINGA (MDE 90 m)", -43, -39)):
     dem = ss.Dem(dem_path)
     gt = dem.ds.GetGeoTransform()
     slope = terrain.slope_percent_from_dem(dem.array.astype(np.float32), gt)

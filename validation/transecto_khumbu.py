@@ -17,8 +17,23 @@ Transecto real: 100 pontos de SRTM 90 m ao longo de 24,8 km a 28,0000 N,
 de 86,7500 a 87,0017 E, passo de 250 m. Atravessa o glaciar do Khumbu, Gorak
 Shep e sobe ate 8.262 m no macico do Everest.
 """
-import numpy as np
-from osgeo import gdal
+import os
+
+import entorno
+
+DADOS = entorno.Dados()
+EXTREMOS = DADOS.raiz(
+    "extremos", "TOPOTRAIL_EXTREMOS",
+    "MDE sintetico da bateria (everest_np/dem.tif).",
+    (os.path.join("everest_np", "dem.tif"),))
+CONTROLES = DADOS.raiz(
+    "controles", "TOPOTRAIL_CONTROLES",
+    "MDEs de controle em terreno real: Mantiqueira (TOPODATA) e Carnaubas (GLO-90).",
+    ("canon_dem.tif", "carnaubas_dem.tif"))
+DADOS.exigir("O transecto precisa dos MDEs, que nao vao no repositorio.")
+
+import numpy as np  # noqa: E402
+from osgeo import gdal  # noqa: E402
 gdal.UseExceptions()
 
 REAL = [5552,5603,5519,5439,5405, 5423,5425,5420,5503,5720,
@@ -42,7 +57,7 @@ def perfil(z, passo):
 dr = perfil(real, PASSO)
 
 # transectos equivalentes no MDE sintetico, no mesmo passo de 250 m
-ds = gdal.Open("/home/claude/work/exp/extremos/everest_np/dem.tif")
+ds = gdal.Open(os.path.join(EXTREMOS, "everest_np", "dem.tif"))
 sin = ds.GetRasterBand(1).ReadAsArray().astype(float)
 gt = ds.GetGeoTransform()
 px_m = abs(gt[1]) * 111320.0 * np.cos(np.radians(28.0))     # graus -> m
@@ -82,8 +97,8 @@ print(f"{'autocorrelacao do desnivel (lag 1)':34s} {ac_real:12.2f} {ac_sint:12.2
 
 # controle: a autocorrelacao distingue terreno real de ruido?
 print("\ncontrole -- a mesma estatistica em terreno real brasileiro:")
-for rot, caminho in (("Mantiqueira (TOPODATA 30 m)", "/home/claude/work/audit/triagem/canon_dem.tif"),
-                     ("Carnaubas (GLO-90)", "/home/claude/work/caat/carnaubas_dem.tif")):
+for rot, caminho in (("Mantiqueira (TOPODATA 30 m)", os.path.join(CONTROLES, "canon_dem.tif")),
+                     ("Carnaubas (GLO-90)", os.path.join(CONTROLES, "carnaubas_dem.tif"))):
     d2 = gdal.Open(caminho)
     a = d2.GetRasterBand(1).ReadAsArray().astype(float)
     nd = d2.GetRasterBand(1).GetNoDataValue()

@@ -10,17 +10,13 @@ para cada trajeto, os parametros sao escolhidos usando SO os outros seis, e
 avaliados no que ficou de fora. Sem isso, ajustar tres parametros a sete curvas
 mede apenas a capacidade de decorar.
 """
-import sys, glob, os, pickle, numpy as np, tracks, speed_slope as ss, importlib.util
+import entorno
+BASE, MDE, TMP = entorno.campo("caatinga")
+import glob, os, pickle, numpy as np, tracks, speed_slope as ss
 from osgeo import gdal; gdal.UseExceptions()
-sys.path.insert(0, "/home/claude/work/repo/tests")
-import conftest; conftest._install_stubs()
-alg = sys.modules["tt_algorithm"]
-def load(n):
-    s=importlib.util.spec_from_file_location(n,f"/home/claude/work/repo/processing/{n}.py")
-    m=importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
+alg, load = entorno.nucleo()
 terrain, hydrology = load("terrain"), load("hydrology")
 from geom import densify, agreement
-BASE = "/mnt/user-data/uploads/02 TOPOTRAIL/Shapes/Trilhas para Teste"
 BUF = [250]
 
 def build_cases():
@@ -29,15 +25,15 @@ def build_cases():
         if f.endswith(".shp") or "20_e_21" in f: continue
         for lon, lat, ele, t in tracks.read_any(f):
             if len(lon) < 200 or lon.mean() < -43: continue
-            dem = ss.Dem("caatinga_utm24s.tif")
+            dem = ss.Dem(MDE["caatinga"])
             x, y = map(np.asarray, ss.project(lon, lat, dem.epsg))
             straight = np.hypot(x[-1]-x[0], y[-1]-y[0])
             if straight < 500: continue
             pad = 1500.
-            gdal.Warp("/tmp/cal.tif","caatinga_utm24s.tif",
+            gdal.Warp(os.path.join(TMP, "cal.tif"),MDE["caatinga"],
                       outputBounds=(x.min()-pad,y.min()-pad,x.max()+pad,y.max()+pad),
                       dstNodata=-9999)
-            d=gdal.Open("/tmp/cal.tif"); gt=d.GetGeoTransform()
+            d=gdal.Open(os.path.join(TMP, "cal.tif")); gt=d.GetGeoTransform()
             z=d.GetRasterBand(1).ReadAsArray().astype(np.float32); z[z==-9999]=np.nan
             slope, ch, cv = terrain.derive_terrain(z, gt)
             s_slope = alg.normalize_cost(slope, 0., 50.)
