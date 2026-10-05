@@ -380,6 +380,33 @@ class TopotrailSupportMixin:
         layer.setOpacity(0.70)
         layer.triggerRepaint()
 
+    def style_alternatives_layer(self, layer):
+        symbol = QgsFillSymbol.createSimple({
+            "color": "142, 68, 173, 40",
+            "outline_color": "106, 27, 154, 220",
+            "outline_width": "0.45",
+            "outline_style": "dash",
+        })
+        layer.renderer().setSymbol(symbol)
+        layer.triggerRepaint()
+
+    def style_slack_layer(self, layer, maximo):
+        """Folga em %: escuro e opaco na rota, claro e transparente no limite."""
+        maximo = max(float(maximo), 1e-6)
+        shader = QgsRasterShader()
+        ramp = QgsColorRampShader()
+        ramp.setColorRampType(class_enum(QgsColorRampShader, "Type", "Interpolated"))
+        ramp.setColorRampItemList([
+            QgsColorRampShader.ColorRampItem(0.0, QColor(74, 20, 140, 210), "0%"),
+            QgsColorRampShader.ColorRampItem(maximo / 3.0, QColor(142, 68, 173, 140),
+                                             "{:g}%".format(maximo / 3.0)),
+            QgsColorRampShader.ColorRampItem(maximo, QColor(230, 210, 240, 0),
+                                             "{:g}%".format(maximo)),
+        ])
+        shader.setRasterShaderFunction(ramp)
+        layer.setRenderer(QgsSingleBandPseudoColorRenderer(layer.dataProvider(), 1, shader))
+        layer.triggerRepaint()
+
     def cleanup_temp_point_files(self):
         for path in self._temp_point_files:
             try:

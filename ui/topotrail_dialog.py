@@ -1154,6 +1154,16 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             line.setContentsMargins(0, 0, 0, 0)
             body.addWidget(holder)
         body.addWidget(self._help_label("margin_help"))
+        self.alternatives_pct = _spin(0, 50, 0.0, 1, 1, " %")
+        line = QHBoxLayout()
+        line.addWidget(self._label("alternatives"))
+        line.addStretch(1)
+        line.addWidget(self.alternatives_pct)
+        holder = QWidget()
+        holder.setLayout(line)
+        line.setContentsMargins(0, 0, 0, 0)
+        body.addWidget(holder)
+        body.addWidget(self._help_label("alternatives_help"))
         self.want_route.toggled(self.want_route.body.setVisible)
 
         # Teto vadeavel: dentro do cartao dos cursos d'agua, porque e ali que a
@@ -1791,6 +1801,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
                 "ROUTE_COST_MODEL": self.cost_model.currentIndex(),
                 "ROUTE_BUFFER_M": self.corridor_m.value(),
                 "ROUTE_MARGIN_M": self.margin_m.value(),
+                "ROUTE_ALTERNATIVES_PCT": self.alternatives_pct.value(),
             })
         if self.extra_file.text() and self.extra_weight.value() > 0:
             params.update({
@@ -1927,12 +1938,16 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             ("OUTPUT_SCORE_RASTER", "TopoTrail — " + self.t("alg_o_score"), self.style_score_layer),
             ("OUTPUT_RISK_RASTER", "TopoTrail — " + self.t("alg_o_risk"), self.style_risk_layer),
             ("OUTPUT_TRANSITABILITY", "TopoTrail — " + self.t("alg_o_transit"), None),
+            ("OUTPUT_SLACK", "TopoTrail — " + self.t("alg_o_slack"),
+             lambda camada: self.style_slack_layer(camada, 3.0 * self.alternatives_pct.value())),
         ]
         vectors = [
             ("OUTPUT_VECTOR", "TopoTrail — " + self.t("alg_o_zones"), self.style_zone_layer),
             ("OUTPUT_ROUTE", "TopoTrail — " + self.t("alg_o_route"), self.style_route_layer),
             ("OUTPUT_CORRIDOR", "TopoTrail — " + self.t("alg_o_corridor"), self.style_corridor_layer),
             ("OUTPUT_CROSSINGS", "TopoTrail — " + self.t("alg_o_crossings"), self.style_crossings_layer),
+            ("OUTPUT_ALTERNATIVES", "TopoTrail — " + self.t("alg_o_alternatives"),
+             self.style_alternatives_layer),
         ]
         loaded = []
         for key, title, styler in rasters:
