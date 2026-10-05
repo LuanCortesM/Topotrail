@@ -109,6 +109,18 @@ jobs:
           python3 tools/empacotar.py --saida dist
           python3 tools/instalar_e_carregar.py dist/TopoTrail-*.zip
 
+      - name: Command line (qgis_process) with the packaged plugin
+        run: |
+          export QGIS_CUSTOM_CONFIG_PATH="$RUNNER_TEMP/perfil_qgis"
+          PLUGINS="$QGIS_CUSTOM_CONFIG_PATH/profiles/default/python/plugins"
+          mkdir -p "$PLUGINS" "$RUNNER_TEMP/cli"
+          python3 -c "import glob, sys, zipfile; zipfile.ZipFile(glob.glob('dist/TopoTrail-*.zip')[0]).extractall(sys.argv[1])" "$PLUGINS"
+          qgis_process plugins enable TopoTrail
+          qgis_process run topotrail:topotrail -- INPUT_DEM=exemplo/mde.tif \
+            START_POINT_FILE=exemplo/origem.geojson END_POINT_FILE=exemplo/destino.geojson \
+            OUTPUT_FILE="$RUNNER_TEMP/cli/saida.gpkg"
+          test -s "$RUNNER_TEMP/cli/saida_rota.gpkg"
+
   metadata:
     name: Validate CITATION.cff
     runs-on: ubuntu-latest
