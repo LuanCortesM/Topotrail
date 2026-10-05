@@ -11,11 +11,11 @@
 #    free at https://orcid.org, then uncomment the line and paste the real
 #    identifier — that is the only edit needed.
 #
-# 2. Version DOI for 1.3.0 — DOES NOT EXIST YET.
+# 2. Version DOI for 1.4.0 — DOES NOT EXIST YET.
 #    Zenodo mints a version DOI only when the corresponding GitHub release is
 #    published. The newest version DOI recorded under `identifiers:` is therefore
 #    still the one for 1.1.2, and it is labelled as such: it is NOT the DOI of the
-#    version this file declares. To close this: tag `v1.3.0`, publish the release,
+#    version this file declares. To close this: tag `v1.4.0`, publish the release,
 #    let Zenodo archive it, then add the new version DOI and release URL to
 #    `identifiers:` and update `README.md` and `paper.md` with them.
 #
@@ -86,14 +86,14 @@ identifiers:
   - type: doi
     value: "10.5281/zenodo.20295565"
     description: "Concept DOI for all versions of TopoTrail (Zenodo)"
-  # PENDING: there is no version DOI for 1.3.0 yet. The two entries below are the
+  # PENDING: there is no version DOI for 1.4.0 yet. The two entries below are the
   # newest that exist, and they are for 1.1.2 — an earlier version with different
   # numerical results. See note 2 at the top of this file.
   - type: doi
     value: "10.5281/zenodo.22399472"
-    description: "Version DOI for TopoTrail 1.1.2 (Zenodo) — NOT the version declared below; the 1.3.0 version DOI is pending its release"
+    description: "Version DOI for TopoTrail 1.1.2 (Zenodo) — NOT the version declared below; the 1.4.0 version DOI is pending its release"
   - type: url
     value: "https://github.com/LuanCortesM/Topotrail/releases/tag/v1.1.2"
-    description: "GitHub release v1.1.2 — the most recent tag; v1.3.0 is not tagged yet"
-version: "1.3.0"
-date-released: "2026-09-13"
+    description: "GitHub release v1.1.2 — the most recent tag; v1.4.0 is not tagged yet"
+version: "1.4.0"
+date-released: "2026-10-05"
