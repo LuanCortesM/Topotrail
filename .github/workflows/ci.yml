@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   checks:
-    name: Lint and unit tests (Python ${{ matrix.python-version }}${{ matrix.scipy && '' || ', no SciPy' }})
+    name: Lint and unit tests (Python ${{ matrix.python-version }}${{ !matrix.scipy && ', no SciPy' || '' }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -81,7 +81,10 @@ jobs:
       QT_QPA_PLATFORM: offscreen
     steps:
       - name: Tools inside the image
+        # Old images carry third-party apt sources that no longer exist
+        # (nodesource); drop them so apt-get update does not abort.
         run: |
+          rm -f /etc/apt/sources.list.d/*nodesource*
           apt-get update -q
           apt-get install -y -q git python3-pip
           python3 -m pip install pytest \
