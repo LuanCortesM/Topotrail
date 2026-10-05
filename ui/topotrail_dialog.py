@@ -1848,12 +1848,14 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
     def _cancel(self):
         # A tarefa so para quando o algoritmo checa o cancelamento; ate la o
         # botao fica desligado, para nao disparar outra execucao sobre os
-        # mesmos arquivos. O fim chega por _finish, como numa execucao normal.
+        # mesmos arquivos. O fim chega por _finish, como numa execucao normal --
+        # e pode chegar DENTRO de cancel(): uma tarefa que ainda nao comecou e
+        # encerrada na hora (QGIS 3.40). Por isso o botao e desligado antes.
         if self._task is not None and not self._cancelling:
             self._cancelling = True
-            self._task.cancel()
-            self._log_line(self.t("cancelled"))
             self.next_button.setEnabled(False)
+            self._log_line(self.t("cancelled"))
+            self._task.cancel()
 
     def _on_progress(self, value):
         self.progress.setRange(0, 100)
