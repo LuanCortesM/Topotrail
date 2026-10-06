@@ -75,8 +75,10 @@ def deve_excluir(caminho):
 def conteudo_do_head(raiz=RAIZ):
     """Devolve [(caminho_relativo, modo, bytes)] do HEAD, ja filtrado."""
     try:
+        # core.autocrlf=false: sem isto, num Windows com autocrlf=true o
+        # git archive grava CRLF e o mesmo HEAD da um zip diferente do Linux.
         tar_bytes = subprocess.run(
-            ["git", "archive", "--format=tar", "HEAD"],
+            ["git", "-c", "core.autocrlf=false", "archive", "--format=tar", "HEAD"],
             cwd=raiz, check=True, stdout=subprocess.PIPE).stdout
     except (OSError, subprocess.CalledProcessError) as erro:
         raise SystemExit(

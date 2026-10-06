@@ -93,3 +93,20 @@ def test_o_pacote_e_reproduzivel(tmp_path):
     segundo, _ = modulo.empacotar(str(tmp_path / "b"))
     assert (pathlib.Path(primeiro).read_bytes()
             == pathlib.Path(segundo).read_bytes())
+
+
+def test_o_zip_tem_os_bytes_do_head_em_qualquer_sistema(tmp_path):
+    """Num Windows com core.autocrlf=true o git archive gravava CRLF: o mesmo
+    HEAD dava um zip num Windows e outro no Linux."""
+    if not _tem_git():
+        pytest.skip("sem repositorio git para 'git archive HEAD'")
+    modulo = _empacotador()
+    caminho_zip, _ = modulo.empacotar(str(tmp_path))
+    with zipfile.ZipFile(caminho_zip) as pacote:
+        for nome in ("TopoTrail/metadata.txt", "TopoTrail/processing/algorithm.py"):
+            dentro = pacote.read(nome)
+            no_head = subprocess.run(
+                ["git", "show", "HEAD:" + nome.split("/", 1)[1]], cwd=ROOT,
+                check=True, stdout=subprocess.PIPE).stdout
+            assert b"\r\n" not in dentro, nome
+            assert dentro == no_head, nome
