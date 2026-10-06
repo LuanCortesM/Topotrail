@@ -633,24 +633,23 @@ does it. Participation is governed by the
 Every release is archived on Zenodo. Cite the version you used:
 
 > Maciel, L. S. C. (2026). *TopoTrail: a QGIS plugin for DEM-based topographic
-> suitability and least-cost route planning* (version 1.1.2) [Computer
-> software]. Zenodo. https://doi.org/10.5281/zenodo.22399472
+> suitability and least-cost route planning* (version 1.4.0) [Computer
+> software]. Zenodo. https://doi.org/10.5281/zenodo.23174766
 
-**That version DOI is 1.1.2's**, which is the most recent archive: 1.3.0 has no
-published release yet, so it has no version DOI of its own. The concept DOI
+The concept DOI
 [10.5281/zenodo.20295565](https://doi.org/10.5281/zenodo.20295565) always
 resolves to the latest archived version. Machine-readable metadata is in
-[`CITATION.cff`](CITATION.cff), which records that pendency explicitly; GitHub
-renders a ready-made citation from it in the sidebar.
+[`CITATION.cff`](CITATION.cff); GitHub renders a ready-made citation from it in
+the sidebar.
 
 ```bibtex
 @software{maciel_topotrail_2026,
   author    = {Maciel, Luan da Silva Cortes},
   title     = {TopoTrail: a QGIS plugin for DEM-based topographic suitability and least-cost route planning},
-  version   = {1.1.2},
+  version   = {1.4.0},
   year      = {2026},
   publisher = {Zenodo},
-  doi       = {10.5281/zenodo.22399472},
+  doi       = {10.5281/zenodo.23174766},
   url       = {https://github.com/LuanCortesM/Topotrail}
 }
 ```

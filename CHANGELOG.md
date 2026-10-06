@@ -4,7 +4,7 @@ Mudanças relevantes do TopoTrail. Formato
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões em
 [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
-## [1.4.0] - 2026-10-05
+## [1.4.0] - 2026-10-06
 
 ### Adicionado
 
