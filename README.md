@@ -708,7 +708,8 @@ and every parameter used.
 ## Changelog
 
 The full, per-version changelog lives in [`metadata.txt`](metadata.txt) and is
-what the QGIS plugin repository shows. In short:
+what the QGIS plugin repository shows; [`CHANGELOG.md`](CHANGELOG.md) lists each
+change of 1.4.0 onwards on its own line. In short:
 
 - **1.4.0** — Runs the same on any computer: SciPy becomes optional (NumPy
   fallback with identical results), the example and validation scripts run on
