@@ -4,12 +4,8 @@
 # This block is the state of the record, not a note to self. Anyone citing
 # TopoTrail should know which parts of the citation are provisional.
 #
-# 1. ORCID of the author — NOT YET REGISTERED.
-#    The `orcid:` line under `authors:` is kept commented out, and deliberately
-#    so: the CFF schema accepts any string of the right shape, so a placeholder
-#    would validate while resolving to a different person, or to nobody. Register
-#    free at https://orcid.org, then uncomment the line and paste the real
-#    identifier — that is the only edit needed.
+# 1. ORCID of the author — registered: 0009-0002-7242-9650, checked against the
+#    public ORCID record (Luan da Silva Cortes Maciel) before being written here.
 #
 # 2. Version DOI for 1.4.0 — DOES NOT EXIST YET.
 #    Zenodo mints a version DOI only when the corresponding GitHub release is
@@ -46,9 +42,7 @@ authors:
     family-names: "Maciel"
     alias: "MACIEL, L. S. C."
     email: "herpetomantiqueira@gmail.com"
-    # TO BE FILLED IN — see note 1 at the top of this file. Uncomment and paste
-    # the real identifier once registered; do not substitute a placeholder.
-    # orcid: "https://orcid.org/____-____-____-____"
+    orcid: "https://orcid.org/0009-0002-7242-9650"
     affiliation: "Escola Nacional de Botânica Tropical, Instituto de Pesquisas Jardim Botânico do Rio de Janeiro, Brazil"
 contact:
   - given-names: "Luan da Silva Cortes"

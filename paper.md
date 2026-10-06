@@ -10,7 +10,7 @@ tags:
   - trail planning
 authors:
   - name: Luan da Silva Cortes Maciel
-    orcid: 0000-0000-0000-0000
+    orcid: 0009-0002-7242-9650
     affiliation: 1
 affiliations:
   - name: Escola Nacional de Botânica Tropical, Instituto de Pesquisas Jardim Botânico do Rio de Janeiro, Brazil
