@@ -2265,6 +2265,29 @@ def robust_abs_norm(array, valid_mask, percentile=CURVATURE_RISK_PERCENTILE, lim
     return np.clip(np.abs(array) / limit, 0, 1).astype(np.float32)
 
 
+def explain_empty_mask(dem, slope, valid_mask, min_altitude, max_altitude, max_slope):
+    """Por que nenhuma celula atende as restricoes, em numeros da propria cena."""
+    partes = []
+    altitudes = dem[valid_mask & np.isfinite(dem)]
+    if altitudes.size:
+        dentro = float(np.mean((altitudes >= min_altitude) & (altitudes <= max_altitude)))
+        if dentro < 0.01:
+            partes.append(
+                "A faixa de altitude configurada ({:.0f} a {:.0f} m) nao cobre o MDE, que vai de "
+                "{:.0f} a {:.0f} m: ajuste a altitude minima e a maxima.".format(
+                    min_altitude, max_altitude, float(altitudes.min()), float(altitudes.max())))
+    declividades = slope[valid_mask & np.isfinite(slope)]
+    if declividades.size:
+        abaixo = float(np.mean(declividades <= max_slope))
+        if abaixo < 0.05:
+            partes.append(
+                "So {:.1f}% do terreno tem declividade ate o maximo admitido ({:g}%); a mediana "
+                "da cena e {:.0f}%.".format(100.0 * abaixo, max_slope, float(np.median(declividades))))
+    if not altitudes.size:
+        partes.append("O MDE nao tem celulas validas.")
+    return " ".join(partes) or "Confira a faixa de altitude, a declividade maxima e as restricoes."
+
+
 def compute_topographic_risk(slope_data, curvh_data, curvv_data, valid_mask, max_slope, feedback=None):
     """Relative topographic risk: 0 is easier terrain, 1 is steep/rough/abrupt terrain."""
     slope_limit = max(float(max_slope), 1.0)
@@ -2672,6 +2695,82 @@ def _liga_apenas_pelo_canto(cost_array, start_rc, end_rc):
     rotulos_quatro, _ = morphology.label(passavel, connectivity=4)
     return bool(rotulos_oito[start_rc] == rotulos_oito[end_rc]
                 and rotulos_quatro[start_rc] != rotulos_quatro[end_rc])
+
+
+def _todos_ligados(rotulos, pontos):
+    componentes = {int(rotulos[p]) for p in pontos}
+    return len(componentes) == 1 and 0 not in componentes
+
+
+def minimum_connecting_slope(slope, barrier, points, max_slope):
+    """Menor declividade maxima (%, inteira) que liga todos os pontos, ou None.
+
+    A ligacao do A* e a de quatro vizinhos: a diagonal so existe com os dois
+    cantos transponiveis. `barrier` marca o que bloqueia por outro motivo
+    (restricao no modo evitar, curso d'agua acima do teto vadeavel).
+    """
+    base = np.isfinite(slope) & ~barrier
+    if not base.any():
+        return None
+    teto = float(np.nanmax(slope[base]))
+
+    def liga(limite):
+        rotulos, _ = morphology.label(base & (slope <= limite), connectivity=4)
+        return _todos_ligados(rotulos, points)
+
+    if teto <= max_slope or not liga(teto):
+        return None
+    baixo, alto = float(max_slope), teto
+    for _ in range(20):
+        meio = (baixo + alto) / 2.0
+        if liga(meio):
+            alto = meio
+        else:
+            baixo = meio
+    return int(np.ceil(alto))
+
+
+def check_route_connectivity(cost_array, points, slope=None, penalty=None,
+                             max_slope=None, cell_size_m=None, log_path=None):
+    """Antes do A*: os pontos se ligam? Se nao, diz por que e o que fazer.
+
+    Sem isto o A* percorria todo o componente da origem antes de desistir, e a
+    mensagem pedia "aumente a declividade maxima" sem dizer para quanto. No
+    Khumbu, com o padrao de 55%, o usuario ficava tentando as cegas.
+    """
+    passavel = np.isfinite(cost_array)
+    rotulos, _ = morphology.label(passavel, connectivity=4)
+    if _todos_ligados(rotulos, points):
+        return
+    oito, _ = morphology.label(passavel, connectivity=8)
+    so_vertice = _todos_ligados(oito, points)
+    sugestao = ""
+    necessario = None
+    if slope is not None and max_slope:
+        barreira = (np.isinf(penalty) if penalty is not None
+                    else np.zeros(cost_array.shape, dtype=bool))
+        necessario = minimum_connecting_slope(slope, barreira, points, max_slope)
+        if necessario is not None:
+            sugestao = (" Com a declividade maxima em {}% (hoje {:g}%) os pontos se ligam; em MDE "
+                        "de {:.0f} m, trilhas reais de montanha passam por celulas bem acima de "
+                        "55%.".format(necessario, max_slope, cell_size_m or 0))
+        elif so_vertice:
+            sugestao = ""
+        else:
+            sugestao = (" Nem sem limite de declividade os pontos se ligam: o que os separa e uma "
+                        "restricao no modo evitar, um curso d'agua acima do teto vadeavel, NoData "
+                        "no MDE, ou a margem de busca.")
+    append_diagnostic_log(log_path, "rota_sem_ligacao", declividade_que_liga_pct=necessario,
+                          so_contato_de_vertice=bool(so_vertice))
+    if so_vertice and necessario is None:
+        raise _erro(
+            "Os pontos so se ligam por um contato de vertice: em algum lugar do caminho, duas "
+            "celulas intransponiveis se tocam na diagonal e a passagem fica com largura zero. "
+            "Aqui falta largura, nao declividade: amplie o afastamento da restricao ou use um "
+            "MDE de maior resolucao, em que a passagem real apareca com mais de uma celula.")
+    raise _erro(
+        "Nao foi possivel conectar os pontos da rota: nao existe caminho de celulas viaveis "
+        "entre eles." + sugestao)
 
 
 def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
@@ -3156,6 +3255,8 @@ def save_access_route(
     stream_class=None,
     field_speed_kmh=FIELD_SURVEY_SPEED_KMH,
     alternatives_pct=0.0,
+    slope_array=None,
+    max_slope=None,
 ):
     """Generate least-cost route and metric corridor files.
 
@@ -3293,6 +3394,10 @@ def save_access_route(
             transform, score_array.shape, proj), 1e-9)))
 
     local_sequence = [(r - row_min, c - col_min) for r, c in sequence]
+    slope_crop = (slope_array[row_min:row_max, col_min:col_max]
+                  if slope_array is not None else None)
+    check_route_connectivity(cost_crop, local_sequence, slope_crop, penalty_crop,
+                             max_slope, pixel_size_m or abs(float(transform[1])), log_path)
     path_cells, accumulated_cost, leg_costs, ordem = multi_leg_route(
         cost_crop, local_sequence, elevation=elevation_crop,
         pixel_size_m=pixel_size_m, anisotropic=anisotropic,
@@ -4803,21 +4908,31 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         raw_score = raw_score / np.maximum(weight_sum, 1e-12)
         zone_score = np.where(zone_constraint_mask, raw_score, np.nan).astype(np.float32)
         route_score = np.where(route_constraint_mask, raw_score, np.nan).astype(np.float32)
-        output_score = zone_score if generate_zones else route_score
         risk_score = compute_topographic_risk(slope_data, curvh_data, curvv_data, valid_mask, max_slope, feedback)
-
-        report_model_discrimination(
-            slope_data, zone_score, valid_mask, slope_score_max, max_slope,
-            feedback, debug_log_path)
 
         zone_valid_scores = zone_score[~np.isnan(zone_score)]
         route_valid_scores = route_score[~np.isnan(route_score)]
-        if generate_zones and zone_valid_scores.size == 0:
-            raise _erro("Nenhum pixel atende às restrições configuradas para zonas potenciais.")
+        causa = explain_empty_mask(dem_data, slope_data, valid_mask,
+                                   min_altitude, max_altitude, max_slope)
         if start_point_file and end_point_file and route_valid_scores.size == 0:
-            raise _erro("Nenhum pixel navegável atende às restrições de rota. Aumente o limite de declividade máxima.")
-        if not generate_zones and not (start_point_file and end_point_file) and route_valid_scores.size == 0:
-            raise _erro("Nenhum pixel atende às restrições configuradas.")
+            raise _erro("Nenhuma celula atende as restricoes de rota. " + causa)
+        if route_valid_scores.size == 0:
+            raise _erro("Nenhuma celula atende as restricoes configuradas. " + causa)
+        if generate_zones and zone_valid_scores.size == 0:
+            # Antes a execucao inteira parava aqui, e a rota e os rasters -- que
+            # nao dependem da faixa de altitude -- se perdiam junto. Medido no
+            # Khumbu com os padroes (0-2600 m): nenhum produto.
+            mensagem = ("Nenhuma celula atende as restricoes das zonas potenciais, entao as zonas "
+                        "nao foram geradas; os rasters e a rota seguem. " + causa)
+            if feedback:
+                feedback.pushWarning(mensagem)
+            append_diagnostic_log(debug_log_path, "zonas_sem_celulas", motivo=causa)
+            generate_zones = False
+        output_score = zone_score if generate_zones else route_score
+
+        report_model_discrimination(
+            slope_data, output_score, valid_mask, slope_score_max, max_slope,
+            feedback, debug_log_path)
 
         threshold_is_auto = threshold is None or threshold == 0
         if generate_zones and not walkability_zones and threshold_is_auto:
@@ -4908,6 +5023,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 stream_area=stream_area, stream_class=stream_class,
                 field_speed_kmh=field_speed_kmh,
                 alternatives_pct=alternatives_pct,
+                slope_array=slope_data,
+                max_slope=max_slope,
             )
             append_diagnostic_log(
                 debug_log_path,

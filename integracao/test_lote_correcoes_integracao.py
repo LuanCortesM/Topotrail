@@ -46,7 +46,7 @@ _PESOS_ZERADOS = {"WEIGHT_SLOPE": 0.0, "WEIGHT_CURVH": 0.0, "WEIGHT_CURVV": 0.0}
 
 @pytest.mark.parametrize("extras,trecho", [
     (_PESOS_ZERADOS, "soma dos pesos"),
-    ({"ALT_MIN": 5000.0, "ALT_MAX": 9000.0}, "Nenhum pixel"),
+    ({"SLOPE_MAX": 0.001}, "Nenhuma celula"),
     ({"TRANSITABILITY_BREAKS": "isso nao e numero"}, "limites de transitabilidade"),
     ({"START_POINT_FILE": "/nao/existe.geojson"}, "nao encontrado"),
 ])
@@ -67,6 +67,20 @@ def test_erros_do_usuario_sao_qgsprocessingexception(
     assert isinstance(erro, QgsProcessingException), type(erro).__name__
     assert trecho in str(erro), str(erro)
     assert "Traceback" not in str(erro)
+
+
+def test_faixa_de_altitude_fora_do_mde_nao_derruba_rota_nem_rasters(executar, cena, tmp_path):
+    """Antes: sem nenhuma celula para as zonas, a execucao inteira parava -- e a
+    rota e os rasters, que nao dependem da faixa de altitude, se perdiam."""
+    dem, inicio, fim = cena
+    parametros = parametros_base(dem, str(tmp_path / "f.gpkg"), inicio, fim,
+                                 ALT_MIN=5000.0, ALT_MAX=9000.0)
+    resultado, feedback, erro = executar(parametros)
+    assert erro is None, (erro, feedback.linhas[-5:])
+    assert "OUTPUT_ROUTE" in resultado and "OUTPUT_SCORE_RASTER" in resultado
+    assert "OUTPUT_VECTOR" not in resultado
+    assert feedback.procurar("zonas nao foram geradas")
+    assert feedback.procurar("5000 a 9000 m")
 
 
 # ---- 4. excecoes do GDAL so no escopo do algoritmo -----------------------
@@ -378,3 +392,4 @@ def test_sentinela_num_raster_de_criterio_avisa_nomeando_o_raster(
     assert avisos, [linha for linha in feedback.linhas if "Curvatura" in linha]
     assert any("escala fisica" in aviso or "limite do percentil" in aviso
                for aviso in avisos), avisos
+
