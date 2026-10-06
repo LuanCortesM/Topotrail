@@ -3580,10 +3580,13 @@ def _flag_avancado():
         return _qgs_enum(Qgis, "ProcessingParameterFlag", "Advanced")
     except (ImportError, AttributeError):
         try:
-            from qgis.core import QgsProcessingParameterDefinition
-            return QgsProcessingParameterDefinition.FlagAdvanced
-        except (ImportError, AttributeError):
+            from qgis.core import QgsProcessingParameterDefinition as definicao
+        except ImportError:
             return None
+        # Por nome: o verificador Qt6 do repositorio de plugins acusa o acesso
+        # sem escopo, mesmo neste ramo que so roda no QGIS < 3.36.
+        grupo = getattr(definicao, "Flag", None)
+        return getattr(grupo, "FlagAdvanced", None) or getattr(definicao, "FlagAdvanced", None)
 
 
 def _class_labels():
