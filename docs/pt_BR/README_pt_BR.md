@@ -363,8 +363,8 @@ enviar.
 Cada versão é arquivada no Zenodo. Cite a versão que você usou:
 
 > Maciel, L. S. C. (2026). *TopoTrail: a QGIS plugin for DEM-based topographic
-> suitability and least-cost route planning* (versão 1.4.0) [Software]. Zenodo.
-> https://doi.org/10.5281/zenodo.23174766
+> suitability and least-cost route planning* (versão 1.4.1) [Software]. Zenodo.
+> https://doi.org/10.5281/zenodo.23177383
 
 O DOI de conceito
 [10.5281/zenodo.20295565](https://doi.org/10.5281/zenodo.20295565) sempre resolve
