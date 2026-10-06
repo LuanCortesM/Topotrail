@@ -1,0 +1,4 @@
+[flake8]
+# O mesmo limite do CI (.github/workflows/ci.yml).
+max-line-length = 160
+extend-ignore = E203,W503
