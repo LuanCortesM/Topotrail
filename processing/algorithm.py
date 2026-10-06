@@ -238,6 +238,13 @@ MAX_OPTIMISED_WAYPOINTS = 8
 # Corredor de alternativas: celulas por onde passa algum caminho ate X% mais
 # caro que o otimo. Teto da folga e do tamanho da grade (o calculo percorre a
 # grade inteira duas vezes, em vez de parar no destino como o A*).
+# Superficie d'agua achatada no MDE: area continua de altitude exatamente
+# constante. Copernicus, SRTM e derivados achatam mar, lagos e represas, e para
+# o modelo de caminhada isso parece o terreno ideal. Medido em Svalbard
+# (Copernicus GLO-30): 45 de 178 vertices da rota sobre o fiorde, a 0 m.
+WATER_MIN_AREA_M2 = 500000.0
+SEA_LEVEL_MAX_M = 0.5
+
 MAX_ALTERNATIVES_PCT = 50.0
 MAX_ALTERNATIVES_CELLS = 4000000
 
@@ -2265,6 +2272,41 @@ def robust_abs_norm(array, valid_mask, percentile=CURVATURE_RISK_PERCENTILE, lim
     return np.clip(np.abs(array) / limit, 0, 1).astype(np.float32)
 
 
+def flat_water_masks(dem, pixel_area_m2, min_area_m2=WATER_MIN_AREA_M2):
+    """(mar, lagos): superficies de altitude exatamente constante, >= min_area_m2.
+
+    Uma celula e plana quando a vizinhanca 3x3 inteira tem a mesma altitude;
+    celulas planas contiguas formam uma superficie, e todas tem a mesma
+    altitude. Mar = superficie ate SEA_LEVEL_MAX_M (inclui NoData gravado como
+    zero); lagos = as demais.
+    """
+    finito = np.isfinite(dem)
+    vazio = np.zeros(dem.shape, dtype=bool)
+    if not finito.any():
+        return vazio, vazio
+    linhas, colunas = dem.shape
+    borda = np.pad(np.where(finito, dem, np.nan), 1, mode="edge")
+    maximo = np.full(dem.shape, -np.inf)
+    minimo = np.full(dem.shape, np.inf)
+    for d_lin in (0, 1, 2):
+        for d_col in (0, 1, 2):
+            janela = borda[d_lin:d_lin + linhas, d_col:d_col + colunas]
+            maximo = np.fmax(maximo, janela)
+            minimo = np.fmin(minimo, janela)
+    plano = finito & (maximo == minimo)
+    rotulos, quantos = morphology.label(plano, connectivity=8)
+    if quantos == 0:
+        return vazio, vazio
+    tamanho = np.bincount(rotulos.ravel(), minlength=quantos + 1)
+    grande = tamanho * float(pixel_area_m2) >= float(min_area_m2)
+    grande[0] = False
+    nivel = np.zeros(quantos + 1)
+    nivel[rotulos[plano]] = dem[plano]
+    agua = grande[rotulos]
+    mar = agua & (nivel[rotulos] <= SEA_LEVEL_MAX_M)
+    return mar, agua & ~mar
+
+
 def explain_empty_mask(dem, slope, valid_mask, min_altitude, max_altitude, max_slope):
     """Por que nenhuma celula atende as restricoes, em numeros da propria cena."""
     partes = []
@@ -3257,6 +3299,7 @@ def save_access_route(
     alternatives_pct=0.0,
     slope_array=None,
     max_slope=None,
+    lake_mask=None,
 ):
     """Generate least-cost route and metric corridor files.
 
@@ -3409,6 +3452,13 @@ def save_access_route(
             "Use pontos mais afastados ou um raster de maior resolucao para gerar uma rota."
         )
     coordinates = [pixel_to_world(transform, row + row_min, col + col_min) for row, col in path_cells]
+    if lake_mask is not None:
+        no_lago = sum(1 for row, col in path_cells if lake_mask[row + row_min, col + col_min])
+        if no_lago and feedback:
+            feedback.pushWarning(
+                "A rota passa por {} celula(s) de superficie d'agua plana -- lago ou represa "
+                "achatados no MDE. Marque \"Considerar cursos d'agua extraidos do MDE\" para "
+                "trata-los como barreira.".format(no_lago))
     line = ogr.Geometry(ogr.wkbLineString)
     for x, y in coordinates:
         line.AddPoint_2D(float(x), float(y))
@@ -4669,6 +4719,25 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             curvv_data, feedback, "Curvatura vertical", limit=limites["curvatura_vertical"])
 
         valid_mask = ~np.isnan(dem_data) & ~np.isnan(slope_data) & ~np.isnan(curvh_data) & ~np.isnan(curvv_data)
+        area_pixel_m2 = estimate_pixel_area_m2(transform, dem_data.shape, proj)
+        mar_mask, lagos_mask = flat_water_masks(dem_data, area_pixel_m2)
+        agua_fora = mar_mask | (lagos_mask if streams_from_dem else False)
+        if agua_fora.any():
+            valid_mask = valid_mask & ~agua_fora
+            if feedback:
+                feedback.pushInfo(
+                    "Superficie d'agua achatada no MDE retirada da analise: {:.2f} km2 de mar ou "
+                    "NoData em 0 m{}.".format(
+                        float(mar_mask.sum()) * area_pixel_m2 / 1e6,
+                        "" if not (streams_from_dem and lagos_mask.any()) else
+                        " e {:.2f} km2 de lagos e represas".format(
+                            float(lagos_mask.sum()) * area_pixel_m2 / 1e6)))
+        append_diagnostic_log(
+            debug_log_path, "superficies_dagua",
+            mar_km2=float(mar_mask.sum()) * area_pixel_m2 / 1e6,
+            lagos_km2=float(lagos_mask.sum()) * area_pixel_m2 / 1e6,
+            lagos_como_barreira=bool(streams_from_dem),
+            area_minima_km2=WATER_MIN_AREA_M2 / 1e6)
         altitude_range_mask = (dem_data >= min_altitude) & (dem_data <= max_altitude)
         zone_constraint_mask = valid_mask & altitude_range_mask & (slope_data <= max_slope)
         route_constraint_mask = valid_mask & (slope_data <= max_slope)
@@ -5025,6 +5094,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 alternatives_pct=alternatives_pct,
                 slope_array=slope_data,
                 max_slope=max_slope,
+                lake_mask=(lagos_mask if not streams_from_dem and lagos_mask.any() else None),
             )
             append_diagnostic_log(
                 debug_log_path,

@@ -51,3 +51,33 @@ def test_empty_mask_explains_altitude_and_slope(algorithm):
     assert "0 a 2600 m" in texto and "2800" in texto and "6500" in texto
     assert "55%" in texto and "70%" in texto
 
+
+def _cena_com_agua():
+    rng = np.random.default_rng(3)
+    dem = 200.0 + rng.normal(0, 3, size=(60, 80))      # terreno com relevo
+    dem[:, :20] = 0.0                                    # mar achatado em 0 m
+    dem[30:50, 50:70] = 512.0                            # lago achatado
+    dem[5:8, 60:63] = 300.0                              # trecho plano pequeno
+    return dem
+
+
+def test_flat_water_separates_sea_from_lake(algorithm):
+    mar, lagos = algorithm.flat_water_masks(_cena_com_agua(), pixel_area_m2=900.0,
+                                            min_area_m2=200 * 900.0)
+    assert mar[:, :19].all() and not mar[:, 21:].any()
+    assert lagos[31:49, 51:69].all()
+    assert not lagos[5:8, 60:63].any()                   # pequeno demais
+    assert not (mar | lagos)[10:25, 25:45].any()         # terreno de verdade
+
+
+def test_terrain_without_flats_has_no_water(algorithm):
+    dem = 100.0 + np.random.default_rng(9).normal(0, 1, size=(40, 40))
+    mar, lagos = algorithm.flat_water_masks(dem, pixel_area_m2=900.0, min_area_m2=9000.0)
+    assert not mar.any() and not lagos.any()
+
+
+def test_nodata_written_as_zero_counts_as_sea(algorithm):
+    dem = 800.0 + np.random.default_rng(1).normal(0, 2, size=(40, 40))
+    dem[:, 30:] = 0.0                                    # borda preenchida com zero
+    mar, _ = algorithm.flat_water_masks(dem, pixel_area_m2=900.0, min_area_m2=9000.0)
+    assert mar[:, 31:].all()
