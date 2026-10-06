@@ -4,6 +4,16 @@ Mudanças relevantes do TopoTrail. Formato
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões em
 [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.4.1] - 2026-10-06
+
+### Corrigido
+
+- Mar e lagos achatados no MDE (Copernicus, SRTM) pareciam terreno ideal e levavam a rota para dentro d'água: superfícies planas de 0,5 km² ou mais passam a ser água (o mar sai sempre; os lagos saem com a drenagem ligada e, sem ela, a rota avisa quando cruza um).
+- Sem ligação entre os pontos, o erro diz a declividade máxima que os liga, em vez de só pedir para aumentá-la.
+- Sem nenhuma célula para as zonas (faixa de altitude fora do MDE), as zonas são puladas com aviso; rasters e rota seguem.
+- O diagnóstico de contato de vértice escondia a sugestão de declividade.
+- Aviso `Ring Self-intersection` do GEOS no stderr a cada polígono vetorizado.
+
 ## [1.4.0] - 2026-10-06
 
 ### Adicionado
@@ -41,4 +51,5 @@ Mudanças relevantes do TopoTrail. Formato
 
 Ver o `changelog` do [`metadata.txt`](metadata.txt) e a seção *Changelog* do [`README.md`](README.md).
 
+[1.4.1]: https://github.com/LuanCortesM/Topotrail/releases/tag/v1.4.1
 [1.4.0]: https://github.com/LuanCortesM/Topotrail/releases/tag/v1.4.0

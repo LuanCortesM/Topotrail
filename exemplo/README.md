@@ -74,7 +74,7 @@ Eight files in `saida/`, which are the seven products plus the diagnostic log:
 
 ### The numbers to check
 
-These are the values `executar.py` compares, measured with TopoTrail **1.3.0** and unchanged in **1.4.0** (the options added in 1.4.0 are all off by default):
+These are the values `executar.py` compares, measured with TopoTrail **1.3.0** and unchanged in **1.4.0** and **1.4.1** (the options added in 1.4.0 are all off by default):
 
 | Quantity | Attribute | Expected |
 |---|---|---|

@@ -1,7 +1,7 @@
 # TopoTrail Methodology
 
 Formulas, named empirical constants and normalisation rules, as implemented in
-version **1.4.0**. Every statement here was checked against `processing/` in
+version **1.4.1**. Every statement here was checked against `processing/` in
 this repository; where a constant is named, the name is the one used in the
 code, so it can be found and read in context.
 
@@ -88,6 +88,22 @@ edge of a NoData region uses only the neighbours that exist — one-sided where
 that is the case. Without that care, the difference between a real elevation and
 a fill value produces spurious slopes of hundreds of percent exactly at the
 boundaries of the scene, which is where a route usually enters and leaves.
+
+## Flat water surfaces (since 1.4.1)
+
+Global DEMs — Copernicus, SRTM and their derivatives — flatten the sea, lakes
+and reservoirs to a single elevation. To a walking-cost model that is ideal
+terrain, with no slope and no curvature: on Svalbard (Copernicus GLO-30) 45 of
+178 route vertices ran across the fjord at 0 m. A cell is flat when its whole
+3 × 3 neighbourhood has exactly the same elevation; contiguous flat cells form a
+surface, and a surface of at least `WATER_MIN_AREA_M2` (0.5 km²) is taken as
+water. Water at or below `SEA_LEVEL_MAX_M` (0.5 m), which also catches NoData
+written as zero, is the sea and always leaves the analysis. The other surfaces
+are lakes and reservoirs: they leave the analysis when drainage is extracted
+from the DEM (`STREAMS_FROM_DEM`), and otherwise the route reports how many of
+its cells lie on one. Natural ground is rarely exactly constant over half a
+square kilometre; when it is, the diagnostic log records the area removed
+(`superficies_dagua`).
 
 ## Derived terrain attributes
 

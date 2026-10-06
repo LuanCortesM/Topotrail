@@ -710,6 +710,11 @@ The full, per-version changelog lives in [`metadata.txt`](metadata.txt) and is
 what the QGIS plugin repository shows; [`CHANGELOG.md`](CHANGELOG.md) lists each
 change of 1.4.0 onwards on its own line. In short:
 
+- **1.4.1** — Tested on fifteen reliefs around the world and on the fifteen
+  field tracks. The sea, lakes and reservoirs that global DEMs flatten no longer
+  look like ideal walking terrain; a route that cannot connect its points now
+  says which maximum slope connects them; an empty zone mask (altitude range
+  outside the DEM) no longer stops the whole run.
 - **1.4.0** — Runs the same on any computer: SciPy becomes optional (NumPy
   fallback with identical results), the example and validation scripts run on
   Windows, Linux and macOS, the algorithm works from `qgis_process`, and CI tests

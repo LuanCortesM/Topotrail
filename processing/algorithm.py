@@ -63,7 +63,7 @@ from qgis.core import (  # noqa: E402
 
 _LOG = logging.getLogger("TopoTrail")
 
-PLUGIN_VERSION = "1.4.0"
+PLUGIN_VERSION = "1.4.1"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser

@@ -6,8 +6,10 @@
 # 1. ORCID of the author — registered: 0009-0002-7242-9650, checked against the
 #    public ORCID record (Luan da Silva Cortes Maciel) before being written here.
 #
-# 2. Version DOI for 1.4.0 — 10.5281/zenodo.23174766, minted by Zenodo from the
-#    GitHub release v1.4.0 and checked against the public Zenodo record.
+# 2. Version DOI for 1.4.1 — DOES NOT EXIST YET. Zenodo mints it when the
+#    GitHub release v1.4.1 is published. Until then the newest version DOI under
+#    `identifiers:` is the one for 1.4.0 (10.5281/zenodo.23174766), labelled as
+#    such: it is NOT the DOI of the version this file declares.
 #
 #    The concept DOI in `doi:` never changes and always resolves to the most
 #    recent archived version.
@@ -75,9 +77,9 @@ identifiers:
     description: "Concept DOI for all versions of TopoTrail (Zenodo)"
   - type: doi
     value: "10.5281/zenodo.23174766"
-    description: "Version DOI for TopoTrail 1.4.0 (Zenodo)"
+    description: "Version DOI for TopoTrail 1.4.0 (Zenodo) — NOT the version declared below; the 1.4.1 version DOI is pending its release"
   - type: url
     value: "https://github.com/LuanCortesM/Topotrail/releases/tag/v1.4.0"
-    description: "GitHub release v1.4.0"
-version: "1.4.0"
+    description: "GitHub release v1.4.0 — v1.4.1 is not tagged yet"
+version: "1.4.1"
 date-released: "2026-10-06"
