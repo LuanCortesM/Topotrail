@@ -393,3 +393,29 @@ def test_sentinela_num_raster_de_criterio_avisa_nomeando_o_raster(
     assert any("escala fisica" in aviso or "limite do percentil" in aviso
                for aviso in avisos), avisos
 
+
+# ---- 11. aviso do GEOS a cada poligono vetorizado --------------------------
+
+def test_vetorizacao_nao_despeja_aviso_do_geos(plugin):
+    """Duas celulas que se tocam so no vertice viram um anel que se toca. O
+    IsValid do GEOS escrevia 'Ring Self-intersection' no stderr para cada
+    poligono assim (varredura dos 15 trajetos, 05/10), sem defeito na saida.
+    """
+    import numpy as np
+    from osgeo import gdal, osr
+
+    utm = osr.SpatialReference()
+    utm.ImportFromEPSG(32723)
+    mascara = np.zeros((6, 6), dtype=np.uint8)
+    mascara[1, 1] = mascara[2, 2] = 1
+    avisos = []
+    gdal.PushErrorHandler(lambda classe, numero, texto: avisos.append(texto))
+    try:
+        resultado = plugin.vectorize_binary_raster(
+            mascara, (500000.0, 30.0, 0.0, 7500000.0, 0.0, -30.0), utm.ExportToWkt())
+    finally:
+        gdal.PopErrorHandler()
+    assert not avisos, avisos
+    assert len(resultado) >= 1
+    assert all(g.IsValid() for g in resultado.geometries)
+    assert abs(sum(g.GetArea() for g in resultado.geometries) - 2 * 900.0) < 1e-6

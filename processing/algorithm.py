@@ -2357,6 +2357,15 @@ def compute_topographic_risk(slope_data, curvh_data, curvv_data, valid_mask, max
     return risk
 
 
+def _is_valid_quietly(geometry):
+    """IsValid sem o aviso do GEOS: anel que se toca no vertice e esperado no Polygonize."""
+    gdal.PushErrorHandler("CPLQuietErrorHandler")
+    try:
+        return geometry.IsValid()
+    finally:
+        gdal.PopErrorHandler()
+
+
 def vectorize_binary_raster(binary_array, transform, proj, feedback=None):
     """Polygonize a binary raster and return only polygons with value 1."""
     srs = osr.SpatialReference()
@@ -2406,9 +2415,9 @@ def vectorize_binary_raster(binary_array, transform, proj, feedback=None):
                 continue
             geometry = geometry.Clone()
             # buffer(0): o mesmo reparo de anel que o shapely fazia, agora pelo GEOS do OGR.
-            if not geometry.IsValid():
+            if not _is_valid_quietly(geometry):
                 geometry = geometry.Buffer(0)
-            if geometry is None or geometry.IsEmpty() or not geometry.IsValid():
+            if geometry is None or geometry.IsEmpty() or not _is_valid_quietly(geometry):
                 continue
             geometries.append(geometry)
             attributes.append({"value": 1})
