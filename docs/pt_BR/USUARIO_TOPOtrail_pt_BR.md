@@ -175,7 +175,7 @@ processing.run("topotrail:topotrail", {
     "START_POINT_FILE": "/caminho/para/origem.geojson",
     "END_POINT_FILE": "/caminho/para/destino.geojson",
     "ROUTE_COST_MODEL": 2,          # 2 = tempo de caminhada (Tobler), o padrao
-    "STREAMS_FROM_DEM": True,       # desligado por padrao; necessario p/ travessias
+    "STREAMS_FROM_DEM": True,       # ligado por padrao; necessario p/ travessias
     "OUTPUT_FILE": "/caminho/para/saida.gpkg",
     "OUTPUT_FORMAT": 1,             # 1 = GeoPackage
     # …

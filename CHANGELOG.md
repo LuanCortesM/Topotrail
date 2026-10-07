@@ -8,6 +8,9 @@ Mudanças relevantes do TopoTrail. Formato
 
 ### Alterado
 
+- Drenagem extraída do MDE ligada por padrão (Processing e janela): a rota passa a conhecer os rios e as travessias. Com MDE de 30 m ela achou 80% dos rios do OpenStreetMap e 23 de 27 travessias de rio em 51 trilhas consagradas. Em célula acima de 45 m, um aviso pede para conferir com a hidrografia oficial.
+- As zonas mantêm as margens dos cursos d'água, que são hábitat de amostragem; no modo "evitar" elas excluem só a camada de restrição do usuário. No exemplo, 11 zonas viram 12.
+
 - `tempo_h` e `tempo_campo_h` passam a ser o tempo de Tobler ao longo da rota, sem o retardo por terreno e sem os fatores de vau, que exprimem preferência e não ritmo. O custo acumulado continua em `custo`. Em 51 trilhas consagradas o valor antigo inflava a duração de 1,10 a 1,91 vez (mediana 1,39). No exemplo, 6,48 h passam a 3,98 h; a rota não muda.
 
 ### Corrigido

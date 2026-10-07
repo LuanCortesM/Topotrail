@@ -113,7 +113,8 @@ def test_streams_are_a_cost_for_the_route_not_a_wall(algorithm):
 
     assert route_mask[:, 2].all(), "a rota tem de poder cruzar o rio"
     assert not route_mask[0, 0], "a cerca continua intransponivel"
-    assert not zone_mask[:, 2].any(), "as zonas continuam fora do leito"
+    assert zone_mask[:, 2].all(), "as zonas mantem as margens: sao habitat de amostragem"
+    assert not zone_mask[0, 0], "a cerca continua fora das zonas"
     assert not barrier[:, 2].any(), "curso vadeavel nao pode virar barreira"
     assert barrier[0, 0], "a camada em modo evitar e barreira"
     assert penalty is not None and (penalty[:, 2] == 4.0).all()

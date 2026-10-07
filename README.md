@@ -297,8 +297,10 @@ typical of humid mountainous terrain.
 
 The network then enters the model in two different ways, on purpose:
 
-- **Potential zones** exclude the drainage strip — nobody plans a use area in a
-  stream bed.
+- **Potential zones keep the stream margins.** Riparian strips are a sampling
+  target — amphibians, riparian forest — so the zones do not lose them. To keep
+  margins out, supply the hydrography as a constraint layer. (Up to 1.4.1 the
+  zones excluded the drainage strip in "avoid" mode.)
 - **The route may cross it.** A stream is a line, and every route from one
   valley to the next has to cross one; a linear network turned into an
   absolute wall partitions the landscape into islands. Instead, each crossing

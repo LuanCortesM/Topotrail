@@ -61,6 +61,10 @@ FLAT_EPSILON_M = 1e-3
 # mascara na resolucao original.
 MAX_HYDROLOGY_CELLS = 1_200_000
 
+# Acima desta celula a rede extraida perde boa parte dos rios (ver o aviso em
+# analyse_hydrology): 30 m achou 80% dos rios do OpenStreetMap, 90 m achou 54%.
+COARSE_CELL_M = 45.0
+
 # Limite de iteracoes do preenchimento. Cada iteracao e uma passagem NumPy sobre
 # a grade inteira; na pratica a convergencia vem em dezenas de passagens.
 MAX_FILL_ITERATIONS = 400
@@ -358,6 +362,18 @@ def analyse_hydrology(dem_array, transform, min_basin_km2=1.0, feedback=None,
                 "afastamento pedido menor que isso nao tem efeito pratico. Para uma "
                 "faixa mais estreita, recorte a area de estudo ou forneca uma camada "
                 "de hidrografia vetorial.".format(max(work_px, work_py))
+            )
+        # A drenagem passou a vir ligada por padrao, e a confiabilidade dela cai
+        # com a celula: contra o OpenStreetMap, em 51 trilhas consagradas, um
+        # MDE de 30 m achou 80% dos rios e 23 de 27 travessias de rio na trilha;
+        # o mesmo terreno a 90 m achou 54% dos rios. (O aviso vale so quando a
+        # rede foi pedida -- o mesmo criterio do aviso de largura acima.)
+        if warn_about_width and max(work_px, work_py) > COARSE_CELL_M:
+            feedback.pushWarning(
+                "A drenagem foi extraida em pixel de {:.0f} m. Nos testes, um MDE de "
+                "90 m achou so cerca de metade dos rios mapeados (contra 80% com um "
+                "MDE de 30 m). Confira os cursos d'agua com a hidrografia oficial antes "
+                "de ir a campo, ou use um MDE de 30 m.".format(max(work_px, work_py))
             )
         if density is not None and not (0.5 <= density <= 5.0):
             feedback.pushWarning(

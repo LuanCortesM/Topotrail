@@ -74,7 +74,7 @@ Eight files in `saida/`, which are the seven products plus the diagnostic log:
 
 ### The numbers to check
 
-These are the values `executar.py` compares. The route is the one measured with TopoTrail **1.3.0**, unchanged since. The duration changed after 1.4.1: `tempo_h` is now Tobler's time along the route, without the terrain slowdown and the ford factors, which express preference and not pace. Up to 1.4.1 it reported the accumulated cost, 6.48 h, which is still in `custo`.
+These are the values `executar.py` compares. The route is the one measured with TopoTrail **1.3.0**, unchanged since. The duration changed after 1.4.1: `tempo_h` is now Tobler's time along the route, without the terrain slowdown and the ford factors, which express preference and not pace. Up to 1.4.1 it reported the accumulated cost, 6.48 h, which is still in `custo`. The zone count changed as well: the zones now keep the stream margins, so there are 12 instead of 11.
 
 | Quantity | Attribute | Expected |
 |---|---|---|
@@ -84,7 +84,7 @@ These are the values `executar.py` compares. The route is the one measured with 
 | Accumulated descent | `perda_m` | **663.1** m |
 | Highest point on the route | `alt_max_m` | **1551.1** m |
 | Watercourse crossings | features in `_travessias.gpkg` | **3** |
-| Potential access zones | features in `exemplo.gpkg` | **11** |
+| Potential access zones | features in `exemplo.gpkg` | **12** |
 
 Counts must match exactly. Lengths, times and elevations are compared with a
 relative tolerance of 0.1%, which absorbs last-digit differences between NumPy
@@ -104,7 +104,8 @@ than as a contract:
   unburdened walker on a path, and multiplying the maximum speed by a constant
   divides every cost by it, so the **path does not change** — only the duration;
 * the corridor is a 100 m radius buffer, so 200 m wide, covering 2 840 481 m²;
-* the eleven zones total 1421.4 ha;
+* the twelve zones total 1587.2 ha (eleven and 1421.4 ha up to 1.4.1, when the
+  zones also lost the stream margins);
 * suitability runs 0.1333 to 0.9704, median 0.6582; relative topographic risk
   runs 0.0154 to 1.0000, median 0.4078;
 * transitability, over 90 000 valid cells: **26.30%** class 1, **36.33%**

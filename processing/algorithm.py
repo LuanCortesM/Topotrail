@@ -1937,7 +1937,11 @@ def combine_constraints(route_mask, zone_mask, layer_mask,
       tamanho do curso, e so e intransponivel onde o fator ja veio infinito,
       isto e, acima do teto vadeavel declarado pelo usuario. Um rio e uma
       linha, e toda rota de um vale ao vizinho precisa cruzar uma;
-    * as zonas, no modo "evitar", excluem tudo o que foi restringido.
+    * as zonas, no modo "evitar", excluem a camada do usuario, mas NAO a
+      drenagem. Desde que a drenagem passou a vir ligada por padrao, tirar as
+      margens das zonas tiraria da amostragem justamente o habitat ripario --
+      alvo de levantamento de anfibios, de flora de mata ciliar. Quem quiser
+      excluir margens fornece a hidrografia como camada de restricao.
 
     Devolve (route_mask, zone_mask, penalty_mask, route_barrier, tratamento).
     """
@@ -1963,9 +1967,10 @@ def combine_constraints(route_mask, zone_mask, layer_mask,
     factor = np.where(route_barrier, np.inf, factor)
     penalty_mask = factor if np.any(factor != 1.0) else None
     if constraint_mode == CONSTRAINT_AVOID:
-        zone_mask = zone_mask & ~restricted
-        tratamento = ("excluidas das zonas; para a rota: camada excluida, "
-                      "drenagem graduada pelo tamanho do curso")
+        if layer_mask is not None:
+            zone_mask = zone_mask & ~layer_mask
+        tratamento = ("camada excluida das zonas e da rota; drenagem graduada pelo "
+                      "tamanho do curso na rota, mantida nas zonas")
     else:
         tratamento = ("encarecidas em {:.0f}x (camada); drenagem graduada pelo "
                       "tamanho do curso".format(CONSTRAINT_PENALTY_FACTOR))
@@ -4133,7 +4138,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterBoolean(
                 self.STREAMS_FROM_DEM,
                 self.tr("alg_streams"),
-                defaultValue=False,
+                defaultValue=True,
             )
         )
         self.addParameter(
@@ -4825,8 +4830,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         # vai de um vale ao vizinho tem de cruzar um, e uma rede linear
         # transformada em barreira absoluta retalha a paisagem em ilhas -- a
         # travessia Marins-Marinzinho-Itaguare falhava com os padroes da janela
-        # exatamente por isso. As ZONAS continuam excluindo a drenagem no modo
-        # "evitar" (nao se planeja area de uso no leito). A camada de restricao
+        # exatamente por isso. As ZONAS mantem a drenagem (ver combine_constraints:
+        # a margem e habitat de amostragem); no modo "evitar" elas excluem so a
+        # camada do usuario. Ate a 1.4.1 as zonas tambem excluiam a drenagem no
+        # modo "evitar". A camada de restricao
         # do usuario segue o modo escolhido nos dois casos: cerca e cerca.
         # Fatores de custo para a rota: a drenagem entra graduada pelo tamanho
         # do curso (2x, 4x, 8x; barreira acima do teto vadeavel), a camada do

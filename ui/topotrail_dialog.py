@@ -1074,7 +1074,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
         self.want_zones = self._option("polygon", "o_zones", "o_zones_help", checked=True)
         self.want_transit = self._option("boot", "o_transit", "o_transit_help", checked=True)
-        self.want_streams = self._option("drop", "o_streams", "o_streams_help")
+        self.want_streams = self._option("drop", "o_streams", "o_streams_help", checked=True)
         for card in (self.want_zones, self.want_transit, self.want_streams):
             layout.addWidget(card)
 

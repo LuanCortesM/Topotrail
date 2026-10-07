@@ -281,6 +281,14 @@ de cursos d'água permanece **opcional e desligada por padrão**, com aviso
 explícito no código de que penalizá-la por padrão afastaria a rota justamente do
 que este tipo de usuário quer visitar.
 
+*Revisto depois da 1.4.1.* A drenagem passou a vir ligada por padrão. Contra o
+OpenStreetMap, em 51 trilhas consagradas, um MDE de 30 m achou 80% dos rios e
+23 das 27 travessias de rio das trilhas. Para não afastar o usuário do que ele
+quer visitar, as zonas deixaram de excluir as margens: a rota conhece os rios,
+e a amostragem mantém o hábitat ripário. Em célula acima de 45 m (90 m: 54% dos
+rios), o plugin avisa para conferir com a hidrografia oficial.
+(`ARTIGO/TopoTrail-validacao-revisada.md`, seção 8a, na pasta de trabalho.)
+
 ## 6b. Resultado: dependência de resolução
 
 > Proveniência: números medidos na versão **0.7.0** do plugin. Ver a seção 0.

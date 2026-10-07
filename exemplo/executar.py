@@ -36,7 +36,7 @@ ESPERADO = {
     "perda_m": 663.1,
     "alt_max_m": 1551.1,
     "travessias": 3,
-    "zonas": 11,
+    "zonas": 12,
 }
 
 # Tolerancia relativa das grandezas continuas.

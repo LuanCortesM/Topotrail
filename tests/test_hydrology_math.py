@@ -262,3 +262,32 @@ def test_hydrology_refuses_degenerate_input(hydrology):
                                     (0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
     with pytest.raises(ValueError):
         hydrology.analyse_hydrology(np.full((10, 10), np.nan), TRANSFORM)
+
+
+class _Avisos:
+    def __init__(self):
+        self.avisos = []
+
+    def pushInfo(self, mensagem):
+        pass
+
+    def pushWarning(self, mensagem):
+        self.avisos.append(mensagem)
+
+
+@pytest.mark.parametrize("pixel, avisa", [(30.0, False), (90.0, True)])
+def test_coarse_cell_drainage_warns_to_check_official_hydrography(hydrology, pixel, avisa):
+    """The drainage is on by default, and a 90 m DEM found about half the
+    mapped rivers (54%, against 80% at 30 m, 51 well-known trails). The user
+    who asked for the network on a coarse cell is told to check it."""
+    rows, cols = 40, 40
+    y, x = np.mgrid[0:rows, 0:cols].astype(np.float64)
+    dem = 500.0 - y * 2.0 + np.abs(x - cols / 2.0) * 3.0
+    feedback = _Avisos()
+    hydrology.analyse_hydrology(dem, (0.0, pixel, 0.0, 0.0, 0.0, -pixel), min_basin_km2=0.05,
+                                feedback=feedback, warn_about_width=True)
+    assert any("hidrografia oficial" in a for a in feedback.avisos) is avisa
+    silencioso = _Avisos()
+    hydrology.analyse_hydrology(dem, (0.0, pixel, 0.0, 0.0, 0.0, -pixel), min_basin_km2=0.05,
+                                feedback=silencioso, warn_about_width=False)
+    assert not any("hidrografia oficial" in a for a in silencioso.avisos)
