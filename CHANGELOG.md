@@ -4,6 +4,12 @@ Mudanças relevantes do TopoTrail. Formato
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões em
 [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [Unreleased]
+
+### Corrigido
+
+- Rota impossível com zonas pedidas: a falha da rota abortava o algoritmo e levava junto as zonas e os mapas. Agora a falha vira erro no log e o resto é entregue. Só a rota, ou cancelamento, continua interrompendo.
+
 ## [1.4.1] - 2026-10-06
 
 ### Corrigido

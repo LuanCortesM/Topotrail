@@ -1363,6 +1363,11 @@ def _erro(mensagem):
         return Exception(mensagem)
 
 
+def _erro_do_algoritmo(excecao):
+    """True se a excecao e um erro escrito para o usuario (o tipo de _erro)."""
+    return isinstance(excecao, type(_erro("")))
+
+
 def project_crs_from_context(context):
     """CRS do projeto que o context carrega, ou None quando nao houver.
 
@@ -5078,40 +5083,61 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         corridor_path = None
         crossings_path = None
         alternatives = None
+        rota_falhou = None
         if start_point_file and end_point_file:
-            route_path, corridor_path, crossings_path, alternatives = save_access_route(
-                route_score,
-                transform,
-                proj,
-                start_point_file,
-                end_point_file,
-                output_path,
-                route_buffer_m,
-                route_margin_m,
-                feedback,
-                dem_data,
-                output_crs,
-                debug_log_path,
-                cost_model=route_cost_model,
-                contrast=route_contrast,
-                penalty_mask=penalty_mask,
-                via_path=via_points_file or None,
-                optimise_order=optimise_order,
-                stream_mask=stream_mask if stream_mask.any() else None,
-                stream_area=stream_area, stream_class=stream_class,
-                field_speed_kmh=field_speed_kmh,
-                alternatives_pct=alternatives_pct,
-                slope_array=slope_data,
-                max_slope=max_slope,
-                lake_mask=(lagos_mask if not streams_from_dem and lagos_mask.any() else None),
-            )
-            append_diagnostic_log(
-                debug_log_path,
-                "rota_e_corredor_salvos",
-                rota=file_diagnostics(route_path),
-                corredor=file_diagnostics(corridor_path),
-                travessias=file_diagnostics(crossings_path) if crossings_path else None,
-            )
+            try:
+                route_path, corridor_path, crossings_path, alternatives = save_access_route(
+                    route_score,
+                    transform,
+                    proj,
+                    start_point_file,
+                    end_point_file,
+                    output_path,
+                    route_buffer_m,
+                    route_margin_m,
+                    feedback,
+                    dem_data,
+                    output_crs,
+                    debug_log_path,
+                    cost_model=route_cost_model,
+                    contrast=route_contrast,
+                    penalty_mask=penalty_mask,
+                    via_path=via_points_file or None,
+                    optimise_order=optimise_order,
+                    stream_mask=stream_mask if stream_mask.any() else None,
+                    stream_area=stream_area, stream_class=stream_class,
+                    field_speed_kmh=field_speed_kmh,
+                    alternatives_pct=alternatives_pct,
+                    slope_array=slope_data,
+                    max_slope=max_slope,
+                    lake_mask=(lagos_mask if not streams_from_dem and lagos_mask.any() else None),
+                )
+            except Exception as erro:
+                # A rota e o ultimo produto antes das zonas: se ela falhava, o
+                # algoritmo inteiro abortava e levava junto as zonas e os tres
+                # mapas ja calculados. Medido na bateria de 51 trilhas
+                # consagradas: com a declividade maxima de 55%, 30 delas nao
+                # ligam -- e quem pediu zonas de amostragem ficava sem nada.
+                # Quando as zonas foram pedidas, a falha da rota vira aviso e o
+                # resto e entregue. Rota sozinha, ou cancelamento, continua
+                # interrompendo, como antes.
+                if (not generate_zones or not _erro_do_algoritmo(erro)
+                        or (feedback is not None and feedback.isCanceled())):
+                    raise
+                rota_falhou = str(erro)
+                append_diagnostic_log(debug_log_path, "rota_nao_gerada", erro=rota_falhou)
+                if feedback:
+                    feedback.reportError(
+                        "A rota nao foi gerada: {} As zonas e os mapas sao entregues mesmo "
+                        "assim.".format(rota_falhou), False)
+            else:
+                append_diagnostic_log(
+                    debug_log_path,
+                    "rota_e_corredor_salvos",
+                    rota=file_diagnostics(route_path),
+                    corredor=file_diagnostics(corridor_path),
+                    travessias=file_diagnostics(crossings_path) if crossings_path else None,
+                )
         gdf = None
         if generate_zones:
             if walkability_zones:
@@ -5177,6 +5203,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         if alternatives:
             result[self.OUTPUT_ALTERNATIVES] = alternatives[0]
             result[self.OUTPUT_SLACK] = alternatives[1]
+        if rota_falhou and feedback:
+            feedback.pushWarning(
+                "Concluido SEM a rota (as zonas e os mapas foram gerados): " + rota_falhou)
         result[self.OUTPUT_DEBUG_LOG] = debug_log_path
         # QgsProcessingParameterFileDestination declara automaticamente uma
         # saida com o mesmo nome do parametro, e ate aqui ela nunca era

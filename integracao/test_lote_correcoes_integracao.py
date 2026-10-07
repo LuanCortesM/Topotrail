@@ -419,3 +419,43 @@ def test_vetorizacao_nao_despeja_aviso_do_geos(plugin):
     assert len(resultado) >= 1
     assert all(g.IsValid() for g in resultado.geometries)
     assert abs(sum(g.GetArea() for g in resultado.geometries) - 2 * 900.0) < 1e-6
+
+
+# ---- rota impossivel nao leva junto as zonas -------------------------------
+
+@pytest.fixture()
+def paredao(tmp_path):
+    """Cena cortada de alto a baixo por um degrau de 120 m entre duas colunas:
+    a declividade ali passa de 300%, e os pontos ficam um de cada lado."""
+    import numpy as np
+
+    matriz = relevo()
+    matriz[:, 30:] += np.float32(120.0)
+    dem = escrever_dem(str(tmp_path / "paredao.tif"), matriz)
+    inicio = escrever_pontos(str(tmp_path / "w0.geojson"), [(500300.0, 7499100.0)])
+    fim = escrever_pontos(str(tmp_path / "w1.geojson"), [(501500.0, 7499100.0)])
+    return dem, inicio, fim
+
+
+def test_rota_impossivel_ainda_entrega_zonas_e_mapas(executar, paredao, tmp_path):
+    """Antes: a falha da rota abortava o algoritmo e as zonas, pedidas e ja
+    calculaveis, nao eram geradas (51 trilhas consagradas: 30 nao ligam a 55%)."""
+    dem, inicio, fim = paredao
+    resultado, feedback, erro = executar(
+        parametros_base(dem, str(tmp_path / "z.gpkg"), inicio, fim))
+    assert erro is None, erro
+    assert "OUTPUT_ROUTE" not in resultado
+    assert os.path.isfile(resultado["OUTPUT_VECTOR"])
+    for chave in ("OUTPUT_SCORE_RASTER", "OUTPUT_RISK_RASTER", "OUTPUT_TRANSITABILITY"):
+        assert os.path.isfile(resultado[chave])
+    assert feedback.procurar("ERRO: A rota nao foi gerada")
+    assert feedback.procurar("Concluido SEM a rota")
+
+
+def test_rota_impossivel_sem_zonas_continua_sendo_erro(executar, paredao, tmp_path):
+    """Quem pediu so a rota recebe o erro, como antes: nao ha produto a salvar."""
+    dem, inicio, fim = paredao
+    resultado, feedback, erro = executar(
+        parametros_base(dem, str(tmp_path / "r.gpkg"), inicio, fim, GENERATE_ZONES=False))
+    assert resultado is None
+    assert erro is not None and "conectar" in str(erro)
