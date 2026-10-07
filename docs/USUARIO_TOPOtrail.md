@@ -145,7 +145,9 @@ loaded into the project, styled.
 
 The route carries **two durations, for the same line**. `tempo_h` is Tobler
 pace — an unburdened walker on an existing path, maximum 6 km/h on a gentle
-descent. `tempo_campo_h` is the same route rescaled to 2.4 km/h, the median pace
+descent — along the chosen line. It leaves out the terrain slowdown and the ford
+factors: they steer the route, they are not time. The cost the route minimised,
+with them, is `custo`. `tempo_campo_h` is the same route rescaled to 2.4 km/h, the median pace
 measured on timed field-survey tracks. The path is identical in both
 cases: maximum speed changes the duration, not the alignment. Neither is a
 schedule.

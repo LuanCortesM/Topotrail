@@ -354,6 +354,15 @@ também traz `tempo_campo_h`, a mesma rota reescalada para
 E Tobler descreve um caminhante sem carga sobre trilha existente: é estimativa de
 esforço relativo, não previsão de horário.
 
+O retardo, como os fatores de vau, escolhe a linha; não é tempo. Ajustado contra
+trajetos de campo, ele não previu ritmo (`docs/VALIDACAO.md`, 6c). Por isso a
+duração que a rota relata, `tempo_h`, é só o primeiro fator somado ao longo das
+células escolhidas, e `tempo_campo_h` reescala esse valor; o custo acumulado,
+com retardo e vaus, fica em `custo`. Até a 1.4.1, `tempo_h` era o custo
+acumulado: em 51 trilhas consagradas isso inflava a duração de 1,10 a 1,91 vez
+(mediana 1,39), mais onde o terreno era pior, e o fator de campo, ajustado sobre
+o Tobler puro, multiplicava a inflação.
+
 ### A busca
 
 O caminho é obtido por **A\*** sobre a vizinhança de oito células, com heurística

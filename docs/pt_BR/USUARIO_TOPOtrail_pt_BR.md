@@ -149,7 +149,9 @@ carregados no projeto, já estilizados.
 
 A rota traz **duas durações para a mesma linha**. `tempo_h` é o ritmo de Tobler —
 um caminhante sem carga sobre trilha existente, máximo de 6 km/h numa descida
-suave. `tempo_campo_h` é a mesma rota reescalada para 2,4 km/h, o ritmo mediano
+suave — ao longo da linha escolhida. Ficam de fora o retardo por terreno e os
+fatores de vau: eles orientam a rota, não são tempo. O custo que a rota
+minimizou, com eles, fica em `custo`. `tempo_campo_h` é a mesma rota reescalada para 2,4 km/h, o ritmo mediano
 medido em trajetos de levantamento com marcação de tempo. O traçado é idêntico
 nos dois casos: a velocidade máxima altera a duração, não o alinhamento. Nenhuma
 das duas é previsão de horário.

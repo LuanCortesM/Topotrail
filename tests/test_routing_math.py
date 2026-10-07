@@ -527,3 +527,29 @@ def test_a_corner_only_contact_is_diagnosed_as_such(algorithm):
 def test_duration_text_carries_the_minutes_into_the_hour(algorithm, horas, texto):
     # Arredondar so a fracao gravava "4h60" no atributo tempo_hms.
     assert algorithm.format_hours(horas) == texto
+
+
+def test_reported_duration_is_pure_tobler_not_the_preference_cost(algorithm):
+    """The route's duration leaves out the terrain slowdown: it is preference,
+    not pace (VALIDACAO.md, 6c). Same path, slowdown 3 everywhere: the cost
+    triples, the duration does not move. Hand-computed: 10 orthogonal steps of
+    30 m climbing 3 m each (+10%), then 5 diagonal steps on the flat."""
+    elevation = np.full((12, 22), 100.0)
+    for col in range(1, 11):
+        elevation[5, col] = 100.0 + 3.0 * col
+    elevation[5, 11:] = 130.0
+    elevation[6:12, :] = 130.0
+    cells = [(5, c) for c in range(0, 11)] + [(5 + k, 10 + k) for k in range(1, 6)]
+    elevation[5, 0] = 100.0
+    hours = algorithm.tobler_hours_along(cells, elevation, 30.0)
+    subida = 10 * (0.030 / (6.0 * math.exp(-3.5 * abs(0.10 + 0.05))))
+    plano = 5 * ((30.0 * math.sqrt(2) / 1000.0) / (6.0 * math.exp(-3.5 * 0.05)))
+    assert hours == pytest.approx(subida + plano, rel=1e-9)
+    _, custo1 = algorithm.least_cost_path(
+        np.ones((12, 22)), (7, 2), (7, 20), elevation=np.full((12, 22), 1.0),
+        pixel_size_m=30.0, anisotropic=True)
+    caminho3, custo3 = algorithm.least_cost_path(
+        np.full((12, 22), 3.0), (7, 2), (7, 20), elevation=np.full((12, 22), 1.0),
+        pixel_size_m=30.0, anisotropic=True)
+    assert custo3 == pytest.approx(3.0 * custo1, rel=1e-9)
+    assert algorithm.tobler_hours_along(caminho3, np.full((12, 22), 1.0), 30.0) == pytest.approx(custo1, rel=1e-9)

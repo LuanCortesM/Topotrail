@@ -156,3 +156,17 @@ def test_parametros_de_especialista_ficam_em_avancados(plugin, qgis_app):
         assert algoritmo.parameterDefinition(chave).flags() & avancado, chave
     for chave in ("INPUT_DEM", "START_POINT_FILE", "ROUTE_ALTERNATIVES_PCT", "OUTPUT_FILE"):
         assert not (algoritmo.parameterDefinition(chave).flags() & avancado), chave
+
+
+def test_a_duracao_da_rota_e_o_tobler_puro_e_o_custo_fica_a_parte(executar, ogr, tmp_path):
+    """tempo_h e o Tobler da rota sem o retardo por terreno; o custo que o A*
+    minimizou (com retardo e vaus) continua em `custo` e e maior."""
+    resultado, feedback, erro = executar(_parametros(str(tmp_path / "t.gpkg")))
+    assert erro is None, erro
+    fonte, feicao = _primeira_feicao(ogr, resultado["OUTPUT_ROUTE"])
+    tempo, custo = feicao.GetField("tempo_h"), feicao.GetField("custo")
+    assert 0 < tempo < custo
+    eventos = _eventos(resultado["OUTPUT_DEBUG_LOG"])
+    rota = [e for e in eventos if e.get("event") == "rota_calculada"][-1]
+    assert rota["tempo_tobler_h"] == pytest.approx(tempo)
+    assert rota["custo_acumulado"] == pytest.approx(custo)

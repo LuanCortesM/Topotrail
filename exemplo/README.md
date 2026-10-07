@@ -74,12 +74,12 @@ Eight files in `saida/`, which are the seven products plus the diagnostic log:
 
 ### The numbers to check
 
-These are the values `executar.py` compares, measured with TopoTrail **1.3.0** and unchanged in **1.4.0** and **1.4.1** (the options added in 1.4.0 are all off by default):
+These are the values `executar.py` compares. The route is the one measured with TopoTrail **1.3.0**, unchanged since. The duration changed after 1.4.1: `tempo_h` is now Tobler's time along the route, without the terrain slowdown and the ford factors, which express preference and not pace. Up to 1.4.1 it reported the accumulated cost, 6.48 h, which is still in `custo`.
 
 | Quantity | Attribute | Expected |
 |---|---|---|
 | Route length | `compr_m` | **14404.5** m |
-| Walking time, Tobler pace | `tempo_h` / `tempo_hms` | **6.48** h — **6h29** |
+| Walking time, Tobler pace | `tempo_h` / `tempo_hms` | **3.98** h — **3h59** |
 | Accumulated ascent | `ganho_m` | **982.6** m |
 | Accumulated descent | `perda_m` | **663.1** m |
 | Highest point on the route | `alt_max_m` | **1551.1** m |
@@ -99,7 +99,7 @@ than as a contract:
   and its lowest point is 910.8 m. It passes within 21.2 m — half a cell
   diagonal — of each of the three declared points, which is as close as a route
   made of cell centres can pass;
-* `tempo_campo_h` is **16.21 h** (16h12). It is the same route rescaled to the
+* `tempo_campo_h` is **9.96 h** (9h57). It is the same route rescaled to the
   2.4 km/h median measured in field survey work: Tobler's 6 km/h maximum is an
   unburdened walker on a path, and multiplying the maximum speed by a constant
   divides every cost by it, so the **path does not change** — only the duration;

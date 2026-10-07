@@ -381,6 +381,15 @@ route therefore also carries `tempo_campo_h`, the same route rescaled to
 And Tobler describes an unburdened walker on an existing path: it estimates
 relative effort, not a schedule.
 
+The slowdown, like the ford factors, chooses the line; it is not time. Fitted
+against field tracks it did not predict pace (`docs/VALIDACAO.md`, 6c). So the
+duration the route reports, `tempo_h`, is the first factor alone summed along
+the chosen cells, and `tempo_campo_h` rescales that; the accumulated cost, with
+slowdown and fords, is kept in `custo`. Until 1.4.1 `tempo_h` was the
+accumulated cost: over 51 well-known trails that inflated the duration by 1.10
+to 1.91 times (median 1.39), more where the terrain was worse, and the field
+factor, fitted on Tobler alone, multiplied the inflation.
+
 ### The search
 
 The path is found by **A\*** over the eight-cell neighbourhood, with a heuristic

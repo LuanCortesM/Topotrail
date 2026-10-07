@@ -30,8 +30,8 @@ SAIDA = os.path.join(PASTA, "saida")
 # versao do NumPy ou do GDAL; contagens sao inteiras e tem de bater exatamente.
 ESPERADO = {
     "comprimento_m": 14404.5,
-    "tempo_h": 6.48,
-    "tempo_hms": "6h29",
+    "tempo_h": 3.98,
+    "tempo_hms": "3h59",
     "ganho_m": 982.6,
     "perda_m": 663.1,
     "alt_max_m": 1551.1,

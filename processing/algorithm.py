@@ -2721,6 +2721,29 @@ def tobler_hours(delta_z, horizontal_m):
     return (horizontal_m / 1000.0) / speed_kmh
 
 
+def tobler_hours_along(path_cells, elevation, pixel_size_m):
+    """Tempo de Tobler puro ao longo de uma sequencia de celulas, em horas.
+
+    E o tempo que a rota leva a pe pela funcao de Tobler, sem o retardo por
+    terreno e sem os fatores de vau. Esses dois entram no custo que o A*
+    minimiza, porque exprimem preferencia: terreno suave e travessia rasa sao
+    preferiveis por risco, esforco e erosao. Mas nao sao tempo. O ajuste de
+    VALIDACAO.md (6c) deu o coeficiente do retardo indistinguivel de zero (e de
+    sinal trocado) contra o ritmo medido em campo. Na bateria de 51 trilhas
+    consagradas, relatar o custo acumulado como tempo inflava a duracao de 1,10
+    a 1,91 vez (mediana 1,39) conforme o terreno, e o fator de campo, ajustado
+    sobre o Tobler puro, multiplicava essa inflacao.
+    """
+    total = 0.0
+    for (r0, c0), (r1, c1) in zip(path_cells[:-1], path_cells[1:]):
+        horizontal_m = float(np.hypot(r1 - r0, c1 - c0)) * float(pixel_size_m)
+        delta_z = float(elevation[r1, c1] - elevation[r0, c0])
+        if horizontal_m <= 0 or not np.isfinite(delta_z):
+            continue
+        total += tobler_hours(delta_z, horizontal_m)
+    return total
+
+
 def format_hours(hours):
     """Duracao em horas decimais como '5h07'.
 
@@ -3482,10 +3505,15 @@ def save_access_route(
         "vertices": len(coordinates),
         "trechos": len(leg_costs),
     }
+    tempo_tobler = None
     if anisotropic:
-        # No modelo de Tobler o custo acumulado tem unidade: horas.
-        route_attributes["tempo_h"] = float(accumulated_cost)
-        route_attributes["tempo_hms"] = format_hours(accumulated_cost)
+        # O custo acumulado tem unidade de horas, mas inclui o retardo por terreno
+        # e os vaus, que sao preferencia e nao tempo: a duracao e o Tobler puro
+        # ao longo da rota escolhida (ver tobler_hours_along). O custo continua
+        # no atributo "custo".
+        tempo_tobler = tobler_hours_along(path_cells, elevation_crop, pixel_size_m)
+        route_attributes["tempo_h"] = float(tempo_tobler)
+        route_attributes["tempo_hms"] = format_hours(tempo_tobler)
         # A duracao de Tobler e otimista para trabalho de campo por um fator de
         # 1,7 a 3,1, medido contra 65 km de trajetos de levantamento com marcacao
         # de tempo. Como multiplicar a velocidade maxima por uma constante divide
@@ -3493,7 +3521,7 @@ def save_access_route(
         # Por isso a estimativa de campo e uma simples reescala, e sai ao lado da
         # de Tobler em vez de substitui-la: o usuario ve as duas e escolhe.
         fator_campo = TOBLER_MAX_SPEED_KMH / float(field_speed_kmh)
-        tempo_campo = float(accumulated_cost) * fator_campo
+        tempo_campo = float(tempo_tobler) * fator_campo
         route_attributes["tempo_campo_h"] = tempo_campo
         route_attributes["tempo_campo_hms"] = format_hours(tempo_campo)
         route_attributes["velocidade_campo_kmh"] = float(field_speed_kmh)
@@ -3503,7 +3531,7 @@ def save_access_route(
                 "maxima) e {:.2f} h em ritmo de levantamento de campo ({:.1f} km/h, medido "
                 "em inventario botanico na caatinga). A rota e a mesma nos dois casos: a velocidade "
                 "maxima altera a duracao, nao o tracado.".format(
-                    float(accumulated_cost), TOBLER_MAX_SPEED_KMH,
+                    float(tempo_tobler), TOBLER_MAX_SPEED_KMH,
                     tempo_campo, float(field_speed_kmh)))
     if elevation_array is not None:
         route_altitudes = [
@@ -3636,13 +3664,14 @@ def save_access_route(
                 feedback.pushInfo(
                     "Tempo estimado de caminhada (Tobler, anisotropico): {:.2f} h "
                     "({}), velocidade media {:.2f} km/h.".format(
-                        accumulated_cost, format_hours(accumulated_cost),
-                        (length / 1000.0) / max(accumulated_cost, 1e-9))
+                        tempo_tobler, format_hours(tempo_tobler),
+                        (length / 1000.0) / max(tempo_tobler, 1e-9))
                 )
     append_diagnostic_log(
         log_path,
         "rota_calculada",
         custo_acumulado=float(accumulated_cost),
+        tempo_tobler_h=float(tempo_tobler) if tempo_tobler is not None else None,
         celulas_percorridas=int(len(path_cells)),
         vertices=int(len(coordinates)),
         comprimento_m=float(route_length_m) if np.isfinite(route_length_m) else None,

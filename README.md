@@ -409,11 +409,16 @@ and returns a real unit:
 
 Maximum speed is not on the flat but on a gentle descent, and that asymmetry is
 precisely what an isotropic surface cannot express. Suitability is folded in as
-a dimensionless slowdown — perfect terrain walks at Tobler speed, the worst
-terrain takes three times as long — so the accumulated cost is **hours**, and
-the route carries `tempo_h` as an attribute.
+a dimensionless slowdown — perfect terrain costs Tobler time, the worst
+terrain three times as much — so the accumulated cost is in hours and is kept
+in `custo`. The slowdown, like the ford factors, expresses preference and not
+pace: fitted against field tracks it did not predict speed (`docs/VALIDACAO.md`,
+6c). So the duration the route carries, `tempo_h`, is Tobler's time along the
+chosen line without them. Up to 1.4.1 `tempo_h` was the accumulated cost, which
+inflated the duration by 1.10 to 1.91 times (median 1.39) over 51 well-known
+trails.
 
-On the test area a 36.8 km route came out at 10h15, averaging 3.59 km/h. With
+On the test area, at the time, a 36.8 km route came out at 10h15, averaging 3.59 km/h. With
 watercourses avoided and the two new criteria enabled, 44.5 km at 15h25 and
 2.89 km/h. Those are numbers a field team can plan around; `custo = 1356.70`
 was not.

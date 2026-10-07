@@ -6,6 +6,10 @@ Mudanças relevantes do TopoTrail. Formato
 
 ## [Unreleased]
 
+### Alterado
+
+- `tempo_h` e `tempo_campo_h` passam a ser o tempo de Tobler ao longo da rota, sem o retardo por terreno e sem os fatores de vau, que exprimem preferência e não ritmo. O custo acumulado continua em `custo`. Em 51 trilhas consagradas o valor antigo inflava a duração de 1,10 a 1,91 vez (mediana 1,39). No exemplo, 6,48 h passam a 3,98 h; a rota não muda.
+
 ### Corrigido
 
 - Rota impossível com zonas pedidas: a falha da rota abortava o algoritmo e levava junto as zonas e os mapas. Agora a falha vira erro no log e o resto é entregue. Só a rota, ou cancelamento, continua interrompendo.
