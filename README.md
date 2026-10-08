@@ -205,7 +205,7 @@ time, accumulated ascent and number of watercourse crossings.
 | Potential access zones | `….gpkg` / `.shp` / `.kml` | polygons with `area_m2`, `area_ha`; the log says how much of the area's altitude, aspect and wetness they cover |
 | Suggested route | `…_rota.gpkg` | `compr_m`, `tempo_h` (Tobler), `tempo_campo_h` (field pace), altitudes, number of legs |
 | Access corridor | `…_corredor.gpkg` | buffer of the route, in metres |
-| Watercourse crossings | `…_travessias.gpkg` | one point per crossing: basin area, class, warning |
+| Watercourse crossings | `…_travessias.gpkg` | one point per event — a crossing, or a stretch where the route runs alongside a watercourse (`tipo`) — with basin area, class, length (`extensao_m`) and a warning |
 | Alternatives corridor (optional) | `…_alternativas.gpkg` | every cell on some path at most *x*% costlier than the route; `area_ha`, `afastamento_max_m` |
 | Slack over the optimal cost (optional) | `…_folga.tif` | per cell, how much costlier (%) the best path through it is |
 | Diagnostic log | `…_diagnostico_topotrail.log` | one JSON record per step, for reproducibility |
@@ -323,8 +323,12 @@ The network then enters the model in two different ways, on purpose:
   (p = 0.02), and worse in 11 of 13 valley-floor trails.
 
 - **Every crossing is written to its own layer** (`…_travessias.gpkg`): one
-  point per crossing of the channel axis, with the contributing area, the class
-  and a warning field. This is the safety valve: the DEM knows the size of the
+  point per event on the channel axis, with the contributing area, the class, the
+  length and a warning field. Contacts less than 150 m apart along the route are
+  one event, and an event longer than that is reported as a stretch *alongside*
+  the watercourse rather than a crossing: a route that follows a stream touches
+  its one-cell channel line every few cells (on the Batedor trail, 14 "crossings"
+  that were one route walking up the stream valley). This is the safety valve: the DEM knows the size of the
   basin, not today's depth or current. Check each crossing in the field, and
   lower the ceiling if the season or the region calls for it.
 

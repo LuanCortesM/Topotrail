@@ -64,7 +64,7 @@ The first two are always produced. The rest are ticked in step 2.
 | Potential access zones | `….gpkg` / `.shp` / `.kml` | Polygons with `value`, `area_m2`, `area_ha`. The log reports in how many of 10 altitude bands (equal width, in metres), aspect bands and wetness bands of the area the zones are present, and warns when they miss part of the altitude gradient, with what to do (turn on altitude bands). It also reminds that it only sees relief: check land cover (e.g. MapBiomas) before choosing sampling sites. |
 | Suggested route | `…_rota.gpkg` | `compr_m`, `tempo_h`, `tempo_hms`, `tempo_campo_h`, `ganho_m`, `perda_m`, altitudes, number of legs. |
 | Access corridor | `…_corredor.gpkg` | Buffer of the route, `buffer_m` being the **radius**. |
-| Watercourse crossings | `…_travessias.gpkg` | One point per crossing of the channel axis: basin area, class, field-check warning. |
+| Watercourse crossings | `…_travessias.gpkg` | One point per event: a crossing, or a stretch where the route runs alongside a watercourse (`tipo`), with basin area, class, length (`extensao_m`) and a field-check warning. A stretch alongside a stream can flood after rain. |
 
 Plus `…_diagnostico_topotrail.log`: one JSON record per stage, with the plugin
 version, the versions of Python, GDAL and the operating system, every parameter

@@ -1608,10 +1608,13 @@ def detect_stream_crossings(path_cells, stream_mask, crossing_area, crossing_cla
     crossings = []
     run = None
     anterior = None
+    percorrido = 0.0          # distancia ao longo da rota, em celulas
     for cell in _com_travessias_diagonais(path_cells, stream_mask, crossing_area) + [None]:
         on = False
         if cell is not None:
             row, col = cell
+            if anterior is not None:
+                percorrido += float(np.hypot(row - anterior[0], col - anterior[1]))
             if 0 <= row < stream_mask.shape[0] and 0 <= col < stream_mask.shape[1]:
                 on = bool(stream_mask[row, col])
         if on:
@@ -1619,11 +1622,12 @@ def detect_stream_crossings(path_cells, stream_mask, crossing_area, crossing_cla
             k = int(crossing_class[row, col])
             if run is None:
                 run = {"entrada": (row, col), "area_km2": a, "classe": k,
-                       "celulas": 1, "passos": 0.0}
+                       "celulas": 1, "passos": 0.0, "inicio": percorrido, "fim": percorrido}
             else:
                 run["area_km2"] = max(run["area_km2"], a)
                 run["classe"] = max(run["classe"], k)
                 run["celulas"] += 1
+                run["fim"] = percorrido
                 if anterior is not None:
                     run["passos"] += float(np.hypot(row - anterior[0], col - anterior[1]))
         elif run is not None:
@@ -1633,6 +1637,39 @@ def detect_stream_crossings(path_cells, stream_mask, crossing_area, crossing_cla
             run = None
         anterior = cell
     return crossings
+
+
+# Contatos com a drenagem separados por menos que isto, ao longo da rota, sao um
+# evento so. Desde que a drenagem so informa, a rota pode acompanhar um rio, e a
+# linha do canal (uma celula de largura) toca a da rota a cada poucas celulas: no
+# Batedor eram 14 "travessias" num trecho em que a rota segue o corrego. Um evento
+# que se estende por mais que isto e um trecho junto ao curso, nao uma travessia.
+STREAM_CONTACT_MERGE_M = 150.0
+
+
+def merge_stream_contacts(contacts, pixel_size_m, merge_m=STREAM_CONTACT_MERGE_M):
+    """Funde contatos proximos e classifica cada evento: travessia ou trecho junto ao curso.
+
+    Cada contato vem de detect_stream_crossings, com `inicio` e `fim` em celulas
+    ao longo da rota. Devolve dicts com a entrada do primeiro contato, a maior
+    area, a pior classe, `contatos`, `extensao_m` (do primeiro toque ao ultimo) e
+    `tipo` ("travessia" ou "junto ao curso").
+    """
+    passo = float(pixel_size_m)
+    eventos = []
+    for c in contacts:
+        if eventos and (c["inicio"] - eventos[-1]["fim"]) * passo <= merge_m:
+            e = eventos[-1]
+            e["fim"] = c["fim"]
+            e["area_km2"] = max(e["area_km2"], c["area_km2"])
+            e["classe"] = max(e["classe"], c["classe"])
+            e["contatos"] += 1
+        else:
+            eventos.append(dict(c, contatos=1))
+    for e in eventos:
+        e["extensao_m"] = max(e["fim"] - e["inicio"], e.get("passos") or 1.0) * passo
+        e["tipo"] = "junto ao curso" if e["extensao_m"] > merge_m else "travessia"
+    return eventos
 
 
 def _ford_labels():
@@ -3765,7 +3802,9 @@ def save_access_route(
     crossings = []
     if stream_mask is not None and stream_area is not None and stream_class is not None:
         global_cells = [(row + row_min, col + col_min) for row, col in path_cells]
-        crossings = detect_stream_crossings(global_cells, stream_mask, stream_area, stream_class)
+        crossings = merge_stream_contacts(
+            detect_stream_crossings(global_cells, stream_mask, stream_area, stream_class),
+            float(pixel_size_m or abs(transform[1])))
         if crossings:
             labels = _ford_labels()
             geometries, attributes = [], []
@@ -3777,9 +3816,10 @@ def save_access_route(
                 k = min(item["classe"], len(labels) - 1)
                 attributes.append({
                     "n": number,
+                    "tipo": item["tipo"],
                     "bacia_km2": round(float(item["area_km2"]), 3),
                     "classe": labels[k],
-                    "extensao_na_faixa_m": round(float(item.get("passos") or item["celulas"]) * float(pixel_size_m or abs(transform[1])), 1),
+                    "extensao_m": round(float(item["extensao_m"]), 1),
                     "aviso": ("Estimado so pelo relevo (area de contribuicao). Profundidade e "
                               "corrente variam com a estacao e a chuva: confira em campo antes de usar."),
                 })
@@ -3790,11 +3830,17 @@ def save_access_route(
                 f"{base_path}_travessias.gpkg", "travessias", feedback)
             crossings_set.to_file(crossings_path, driver="GPKG", layer_name="travessias")
             if feedback:
+                n_trav = sum(1 for a in attributes if a["tipo"] == "travessia")
+                junto = [a for a in attributes if a["tipo"] != "travessia"]
                 feedback.pushInfo(
-                    "A rota cruza {} curso(s) d'agua: {}. Travessias salvas em {}. "
-                    "Confira cada uma em campo: o MDE nao conhece vazao nem estacao.".format(
-                        len(crossings),
-                        "; ".join("#{} {} ({:.1f} km2)".format(a["n"], a["classe"], a["bacia_km2"]) for a in attributes),
+                    "A rota cruza {} curso(s) d'agua e segue junto a curso d'agua em {} trecho(s), "
+                    "somando {:.1f} km: {}. Salvo em {}. Confira em campo: o MDE nao conhece "
+                    "vazao nem estacao, e trecho junto ao curso pode alagar na chuva.".format(
+                        n_trav, len(junto), sum(a["extensao_m"] for a in junto) / 1000.0,
+                        "; ".join("#{} {} {} ({:.1f} km2{})".format(
+                            a["n"], a["tipo"], a["classe"], a["bacia_km2"],
+                            "" if a["tipo"] == "travessia" else ", {:.0f} m".format(a["extensao_m"]))
+                            for a in attributes),
                         crossings_path))
         elif feedback:
             feedback.pushInfo("A rota nao cruza nenhum curso d'agua da rede extraida.")

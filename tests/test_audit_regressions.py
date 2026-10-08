@@ -194,6 +194,26 @@ def test_stream_crossing_factors_classify_by_basin_area_and_only_the_ceiling_blo
     assert penalty is None and route_mask.all() and not barrier.any()
 
 
+def test_contacts_along_a_stream_become_one_stretch_and_far_crossings_stay_apart(algorithm):
+    """Rota que acompanha um corrego toca o eixo a cada poucas celulas: isso e um
+    trecho junto ao curso, nao 14 travessias (Batedor). Dois cruzamentos longe um
+    do outro continuam sendo duas travessias."""
+    import numpy as np
+    shape = (5, 40)
+    eixo = np.zeros(shape, bool)
+    eixo[2, 2:16:3] = True                    # o corrego encosta na rota a cada 3 celulas
+    eixo[:, 30] = True                        # e um riacho atravessa a rota longe dali
+    area = np.where(eixo, 1.2, np.nan).astype(np.float32); area[:, 30] = 4.0
+    classes = np.where(eixo, 0, -1).astype(np.int8); classes[:, 30] = 1
+    caminho = [(2, c) for c in range(40)]
+    contatos = algorithm.detect_stream_crossings(caminho, eixo, area, classes)
+    assert len(contatos) == 6
+    eventos = algorithm.merge_stream_contacts(contatos, 30.0)
+    assert [e["tipo"] for e in eventos] == ["junto ao curso", "travessia"]
+    assert eventos[0]["contatos"] == 5 and abs(eventos[0]["extensao_m"] - 12 * 30.0) < 1e-6
+    assert eventos[1]["classe"] == 1 and abs(eventos[1]["area_km2"] - 4.0) < 1e-6
+
+
 def test_detect_stream_crossings_counts_runs_not_cells(algorithm):
     import numpy as np
     shape = (5, 12)
