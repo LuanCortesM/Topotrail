@@ -2035,6 +2035,147 @@ def binarize_by_altitude_bands(score_array, dem_array, percentile, band_size_m, 
     return binary
 
 
+# Representatividade das zonas: em quantas das 10 faixas da area analisada as
+# zonas estao presentes, para cada variavel do relevo. A altitude usa faixas de
+# mesma largura em metros -- e o gradiente que o pesquisador quer cobrir, e em
+# decis de area a ultima faixa das Carnaubas ia de 333 a 920 m. As demais usam
+# decis. Uma faixa conta como coberta se tiver ao menos 20% da parcela das
+# zonas que teria numa amostra proporcional a area; faixas com menos de 0,5% da
+# area (um pico isolado) nao entram na conta.
+REPRESENTATIVENESS_BINS = 10
+REPRESENTATIVENESS_MIN_RATIO = 0.2
+REPRESENTATIVENESS_MIN_AREA_SHARE = 0.005
+REPRESENTATIVENESS_WARN_BINS = 8
+REPRESENTATIVENESS_EQUAL_WIDTH = ("altitude",)
+_KS_MAX_SAMPLE = 200000
+
+
+def _ks_distance(a, b, rng=None):
+    """Estatistica D de Kolmogorov-Smirnov entre duas amostras (subamostradas)."""
+    rng = rng or np.random.default_rng(0)
+    if a.size > _KS_MAX_SAMPLE:
+        a = rng.choice(a, _KS_MAX_SAMPLE, replace=False)
+    if b.size > _KS_MAX_SAMPLE:
+        b = rng.choice(b, _KS_MAX_SAMPLE, replace=False)
+    a = np.sort(a)
+    b = np.sort(b)
+    pontos = np.concatenate([a, b])
+    fa = np.searchsorted(a, pontos, side="right") / a.size
+    fb = np.searchsorted(b, pontos, side="right") / b.size
+    return float(np.max(np.abs(fa - fb)))
+
+
+def northness(dem_array, transform):
+    """Cosseno do aspecto: +1 encosta voltada para o norte, -1 para o sul, 0 plano."""
+    d_linha, d_coluna = np.gradient(dem_array.astype(np.float64))
+    # linha cresce para o sul quando o pixel tem altura negativa (norte para cima):
+    # z subindo para o sul quer dizer encosta descendo para o norte.
+    d_norte = d_linha * (-np.sign(float(transform[5])) or 1.0)
+    modulo = np.hypot(d_linha, d_coluna)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(modulo > 0, d_norte / modulo, 0.0)
+
+
+def zone_representativeness(zone_mask, area_mask, variables):
+    """Quanto as zonas cobrem o relevo da area analisada.
+
+    O que se mede sao as variaveis do relevo que o plugin conhece. Na bateria de
+    06/10 (PE das Carnaubas, Mantiqueira) as zonas de acesso puxavam para o
+    fundo de vale e para cotas mais baixas, e nas Carnaubas tinham o dobro de
+    area agropecuaria do resto do parque -- esta ultima o MDE nao ve, e a
+    mensagem diz isso. Devolve {variavel: {...}} so para as variaveis com dados.
+    """
+    relatorio = {}
+    zona = np.asarray(zone_mask, bool) & np.asarray(area_mask, bool)
+    if zona.sum() < 10:
+        return relatorio
+    for nome, valores in variables.items():
+        if valores is None:
+            continue
+        valores = np.asarray(valores, dtype=np.float64)
+        ok = np.asarray(area_mask, bool) & np.isfinite(valores)
+        v_area = valores[ok]
+        v_zona = valores[zona & np.isfinite(valores)]
+        if v_area.size < 100 or v_zona.size < 10:
+            continue
+        if nome in REPRESENTATIVENESS_EQUAL_WIDTH:
+            limites = np.linspace(float(v_area.min()), float(v_area.max()), REPRESENTATIVENESS_BINS + 1)
+        else:
+            limites = np.unique(np.percentile(v_area, np.linspace(0, 100, REPRESENTATIVENESS_BINS + 1)))
+        faixas = len(limites) - 1
+        if faixas < 2 or limites[-1] <= limites[0]:
+            continue
+
+        def _parcela(v):
+            indice = np.clip(np.searchsorted(limites[1:-1], v, side="right"), 0, faixas - 1)
+            return np.bincount(indice, minlength=faixas) / float(v.size)
+
+        parcela = _parcela(v_zona)
+        parcela_area = _parcela(v_area)
+        consideradas = parcela_area >= REPRESENTATIVENESS_MIN_AREA_SHARE
+        cobertas = consideradas & (parcela >= REPRESENTATIVENESS_MIN_RATIO * parcela_area)
+        faltam = []
+        for i in range(faixas):
+            if consideradas[i] and not cobertas[i]:
+                if faltam and faltam[-1][1] == float(limites[i]):
+                    faltam[-1][1] = float(limites[i + 1])
+                else:
+                    faltam.append([float(limites[i]), float(limites[i + 1])])
+        resto = valores[ok & ~zona]
+        relatorio[nome] = {
+            "faixas": int(consideradas.sum()),
+            "faixas_cobertas": int(cobertas.sum()),
+            "largura_faixa": (round(float(limites[1] - limites[0]), 3)
+                              if nome in REPRESENTATIVENESS_EQUAL_WIDTH else None),
+            "parcela_area_por_faixa": [round(float(x), 3) for x in parcela_area],
+            "parcela_por_faixa": [round(float(x), 3) for x in parcela],
+            "limites": [round(float(x), 3) for x in limites],
+            "faltam": faltam,
+            "ks_d": round(_ks_distance(v_zona, resto), 3) if resto.size >= 10 else None,
+            "mediana_zonas": round(float(np.median(v_zona)), 3),
+            "mediana_area": round(float(np.median(v_area)), 3),
+        }
+    return relatorio
+
+
+def describe_representativeness(relatorio, altitude_bands_on=False):
+    """(texto, aviso): a frase para o usuario e se ela deve sair como aviso."""
+    if not relatorio:
+        return None, False
+    nomes = {"altitude": "altitude", "face_norte": "face norte/sul",
+             "umidade": "umidade do terreno (TWI)"}
+    partes = []
+    for nome in ("altitude", "face_norte", "umidade"):
+        r = relatorio.get(nome)
+        if not r:
+            continue
+        texto = "{} em {} de {} faixas".format(nomes[nome], r["faixas_cobertas"], r["faixas"])
+        if r.get("largura_faixa"):
+            texto += " de {:.0f} m".format(r["largura_faixa"])
+        if nome == "altitude" and r["faltam"]:
+            texto += " (faltam {})".format("; ".join(
+                "{:.0f}-{:.0f} m".format(a, b) for a, b in r["faltam"]))
+        partes.append(texto)
+    frase = ("Representatividade das zonas no relevo da area analisada: as zonas estao "
+             "presentes em " + ", ".join(partes) + ".")
+    altitude = relatorio.get("altitude")
+    aviso = bool(altitude and altitude["faixas_cobertas"] < min(
+        REPRESENTATIVENESS_WARN_BINS, altitude["faixas"]))
+    if aviso:
+        if altitude_bands_on:
+            frase += (" Mesmo com as faixas de altitude, parte do gradiente fica de fora: se a "
+                      "amostragem precisa representa-lo, reduza a area minima de fragmento ou o "
+                      "percentil das zonas.")
+        else:
+            frase += (" As zonas nao cobrem o gradiente de altitude: se a amostragem precisa "
+                      "representa-lo, ligue 'Faixas de altitude' (as zonas passam a ser escolhidas "
+                      "dentro de cada faixa).")
+    frase += (" O plugin compara so o relevo. Zonas de acesso facil costumam coincidir com area "
+              "alterada: confira a cobertura do solo (por exemplo, MapBiomas) antes de definir "
+              "os pontos de amostragem.")
+    return frase, aviso
+
+
 def estimate_pixel_area_m2(transform, shape, proj):
     x_size = abs(float(transform[1]))
     y_size = abs(float(transform[5]))
@@ -5215,6 +5356,17 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 pixels_aptos_apos_filtro=int(np.sum(binary_result == 1)),
                 area_min_fragmento_ha=min_patch_area_ha,
             )
+            representatividade = zone_representativeness(
+                binary_result == 1, valid_mask & altitude_range_mask,
+                {"altitude": dem_data, "face_norte": northness(dem_data, transform),
+                 "umidade": twi_data})
+            append_diagnostic_log(debug_log_path, "representatividade_das_zonas", **representatividade)
+            frase, aviso = describe_representativeness(
+                representatividade,
+                altitude_bands_on=bool(altitude_band_threshold and threshold_is_auto
+                                       and not walkability_zones))
+            if frase and feedback:
+                (feedback.pushWarning if aviso else feedback.pushInfo)(frase)
             gdf = vectorize_binary_raster(binary_result, transform, proj, feedback)
             append_diagnostic_log(
                 debug_log_path,

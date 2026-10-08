@@ -6,6 +6,10 @@ Mudanças relevantes do TopoTrail. Formato
 
 ## [Unreleased]
 
+### Adicionado
+
+- Relatório de representatividade das zonas, no log, sem parâmetro novo: em quantas de 10 faixas da área as zonas estão, para altitude (faixas de mesma largura em metros), face norte/sul e umidade do terreno. Avisa quando falta parte do gradiente de altitude e sugere ligar as faixas de altitude; lembra que a cobertura do solo precisa ser conferida fora do plugin. Nas Carnaúbas, sem as faixas, as zonas ficavam em 2 de 10 faixas de 90 m; com elas, em 10 de 10.
+
 ### Alterado
 
 - Drenagem extraída do MDE ligada por padrão (Processing e janela), e ela passa a **informar** a rota, não a desviar: abaixo do teto vadeável as travessias são listadas com a classe de tamanho e não mudam o custo (até a 1.4.1 custavam 2×, 4× e 8× em toda a faixa de 30 m, o que tirava a rota dos fundos de vale; em 62 trilhas reais isso piorou a concordância em 32 e melhorou em 15). A travessia é contada no eixo do canal. Com MDE de 30 m ela achou 80% dos rios do OpenStreetMap e 23 de 27 travessias de rio em 51 trilhas consagradas. Em célula acima de 45 m, um aviso pede para conferir com a hidrografia oficial.

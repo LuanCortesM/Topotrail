@@ -61,7 +61,7 @@ The first two are always produced. The rest are ticked in step 2.
 | Topographic suitability | `…_adequabilidade.tif` | 0–1 per cell, the weighted combination of the criteria from step 3. |
 | Relative topographic risk | `…_risco_topografico.tif` | 0–1 per cell, a separate indicator of relative difficulty — not the complement of suitability. |
 | Transitability classes | `…_transitabilidade.tif` | Five absolute slope classes, with the colours and the legend written into the file in the language of the run. |
-| Potential access zones | `….gpkg` / `.shp` / `.kml` | Polygons with `value`, `area_m2`, `area_ha`. |
+| Potential access zones | `….gpkg` / `.shp` / `.kml` | Polygons with `value`, `area_m2`, `area_ha`. The log reports in how many of 10 altitude bands (equal width, in metres), aspect bands and wetness bands of the area the zones are present, and warns when they miss part of the altitude gradient, with what to do (turn on altitude bands). It also reminds that it only sees relief: check land cover (e.g. MapBiomas) before choosing sampling sites. |
 | Suggested route | `…_rota.gpkg` | `compr_m`, `tempo_h`, `tempo_hms`, `tempo_campo_h`, `ganho_m`, `perda_m`, altitudes, number of legs. |
 | Access corridor | `…_corredor.gpkg` | Buffer of the route, `buffer_m` being the **radius**. |
 | Watercourse crossings | `…_travessias.gpkg` | One point per crossing of the channel axis: basin area, class, field-check warning. |

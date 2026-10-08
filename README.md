@@ -202,10 +202,10 @@ time, accumulated ascent and number of watercourse crossings.
 | Continuous topographic suitability | `…_adequabilidade.tif` | 0–1 per cell |
 | Relative topographic risk | `…_risco_topografico.tif` | 0–1 per cell |
 | Transitability classes | `…_transitabilidade.tif` | 5 classes, legend and colours written into the file, in the active language |
-| Potential access zones | `….gpkg` / `.shp` / `.kml` | polygons with `area_m2`, `area_ha` |
+| Potential access zones | `….gpkg` / `.shp` / `.kml` | polygons with `area_m2`, `area_ha`; the log says how much of the area's altitude, aspect and wetness they cover |
 | Suggested route | `…_rota.gpkg` | `compr_m`, `tempo_h` (Tobler), `tempo_campo_h` (field pace), altitudes, number of legs |
 | Access corridor | `…_corredor.gpkg` | buffer of the route, in metres |
-| Watercourse crossings | `…_travessias.gpkg` | one point per crossing: basin area, class, cost factor, warning |
+| Watercourse crossings | `…_travessias.gpkg` | one point per crossing: basin area, class, warning |
 | Alternatives corridor (optional) | `…_alternativas.gpkg` | every cell on some path at most *x*% costlier than the route; `area_ha`, `afastamento_max_m` |
 | Slack over the optimal cost (optional) | `…_folga.tif` | per cell, how much costlier (%) the best path through it is |
 | Diagnostic log | `…_diagnostico_topotrail.log` | one JSON record per step, for reproducibility |

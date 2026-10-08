@@ -459,3 +459,20 @@ def test_rota_impossivel_sem_zonas_continua_sendo_erro(executar, paredao, tmp_pa
         parametros_base(dem, str(tmp_path / "r.gpkg"), inicio, fim, GENERATE_ZONES=False))
     assert resultado is None
     assert erro is not None and "conectar" in str(erro)
+
+
+def test_zonas_saem_com_o_relatorio_de_representatividade(executar, cena, tmp_path):
+    """Quem gera zonas fica sabendo em quantas faixas do relevo elas estao e que
+    a cobertura do solo precisa ser conferida fora do plugin."""
+    import json
+
+    dem, inicio, fim = cena
+    resultado, feedback, erro = executar(
+        parametros_base(dem, str(tmp_path / "rep.gpkg"), None, None))
+    assert erro is None, erro
+    assert feedback.procurar("Representatividade das zonas")
+    assert feedback.procurar("MapBiomas")
+    with open(resultado["OUTPUT_DEBUG_LOG"], encoding="utf-8") as log:
+        eventos = [json.loads(linha) for linha in log if linha.strip()]
+    rep = [e for e in eventos if e.get("event") == "representatividade_das_zonas"]
+    assert rep and rep[0]["altitude"]["faixas"] == 10

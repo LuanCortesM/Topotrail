@@ -63,7 +63,7 @@ Os dois primeiros saem sempre. Os demais são marcados na etapa 2.
 | Adequabilidade topográfica | `…_adequabilidade.tif` | 0 a 1 por célula, a combinação ponderada dos critérios da etapa 3. |
 | Risco topográfico relativo | `…_risco_topografico.tif` | 0 a 1 por célula, indicador próprio de dificuldade relativa — não é o complemento da adequabilidade. |
 | Classes de transitabilidade | `…_transitabilidade.tif` | Cinco classes absolutas de declividade, com as cores e a legenda gravadas no arquivo, no idioma da execução. |
-| Zonas de acesso potencial | `….gpkg` / `.shp` / `.kml` | Polígonos com `value`, `area_m2`, `area_ha`. |
+| Zonas de acesso potencial | `….gpkg` / `.shp` / `.kml` | Polígonos com `value`, `area_m2`, `area_ha`. O log diz em quantas de 10 faixas de altitude (de mesma largura, em metros), de face e de umidade da área as zonas estão, e avisa quando falta parte do gradiente de altitude, com o que fazer (ligar as faixas de altitude). Lembra também que ele só vê o relevo: confira a cobertura do solo (por exemplo, MapBiomas) antes de escolher os pontos de amostragem. |
 | Rota sugerida | `…_rota.gpkg` | `compr_m`, `tempo_h`, `tempo_hms`, `tempo_campo_h`, `ganho_m`, `perda_m`, altitudes, número de trechos. |
 | Corredor de acesso | `…_corredor.gpkg` | Buffer da rota; `buffer_m` é o **raio**. |
 | Travessias de cursos d'água | `…_travessias.gpkg` | Um ponto por travessia do eixo do canal: área de bacia, classe, aviso de conferência em campo. |
