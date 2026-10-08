@@ -181,7 +181,7 @@ rota, tempo de caminhada, ganho acumulado e número de travessias.
 | Zonas de acesso potencial | `….gpkg` / `.shp` / `.kml` | polígonos com `area_m2`, `area_ha` |
 | Rota sugerida | `…_rota.gpkg` | `compr_m`, `tempo_h` (Tobler), `tempo_campo_h`, altitudes, número de trechos |
 | Corredor de acesso | `…_corredor.gpkg` | buffer da rota; `buffer_m` é o raio |
-| Travessias de cursos d'água | `…_travessias.gpkg` | um ponto por travessia: área de bacia, classe, fator de custo, aviso |
+| Travessias de cursos d'água | `…_travessias.gpkg` | um ponto por travessia: área de bacia, classe, aviso |
 | Registro de diagnóstico | `…_diagnostico_topotrail.log` | um registro JSON por etapa, para reprodutibilidade |
 
 ## O mapa de transitabilidade

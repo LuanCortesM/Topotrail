@@ -66,7 +66,7 @@ Os dois primeiros saem sempre. Os demais são marcados na etapa 2.
 | Zonas de acesso potencial | `….gpkg` / `.shp` / `.kml` | Polígonos com `value`, `area_m2`, `area_ha`. |
 | Rota sugerida | `…_rota.gpkg` | `compr_m`, `tempo_h`, `tempo_hms`, `tempo_campo_h`, `ganho_m`, `perda_m`, altitudes, número de trechos. |
 | Corredor de acesso | `…_corredor.gpkg` | Buffer da rota; `buffer_m` é o **raio**. |
-| Travessias de cursos d'água | `…_travessias.gpkg` | Um ponto por travessia: área de bacia, classe, fator de custo, aviso de conferência em campo. |
+| Travessias de cursos d'água | `…_travessias.gpkg` | Um ponto por travessia do eixo do canal: área de bacia, classe, aviso de conferência em campo. |
 
 Mais o `…_diagnostico_topotrail.log`: um registro JSON por etapa, com a versão do
 plugin, as versões do Python, do GDAL e do sistema operacional, cada parâmetro
@@ -149,8 +149,8 @@ carregados no projeto, já estilizados.
 
 A rota traz **duas durações para a mesma linha**. `tempo_h` é o ritmo de Tobler —
 um caminhante sem carga sobre trilha existente, máximo de 6 km/h numa descida
-suave — ao longo da linha escolhida. Ficam de fora o retardo por terreno e os
-fatores de vau: eles orientam a rota, não são tempo. O custo que a rota
+suave — ao longo da linha escolhida. Fica de fora o retardo por terreno: ele
+orienta a rota, não é tempo. O custo que a rota
 minimizou, com eles, fica em `custo`. `tempo_campo_h` é a mesma rota reescalada para 2,4 km/h, o ritmo mediano
 medido em trajetos de levantamento com marcação de tempo. O traçado é idêntico
 nos dois casos: a velocidade máxima altera a duração, não o alinhamento. Nenhuma

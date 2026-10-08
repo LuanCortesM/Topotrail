@@ -29,13 +29,13 @@ SAIDA = os.path.join(PASTA, "saida")
 # Comprimentos e tempos sao continuos e admitem a ultima casa variar com a
 # versao do NumPy ou do GDAL; contagens sao inteiras e tem de bater exatamente.
 ESPERADO = {
-    "comprimento_m": 14404.5,
-    "tempo_h": 3.98,
-    "tempo_hms": "3h59",
-    "ganho_m": 982.6,
-    "perda_m": 663.1,
+    "comprimento_m": 14347.5,
+    "tempo_h": 3.96,
+    "tempo_hms": "3h58",
+    "ganho_m": 969.2,
+    "perda_m": 649.7,
     "alt_max_m": 1551.1,
-    "travessias": 3,
+    "travessias": 4,
     "zonas": 12,
 }
 

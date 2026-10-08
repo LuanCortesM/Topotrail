@@ -164,7 +164,11 @@ def test_the_route_gain_is_accumulated_climb_not_amplitude(algorithm):
 
 # ---- 5. travessia graduada de cursos d'agua ------------------------------
 
-def test_stream_crossing_factors_grade_by_basin_area(algorithm):
+def test_stream_crossing_factors_classify_by_basin_area_and_only_the_ceiling_blocks(algorithm):
+    """A drenagem informa e nao desvia: abaixo do teto o fator e 1, a classe
+    continua sendo a do tamanho do curso, e so acima do teto vira barreira.
+    Com 2x/4x/8x em toda a faixa a rota fugia dos fundos de vale (62 trilhas:
+    pior em 32, melhor em 15)."""
     import numpy as np
     shape = (7, 9)
     axis = np.zeros(shape, bool); axis[:, 2] = True; axis[:, 6] = True
@@ -175,14 +179,19 @@ def test_stream_crossing_factors_grade_by_basin_area(algorithm):
     factors, area, classes = algorithm.stream_crossing_factors(
         faixa, basin, 50.0, (0, 10.0, 0, 0, 0, -10.0), channel_axis=axis)
     assert np.all(factors[:, 0] == 1.0) and np.all(factors[:, 4] == 1.0) and np.all(factors[:, 8] == 1.0)
-    assert np.all(factors[:, 1:4] == 2.0), factors[0]          # faixa herda a area do eixo
+    assert np.all(factors[:, 1:4] == 1.0), factors[0]          # cabeceira: so informa
     assert np.all(~np.isfinite(factors[:, 5:8]))               # rio acima do teto: barreira
     assert np.all(classes[:, 1:4] == 0) and np.all(classes[:, 5:8] == len(algorithm.FORD_CLASSES))
     assert abs(float(area[3, 1]) - 1.5) < 1e-6 and abs(float(area[3, 7]) - 80.0) < 1e-6
-    # subindo o teto, o rio vira "rio pequeno" com fator 8, cruzavel
+    # subindo o teto, o rio vira "rio pequeno": cruzavel, sem custo extra
     factors2, _, classes2 = algorithm.stream_crossing_factors(
         faixa, basin, 500.0, (0, 10.0, 0, 0, 0, -10.0), channel_axis=axis)
-    assert np.all(factors2[:, 5:8] == 8.0) and np.all(classes2[:, 5:8] == 2)
+    assert np.all(factors2[:, 5:8] == 1.0) and np.all(classes2[:, 5:8] == 2)
+    # e a faixa vadeavel nao chega a virar penalidade na rota
+    valid = np.ones(shape, bool)
+    route_mask, _zone, penalty, barrier, _t = algorithm.combine_constraints(
+        valid.copy(), valid.copy(), None, factors2, algorithm.CONSTRAINT_AVOID)
+    assert penalty is None and route_mask.all() and not barrier.any()
 
 
 def test_detect_stream_crossings_counts_runs_not_cells(algorithm):

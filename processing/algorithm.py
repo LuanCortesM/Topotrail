@@ -223,11 +223,20 @@ CONSTRAINT_PENALTY_FACTOR = 8.0
 # classes abaixo sao um proxy declarado, nao uma medida de seguranca: cada
 # travessia sai listada num arquivo proprio para ser conferida em campo, e o
 # aviso diz que profundidade e corrente mudam com a chuva.
+#
+# A drenagem INFORMA a rota, nao a desvia: abaixo do teto vadeavel o fator e 1.
+# Ate a 1.4.1 as classes custavam 2x, 4x e 8x, cobrados em toda a faixa de
+# drenagem -- andar ao longo do rio custava o mesmo que atravessa-lo, e a rota
+# fugia dos fundos de vale. Medido em 62 trilhas reais (51 consagradas e 11 da
+# dissertacao): com esses fatores a concordancia piorou em 32 e melhorou em 15
+# (p = 0,02); nas trilhas de fundo de vale, piorou em 11 de 13. Com fator 1 a
+# rota volta ao que seria sem drenagem (igual em 56 de 61) e as travessias
+# continuam listadas com a classe. Acima do teto, o curso segue sendo barreira.
 FORD_CLASSES = (
     # (area maxima km2, fator de custo na travessia, chave do rotulo)
-    (2.0, 2.0, "ford_headwater"),
-    (10.0, 4.0, "ford_stream"),
-    (float("inf"), 8.0, "ford_river_small"),   # ate o teto vadeavel do usuario
+    (2.0, 1.0, "ford_headwater"),
+    (10.0, 1.0, "ford_stream"),
+    (float("inf"), 1.0, "ford_river_small"),   # ate o teto vadeavel do usuario
 )
 DEFAULT_STREAM_FORD_MAX_KM2 = 50.0            # acima disto: barreira para a rota
 
@@ -1933,9 +1942,9 @@ def combine_constraints(route_mask, zone_mask, layer_mask,
     * a camada de restricao do usuario segue o modo escolhido: no modo
       "evitar" vira barreira para a rota, no modo "encarecer" multiplica o
       custo por CONSTRAINT_PENALTY_FACTOR;
-    * a drenagem NUNCA e barreira por si: entra como fator graduado pelo
-      tamanho do curso, e so e intransponivel onde o fator ja veio infinito,
-      isto e, acima do teto vadeavel declarado pelo usuario. Um rio e uma
+    * a drenagem NUNCA e barreira por si: entra com o fator de FORD_CLASSES
+      (hoje 1, isto e, so informa) e so e intransponivel onde o fator ja veio
+      infinito, acima do teto vadeavel declarado pelo usuario. Um rio e uma
       linha, e toda rota de um vale ao vizinho precisa cruzar uma;
     * as zonas, no modo "evitar", excluem a camada do usuario, mas NAO a
       drenagem. Desde que a drenagem passou a vir ligada por padrao, tirar as
@@ -1969,11 +1978,11 @@ def combine_constraints(route_mask, zone_mask, layer_mask,
     if constraint_mode == CONSTRAINT_AVOID:
         if layer_mask is not None:
             zone_mask = zone_mask & ~layer_mask
-        tratamento = ("camada excluida das zonas e da rota; drenagem graduada pelo "
-                      "tamanho do curso na rota, mantida nas zonas")
+        tratamento = ("camada excluida das zonas e da rota; drenagem so informada na "
+                      "rota (barreira acima do teto vadeavel), mantida nas zonas")
     else:
-        tratamento = ("encarecidas em {:.0f}x (camada); drenagem graduada pelo "
-                      "tamanho do curso".format(CONSTRAINT_PENALTY_FACTOR))
+        tratamento = ("encarecidas em {:.0f}x (camada); drenagem so informada na "
+                      "rota".format(CONSTRAINT_PENALTY_FACTOR))
     return route_mask, zone_mask, penalty_mask, route_barrier, tratamento
 
 
@@ -3618,7 +3627,6 @@ def save_access_route(
         crossings = detect_stream_crossings(global_cells, stream_mask, stream_area, stream_class)
         if crossings:
             labels = _ford_labels()
-            factors = [factor for _limit, factor, _key in FORD_CLASSES] + [float("inf")]
             geometries, attributes = [], []
             for number, item in enumerate(crossings, start=1):
                 x, y = pixel_to_world(transform, *item["entrada"])
@@ -3630,7 +3638,6 @@ def save_access_route(
                     "n": number,
                     "bacia_km2": round(float(item["area_km2"]), 3),
                     "classe": labels[k],
-                    "fator_custo": (None if not np.isfinite(factors[k]) else float(factors[k])),
                     "extensao_na_faixa_m": round(float(item.get("passos") or item["celulas"]) * float(pixel_size_m or abs(transform[1])), 1),
                     "aviso": ("Estimado so pelo relevo (area de contribuicao). Profundidade e "
                               "corrente variam com a estacao e a chuva: confira em campo antes de usar."),
@@ -4802,6 +4809,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         stream_factor = None
         stream_area = None
         stream_class = None
+        channel_axis = None
         if streams_from_dem:
             channel_axis = channels.astype(bool).copy()
             if constraint_buffer_m > 0 and channels.any():
@@ -4835,8 +4843,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         # camada do usuario. Ate a 1.4.1 as zonas tambem excluiam a drenagem no
         # modo "evitar". A camada de restricao
         # do usuario segue o modo escolhido nos dois casos: cerca e cerca.
-        # Fatores de custo para a rota: a drenagem entra graduada pelo tamanho
-        # do curso (2x, 4x, 8x; barreira acima do teto vadeavel), a camada do
+        # Fatores de custo para a rota: a drenagem entra com o fator de
+        # FORD_CLASSES (1: so informa; barreira acima do teto vadeavel), a camada do
         # usuario entra com 8x no modo "encarecer" ou como barreira no modo
         # "evitar". Onde os dois coincidem vale o pior.
         penalty_mask = None
@@ -5140,7 +5148,12 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                     penalty_mask=penalty_mask,
                     via_path=via_points_file or None,
                     optimise_order=optimise_order,
-                    stream_mask=stream_mask if stream_mask.any() else None,
+                    # A travessia e contada no EIXO do canal, nao na faixa: desde
+                    # que a drenagem so informa, a rota pode acompanhar o rio, e
+                    # cada entrada e saida da faixa virava uma "travessia" -- no
+                    # exemplo, o mesmo riacho saia duas vezes.
+                    stream_mask=(channel_axis if channel_axis is not None and channel_axis.any()
+                                 else None),
                     stream_area=stream_area, stream_class=stream_class,
                     field_speed_kmh=field_speed_kmh,
                     alternatives_pct=alternatives_pct,

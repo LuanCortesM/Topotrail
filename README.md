@@ -301,24 +301,30 @@ The network then enters the model in two different ways, on purpose:
   target — amphibians, riparian forest — so the zones do not lose them. To keep
   margins out, supply the hydrography as a constraint layer. (Up to 1.4.1 the
   zones excluded the drainage strip in "avoid" mode.)
-- **The route may cross it.** A stream is a line, and every route from one
-  valley to the next has to cross one; a linear network turned into an
-  absolute wall partitions the landscape into islands. Instead, each crossing
-  costs more the larger the stream is, using the **contributing area** of the
-  channel as a proxy for its size (hydraulic geometry: channel width and
-  discharge grow with drainage area — Leopold & Maddock 1953, USGS Professional
-  Paper 252; Faustini, Kaufmann & Herlihy 2009, *Geomorphology* 108:292–311):
+- **The route is informed, not pushed away.** A stream is a line, and every
+  route from one valley to the next has to cross one; many real trails also
+  follow a stream along its valley. So below a ceiling the drainage does not
+  change the cost of the route: each crossing is classed by the **contributing
+  area** of the channel, a proxy for its size (hydraulic geometry: channel width
+  and discharge grow with drainage area — Leopold & Maddock 1953, USGS
+  Professional Paper 252; Faustini, Kaufmann & Herlihy 2009, *Geomorphology*
+  108:292–311), and listed:
 
-  | Contributing area | Class | Cost factor |
+  | Contributing area | Class | On the route |
   |---|---|---|
-  | < 2 km² | headwater stream | 2× |
-  | 2–10 km² | stream | 4× |
-  | 10 km² – ceiling | small river, fording depends on the season | 8× |
+  | < 2 km² | headwater stream | listed |
+  | 2–10 km² | stream | listed |
+  | 10 km² – ceiling | small river, fording depends on the season | listed |
   | above the ceiling (*Largest fordable basin*, default 50 km²) | river | barrier |
 
+  Up to 1.4.1 the three fordable classes cost 2×, 4× and 8×, charged on the
+  whole 30 m drainage strip, so walking along a stream cost as much as crossing
+  it. Against 62 real trails that made the route worse in 32 and better in 15
+  (p = 0.02), and worse in 11 of 13 valley-floor trails.
+
 - **Every crossing is written to its own layer** (`…_travessias.gpkg`): one
-  point per crossing with the contributing area, the class, the cost factor and
-  a warning field. This is the safety valve: the DEM knows the size of the
+  point per crossing of the channel axis, with the contributing area, the class
+  and a warning field. This is the safety valve: the DEM knows the size of the
   basin, not today's depth or current. Check each crossing in the field, and
   lower the ceiling if the season or the region calls for it.
 

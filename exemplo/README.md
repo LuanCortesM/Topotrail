@@ -74,16 +74,16 @@ Eight files in `saida/`, which are the seven products plus the diagnostic log:
 
 ### The numbers to check
 
-These are the values `executar.py` compares. The route is the one measured with TopoTrail **1.3.0**, unchanged since. The duration changed after 1.4.1: `tempo_h` is now Tobler's time along the route, without the terrain slowdown and the ford factors, which express preference and not pace. Up to 1.4.1 it reported the accumulated cost, 6.48 h, which is still in `custo`. The zone count changed as well: the zones now keep the stream margins, so there are 12 instead of 11.
+These are the values `executar.py` compares. Three things changed after 1.4.1. `tempo_h` is now Tobler's time along the route, without the terrain slowdown, which expresses preference and not pace (up to 1.4.1 it reported the accumulated cost). The drainage now informs the route instead of pushing it away from the streams, so the route moved slightly (14404.5 m and 3 crossings before) and each crossing is counted on the channel axis. And the zones keep the stream margins, so there are 12 instead of 11.
 
 | Quantity | Attribute | Expected |
 |---|---|---|
-| Route length | `compr_m` | **14404.5** m |
-| Walking time, Tobler pace | `tempo_h` / `tempo_hms` | **3.98** h — **3h59** |
-| Accumulated ascent | `ganho_m` | **982.6** m |
-| Accumulated descent | `perda_m` | **663.1** m |
+| Route length | `compr_m` | **14347.5** m |
+| Walking time, Tobler pace | `tempo_h` / `tempo_hms` | **3.96** h — **3h58** |
+| Accumulated ascent | `ganho_m` | **969.2** m |
+| Accumulated descent | `perda_m` | **649.7** m |
 | Highest point on the route | `alt_max_m` | **1551.1** m |
-| Watercourse crossings | features in `_travessias.gpkg` | **3** |
+| Watercourse crossings | features in `_travessias.gpkg` | **4** |
 | Potential access zones | features in `exemplo.gpkg` | **12** |
 
 Counts must match exactly. Lengths, times and elevations are compared with a
@@ -95,15 +95,15 @@ Other values from the same run, useful if you want to look further than the
 route. They are not compared automatically, so treat them as orientation rather
 than as a contract:
 
-* the route has 436 vertices in 2 legs, starts at 966.5 m and ends at 1285.9 m,
-  and its lowest point is 910.8 m. It passes within 21.2 m — half a cell
+* the route has 437 vertices in 2 legs, starts at 966.5 m and ends at 1285.9 m,
+  and its lowest point is 915.3 m. It passes within 21.2 m — half a cell
   diagonal — of each of the three declared points, which is as close as a route
   made of cell centres can pass;
-* `tempo_campo_h` is **9.96 h** (9h57). It is the same route rescaled to the
+* `tempo_campo_h` is **9.90 h** (9h54). It is the same route rescaled to the
   2.4 km/h median measured in field survey work: Tobler's 6 km/h maximum is an
   unburdened walker on a path, and multiplying the maximum speed by a constant
   divides every cost by it, so the **path does not change** — only the duration;
-* the corridor is a 100 m radius buffer, so 200 m wide, covering 2 840 481 m²;
+* the corridor is a 100 m radius buffer, so 200 m wide, covering 2 830 240 m²;
 * the twelve zones total 1587.2 ha (eleven and 1421.4 ha up to 1.4.1, when the
   zones also lost the stream margins);
 * suitability runs 0.1333 to 0.9704, median 0.6582; relative topographic risk
@@ -112,8 +112,9 @@ than as a contract:
   class 2, **30.96%** class 3, **6.13%** class 4, **0.27%** class 5. All five
   classes are populated, which is why the escarpment is in the synthetic relief;
 * drainage extraction found 932 channel cells, a 35.86 km network, a drainage
-  density of 0.443 km/km². The three crossings are a 7.652 km² stream (cost
-  ×4), a 1.509 km² headwater channel (×2) and a 3.172 km² stream (×4);
+  density of 0.443 km/km². The four crossings are a 1.251 km² headwater
+  channel, a 7.662 km² stream, a 1.663 km² headwater channel and a 3.186 km²
+  stream; none of them changes the cost of the route, they are listed to check;
 * the cost surface blocked 7798 cells for exceeding `SLOPE_MAX = 55%` and left
   82 202 navigable.
 

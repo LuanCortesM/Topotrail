@@ -381,11 +381,11 @@ route therefore also carries `tempo_campo_h`, the same route rescaled to
 And Tobler describes an unburdened walker on an existing path: it estimates
 relative effort, not a schedule.
 
-The slowdown, like the ford factors, chooses the line; it is not time. Fitted
+The slowdown chooses the line; it is not time. Fitted
 against field tracks it did not predict pace (`docs/VALIDACAO.md`, 6c). So the
 duration the route reports, `tempo_h`, is the first factor alone summed along
 the chosen cells, and `tempo_campo_h` rescales that; the accumulated cost, with
-slowdown and fords, is kept in `custo`. Until 1.4.1 `tempo_h` was the
+slowdown, is kept in `custo`. Until 1.4.1 `tempo_h` was the
 accumulated cost: over 51 well-known trails that inflated the duration by 1.10
 to 1.91 times (median 1.39), more where the terrain was worse, and the field
 factor, fitted on Tobler alone, multiplied the inflation.
@@ -461,8 +461,9 @@ capped at `MAX_ALTERNATIVES_CELLS = 4 000 000` cells.
 
 ## Graded watercourse crossings
 
-Where drainage extraction is on, each channel cell receives a cost multiplier as
-a function of the contributing area of the basin upstream. The DEM knows neither
+Where drainage extraction is on, each crossing is classed by the contributing
+area of the basin upstream. Below the fordable ceiling the class is reported and
+does not change the cost of the route; above it, the watercourse is a barrier. The DEM knows neither
 discharge nor season; it knows contributing area, and hydraulic geometry ties one
 to the other — channel width and discharge grow with drainage area as a power law
 (Leopold & Maddock 1953; Faustini, Kaufmann & Herlihy 2009, bankfull width
@@ -470,16 +471,25 @@ W ~ A^0.5 in wadeable US rivers).
 
 | Class | Contributing area | Treatment |
 |---|---|---|
-| Headwater channel | < 2 km² | cost × 2 |
-| Stream | 2–10 km² | cost × 4 |
-| Small river | 10 km² up to the fordable ceiling | cost × 8 |
+| Headwater channel | < 2 km² | listed |
+| Stream | 2–10 km² | listed |
+| Small river | 10 km² up to the fordable ceiling | listed |
 | River | above the ceiling (`STREAM_FORD_MAX_KM2`, default 50 km²) | barrier; the crossing is not presumed |
 
 `FORD_CLASSES` holds the first three. The classes are a **declared proxy, not a
 safety measurement**: every crossing the route actually makes comes out in its
-own vector layer with the contributing area, the class, the factor applied and a
-field-check warning, so the decision goes back to whoever is going to walk it
-instead of staying hidden inside the cost.
+own vector layer with the contributing area, the class and a field-check
+warning, so the decision goes back to whoever is going to walk it instead of
+staying hidden inside the cost. A crossing is counted where the route crosses the
+channel axis, not the strip around it.
+
+Up to 1.4.1 the three fordable classes cost × 2, × 4 and × 8, charged on every
+cell of the 30 m strip around the channel, so walking *along* a stream cost as
+much as crossing it and the route avoided valley floors. Against 62 real trails
+(51 well-known trails and 11 field tracks) that made the agreement worse in 32
+and better in 15 (sign test p = 0.02), and worse in 11 of 13 valley-floor trails;
+with the factor at 1 the route equals the no-drainage route in 56 of 61 and the
+crossings are still listed.
 
 A user-supplied constraint layer is separate from this. It is buffered by
 `CONSTRAINT_BUFFER_M` (default 30 m) and then either excluded outright
@@ -524,7 +534,7 @@ alongside any result taken from the plugin.
 | `FIELD_SURVEY_SPEED_KMH` | 2.4 | Measured field-survey pace, for the second duration. |
 | `TERRAIN_SLOWDOWN_MAX` | 2.0 | Maximum terrain slowdown. Existence validated; magnitude not resolvable between 2.0 and 4.0. |
 | `CONSTRAINT_PENALTY_FACTOR` | 8.0 | Cost factor of a penalised constraint. Not calibrated; see `VALIDACAO.md` §8.4. |
-| `FORD_CLASSES` | 2 / 10 km², ×2 ×4 ×8 | Crossing classes by contributing area. |
+| `FORD_CLASSES` | 2 / 10 km², factor 1 | Crossing classes by contributing area; reported, not charged (×2 ×4 ×8 up to 1.4.1). |
 | `DEFAULT_STREAM_FORD_MAX_KM2` | 50.0 | Default fordable ceiling; above it, a barrier. |
 | `MAX_OPTIMISED_WAYPOINTS` | 8 | Ceiling for exact visiting-order optimisation. |
 | `DEFAULT_SLOPE_BREAKS` (`transitability.py`) | 20, 35, 60, 100 % | The four transitability thresholds. |

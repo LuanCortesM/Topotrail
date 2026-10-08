@@ -194,7 +194,7 @@ else:
     cross = vec(r["OUTPUT_CROSSINGS"]) if r.get("OUTPUT_CROSSINGS") else dict(n=0, attrs={})
     ok = all(v < 60 for v in dist.values()) and rt["attrs"]["trechos"] == 4 and ag["250m"]["rota_no_buffer_da_trilha"] > 0.5 and zones["n"] > 0 and cross["n"] >= 1 and "bacia_km2" in cross["attrs"]
     record("MQ-A travessia completa (3 cumes, 7 produtos)", ok, dict(
-        travessias=cross["n"], primeira_travessia={k: cross["attrs"].get(k) for k in ("classe", "bacia_km2", "fator_custo")},
+        travessias=cross["n"], primeira_travessia={k: cross["attrs"].get(k) for k in ("classe", "bacia_km2")},
         trechos=rt["attrs"]["trechos"], tempo_h=round(rt["attrs"].get("tempo_h", 0), 2), compr_m=round(rt["attrs"]["compr_m"]),
         ganho_m=round(rt["attrs"].get("ganho_m", 0)), distancia_aos_cumes_m=dist, concordancia_com_trilha_real=ag,
         classes_transitabilidade=classes, zonas=zones["n"], crs_saida=vec(r["OUTPUT_ROUTE"])["wkt"][:40]), s, fb.grep("AVISO")[:4])

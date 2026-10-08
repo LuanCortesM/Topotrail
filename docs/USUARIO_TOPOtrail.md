@@ -64,7 +64,7 @@ The first two are always produced. The rest are ticked in step 2.
 | Potential access zones | `….gpkg` / `.shp` / `.kml` | Polygons with `value`, `area_m2`, `area_ha`. |
 | Suggested route | `…_rota.gpkg` | `compr_m`, `tempo_h`, `tempo_hms`, `tempo_campo_h`, `ganho_m`, `perda_m`, altitudes, number of legs. |
 | Access corridor | `…_corredor.gpkg` | Buffer of the route, `buffer_m` being the **radius**. |
-| Watercourse crossings | `…_travessias.gpkg` | One point per crossing: basin area, class, cost factor, field-check warning. |
+| Watercourse crossings | `…_travessias.gpkg` | One point per crossing of the channel axis: basin area, class, field-check warning. |
 
 Plus `…_diagnostico_topotrail.log`: one JSON record per stage, with the plugin
 version, the versions of Python, GDAL and the operating system, every parameter
@@ -145,8 +145,8 @@ loaded into the project, styled.
 
 The route carries **two durations, for the same line**. `tempo_h` is Tobler
 pace — an unburdened walker on an existing path, maximum 6 km/h on a gentle
-descent — along the chosen line. It leaves out the terrain slowdown and the ford
-factors: they steer the route, they are not time. The cost the route minimised,
+descent — along the chosen line. It leaves out the terrain slowdown: it steers the
+route, it is not time. The cost the route minimised,
 with them, is `custo`. `tempo_campo_h` is the same route rescaled to 2.4 km/h, the median pace
 measured on timed field-survey tracks. The path is identical in both
 cases: maximum speed changes the duration, not the alignment. Neither is a

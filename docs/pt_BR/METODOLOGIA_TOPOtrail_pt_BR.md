@@ -354,11 +354,11 @@ também traz `tempo_campo_h`, a mesma rota reescalada para
 E Tobler descreve um caminhante sem carga sobre trilha existente: é estimativa de
 esforço relativo, não previsão de horário.
 
-O retardo, como os fatores de vau, escolhe a linha; não é tempo. Ajustado contra
+O retardo escolhe a linha; não é tempo. Ajustado contra
 trajetos de campo, ele não previu ritmo (`docs/VALIDACAO.md`, 6c). Por isso a
 duração que a rota relata, `tempo_h`, é só o primeiro fator somado ao longo das
 células escolhidas, e `tempo_campo_h` reescala esse valor; o custo acumulado,
-com retardo e vaus, fica em `custo`. Até a 1.4.1, `tempo_h` era o custo
+com retardo, fica em `custo`. Até a 1.4.1, `tempo_h` era o custo
 acumulado: em 51 trilhas consagradas isso inflava a duração de 1,10 a 1,91 vez
 (mediana 1,39), mais onde o terreno era pior, e o fator de campo, ajustado sobre
 o Tobler puro, multiplicava a inflação.
@@ -408,8 +408,9 @@ de 200 m de largura.
 
 ## Travessia graduada de cursos d'água
 
-Quando a extração de drenagem está ativa, cada célula de canal recebe um fator
-multiplicador do custo em função da área de contribuição da bacia a montante. O
+Quando a extração de drenagem está ativa, cada travessia é classificada pela área
+de contribuição da bacia a montante. Abaixo do teto vadeável a classe é informada
+e não muda o custo da rota; acima dele, o curso é barreira. O
 MDE não sabe vazão nem estação; sabe a área de contribuição, e a geometria
 hidráulica liga uma coisa à outra — largura e vazão de canal crescem com a área de
 drenagem em lei de potência (Leopold & Maddock 1953; Faustini, Kaufmann & Herlihy
@@ -417,16 +418,25 @@ drenagem em lei de potência (Leopold & Maddock 1953; Faustini, Kaufmann & Herli
 
 | Classe | Área de contribuição | Tratamento |
 |---|---|---|
-| Córrego de cabeceira | < 2 km² | custo × 2 |
-| Riacho | 2 a 10 km² | custo × 4 |
-| Rio pequeno | 10 km² até o teto vadeável | custo × 8 |
+| Córrego de cabeceira | < 2 km² | listado |
+| Riacho | 2 a 10 km² | listado |
+| Rio pequeno | 10 km² até o teto vadeável | listado |
 | Rio | acima do teto (`STREAM_FORD_MAX_KM2`, padrão 50 km²) | barreira; a travessia não é presumida |
 
 `FORD_CLASSES` guarda as três primeiras. As classes são um **proxy declarado, não
 uma medida de segurança**: cada travessia que a rota efetivamente faz sai numa
-camada vetorial própria com a área de contribuição, a classe, o fator aplicado e
-um aviso de conferência em campo, de modo que a decisão volte para quem vai
+camada vetorial própria com a área de contribuição, a classe e um aviso de
+conferência em campo (a travessia é contada onde a rota cruza o eixo do canal,
+não a faixa em volta dele), de modo que a decisão volte para quem vai
 caminhar em vez de ficar escondida dentro do custo.
+
+Até a 1.4.1 as três classes vadeáveis custavam × 2, × 4 e × 8, cobrados em toda
+célula da faixa de 30 m em volta do canal: andar *ao longo* do rio custava o mesmo
+que atravessá-lo, e a rota fugia dos fundos de vale. Contra 62 trilhas reais (51
+consagradas e 11 trajetos de campo), isso piorou a concordância em 32 e melhorou
+em 15 (teste dos sinais, p = 0,02), e piorou em 11 de 13 trilhas de fundo de vale;
+com o fator 1, a rota é igual à sem drenagem em 56 de 61 e as travessias continuam
+listadas.
 
 Uma camada de restrição fornecida pelo usuário é outra coisa. Ela é dilatada por
 `CONSTRAINT_BUFFER_M` (padrão 30 m) e então excluída de vez
@@ -471,7 +481,7 @@ de qualquer resultado tirado do plugin.
 | `FIELD_SURVEY_SPEED_KMH` | 2,4 | Ritmo de campo medido, para a segunda duração. |
 | `TERRAIN_SLOWDOWN_MAX` | 2,0 | Retardo máximo por terreno. Existência validada; magnitude indeterminada entre 2,0 e 4,0. |
 | `CONSTRAINT_PENALTY_FACTOR` | 8,0 | Fator de custo de restrição penalizada. Não calibrado; ver `VALIDACAO.md` §8.4. |
-| `FORD_CLASSES` | 2 / 10 km², ×2 ×4 ×8 | Classes de travessia por área de contribuição. |
+| `FORD_CLASSES` | 2 / 10 km², fator 1 | Classes de travessia por área de contribuição; informadas, não cobradas (×2 ×4 ×8 até a 1.4.1). |
 | `DEFAULT_STREAM_FORD_MAX_KM2` | 50,0 | Teto vadeável padrão; acima dele, barreira. |
 | `MAX_OPTIMISED_WAYPOINTS` | 8 | Teto da otimização exata de ordem de visita. |
 | `DEFAULT_SLOPE_BREAKS` (`transitability.py`) | 20, 35, 60, 100 % | Os quatro limiares de transitabilidade. |
