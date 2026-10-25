@@ -221,3 +221,25 @@ def test_no_try_except_pass_in_shipped_code():
                 if len(body) == 1 and isinstance(body[0], ast.Pass):
                     offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}")
     assert not offenders, "except ... : pass em codigo publicado:\n  " + "\n  ".join(offenders)
+
+
+def test_tests_do_not_import_the_plugin_folders_by_bare_name():
+    """`from ui import ...` so funciona quando o pytest roda da raiz do
+    repositorio (`python -m pytest`, como aqui e nos trabalhos com QGIS do CI).
+    O trabalho sem QGIS roda `pytest` puro, a raiz fica fora do caminho de
+    importacao e o teste quebra so la -- foi o que derrubou o primeiro CI da
+    1.5.1. Carregue o modulo pelo caminho do arquivo. tests/qt6/ fica de fora:
+    roda em processo proprio e poe a raiz no caminho ele mesmo."""
+    offenders = []
+    for pasta in ("tests", "integracao"):
+        for path in sorted((ROOT / pasta).glob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                nomes = []
+                if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    nomes = [node.module]
+                elif isinstance(node, ast.Import):
+                    nomes = [alias.name for alias in node.names]
+                if any(nome == "ui" or nome.startswith("ui.") for nome in nomes):
+                    offenders.append(f"{path.relative_to(ROOT).as_posix()}:{node.lineno}")
+    assert not offenders, f"import de `ui` pelo nome: {offenders}"

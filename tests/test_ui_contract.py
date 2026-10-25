@@ -214,8 +214,13 @@ def test_icons_render_without_a_display():
     pytest.importorskip("qgis.PyQt.QtGui")
     import os
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    import importlib.util
     from qgis.PyQt.QtWidgets import QApplication
-    from ui import icons
+    # pelo caminho: `from ui import icons` so funciona com o pytest rodando da
+    # raiz do repositorio (python -m pytest), e o CI tambem roda `pytest` puro
+    spec = importlib.util.spec_from_file_location("tt_icons", ROOT / "ui" / "icons.py")
+    icons = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(icons)
 
     application = QApplication.instance() or QApplication([])
     assert application is not None
