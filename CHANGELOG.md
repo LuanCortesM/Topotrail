@@ -4,6 +4,13 @@ Mudanças relevantes do TopoTrail. Formato
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões em
 [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.2] - 2026-10-25
+
+### Corrigido
+
+- O zip do plugin não leva mais o `.flake8` (nem `.bandit` ou `.secrets.baseline`, se um dia existirem): com ele, o plugins.qgis.org marcava a 1.5.0 e a 1.5.1 como "Validated (configured)", em laranja, e não como "Validated". O arquivo continua no repositório, onde dá ao CI o limite de linha. O plugin é o mesmo da 1.5.1.
+- Testes que importavam `ui` pelo nome só funcionavam com o pytest rodando da raiz do repositório; no trabalho do CI sem QGIS, que roda `pytest` puro, quebravam. Agora carregam o arquivo pelo caminho, e um teste impede que o padrão volte.
+
 ## [1.5.1] - 2026-10-25
 
 ### Adicionado
