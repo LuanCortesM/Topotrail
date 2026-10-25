@@ -727,6 +727,11 @@ The full, per-version changelog lives in [`metadata.txt`](metadata.txt) and is
 what the QGIS plugin repository shows; [`CHANGELOG.md`](CHANGELOG.md) lists each
 change of 1.4.0 onwards on its own line. In short:
 
+- **1.5.1** — The window fits the screen (on laptops with display scaling the
+  Continue button could fall below the taskbar) and opens centred on QGIS. New
+  Report a problem button: versions, last error and the end of the log go along,
+  by e-mail to the author or as a filled-in GitHub bug form. The About box says
+  how to cite, with the Zenodo DOI. Reviewed in the six languages.
 - **1.5.0** — Tested on 35 real trails, from walking paths to alpine routes.
   Default maximum slope 85% instead of 55% (all walking trails connect; cable
   and via ferrata sections are left out by default). Drainage on by default,
