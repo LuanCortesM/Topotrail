@@ -61,20 +61,25 @@ def technical_lines(info):
 
 
 def technical_block(info, error="", log_path="", log=""):
-    """O que vai junto sem a pessoa precisar saber o que e."""
-    partes = ["--- dados tecnicos ---"] + technical_lines(info)
+    """O que vai junto sem a pessoa precisar saber o que e.
+
+    Cabecalhos em ingles, como os rotulos das versoes: a janela mostra este
+    bloco em qualquer um dos seis idiomas, e o formulario do GitHub e em ingles.
+    Em portugues ele aparecia igual para quem escolheu japones.
+    """
+    partes = ["--- technical details ---"] + technical_lines(info)
     if error:
-        partes += ["", "--- ultimo erro ---", anonymize(error.strip())]
+        partes += ["", "--- last error ---", anonymize(error.strip())]
     if log_path:
-        partes += ["", "--- registro tecnico ---", anonymize(log_path)]
+        partes += ["", "--- diagnostic log ---", anonymize(log_path)]
     if log:
-        partes += ["", "--- ultimas linhas do andamento ---", anonymize(log_tail(log))]
+        partes += ["", "--- last lines of the progress log ---", anonymize(log_tail(log))]
     return "\n".join(partes)
 
 
 def compose(description, info, error="", log_path="", log=""):
     """O relato completo, como vai para a area de transferencia."""
-    return "{}\n\n{}".format((description or "").strip() or "(sem descricao)",
+    return "{}\n\n{}".format((description or "").strip() or "(no description)",
                              technical_block(info, error, log_path, log))
 
 
@@ -84,7 +89,7 @@ def mailto_url(address, subject, body, limit=MAILTO_LIMIT):
     Corta pelo fim e avisa que o texto completo foi copiado: o comeco -- a
     descricao e as versoes -- e o que mais importa.
     """
-    aviso = "\n\n[...] texto completo copiado para a area de transferencia"
+    aviso = "\n\n[...] full text copied to the clipboard"
     corpo = body
     while len(quote(corpo, safe="")) > limit and corpo:
         corpo = corpo[:int(len(corpo) * 0.9)]

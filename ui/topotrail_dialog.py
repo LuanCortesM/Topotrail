@@ -17,7 +17,9 @@ import os
 import traceback
 
 from qgis.PyQt.QtCore import QObject, QUrl, pyqtSignal
-from qgis.PyQt.QtGui import QDesktopServices, QFont, QFontMetrics, QGuiApplication, QPixmap, QScreen
+from qgis.PyQt.QtGui import (
+    QColor, QDesktopServices, QFont, QFontMetrics, QGuiApplication, QPainter, QPixmap, QScreen,
+)
 from qgis.PyQt.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
     QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
@@ -952,9 +954,21 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         box.setWindowTitle(self.t("about"))
         logo = os.path.join(PLUGIN_DIR, "logo.png")
         if os.path.exists(logo):
-            box.setIconPixmap(QPixmap(logo).scaled(
-                64, 64, qt_enum("AspectRatioMode", "KeepAspectRatio"),
-                qt_enum("TransformationMode", "SmoothTransformation")))
+            # Na placa clara, como no cabecalho: o nome escrito no logo e escuro
+            # e sumia no fundo do tema escuro.
+            placa = QPixmap(72, 72)
+            placa.fill(QColor(0, 0, 0, 0))
+            pintor = QPainter(placa)
+            pintor.setRenderHint(class_enum(QPainter, "RenderHint", "Antialiasing"))
+            pintor.setPen(qt_enum("PenStyle", "NoPen"))
+            pintor.setBrush(QColor(T["plate"]))
+            pintor.drawRoundedRect(0, 0, 72, 72, 16, 16)
+            imagem = QPixmap(logo).scaled(
+                56, 56, qt_enum("AspectRatioMode", "KeepAspectRatio"),
+                qt_enum("TransformationMode", "SmoothTransformation"))
+            pintor.drawPixmap((72 - imagem.width()) // 2, (72 - imagem.height()) // 2, imagem)
+            pintor.end()
+            box.setIconPixmap(placa)
         box.setText(self.t("about_text").format(
             version=_plugin_version(), doi=CONCEPT_DOI, manual=manual, source=fonte))
         rotulo = box.findChild(QLabel, "qt_msgbox_label")

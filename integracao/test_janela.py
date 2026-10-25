@@ -214,8 +214,32 @@ def test_relatar_problema_leva_o_ultimo_erro_e_vai_para_o_email_do_metadata(jane
         janela_relato.close()
 
 
-def test_o_botao_de_relatar_esta_no_cabecalho_em_todos_os_idiomas(janela):
+def test_relatar_e_sua_janela_nao_cortam_texto_em_nenhum_idioma(janela, qgis_app):
+    """O botao fica na faixa de baixo; a janela de relato tem quatro botoes numa
+    linha, e em frances eles sao os mais compridos."""
+    from qgis.PyQt.QtWidgets import QLabel, QPushButton
+
     dialogo, _ = janela
+    problemas = []
     for codigo in ("pt", "en", "es", "fr", "zh", "ja"):
         dialogo.language_box.setCurrentIndex(dialogo.language_box.findData(codigo))
-        assert dialogo.report_button.text() and dialogo.report_button.text() != "report"
+        qgis_app.processEvents()
+        botao = dialogo.report_button
+        assert botao.text() and botao.text() != "report", codigo
+        if botao.width() < botao.sizeHint().width() - 1:
+            problemas.append("{}: botao '{}'".format(codigo, botao.text()))
+        relato = dialogo._show_report()
+        qgis_app.processEvents()
+        try:
+            assert relato.windowTitle() == dialogo.t("report_title")
+            for widget in relato.findChildren(QLabel) + relato.findChildren(QPushButton):
+                if not widget.text() or not widget.isVisible():
+                    continue
+                if isinstance(widget, QLabel) and widget.wordWrap():
+                    continue
+                if widget.width() < widget.sizeHint().width() - 1:
+                    problemas.append("{} relato: '{}'".format(codigo, widget.text()[:30]))
+        finally:
+            relato.close()
+            qgis_app.processEvents()
+    assert not problemas, problemas

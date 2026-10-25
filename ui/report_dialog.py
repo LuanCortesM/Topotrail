@@ -69,7 +69,6 @@ class ReportDialog(QDialog):
 
         self.setWindowTitle(t("report_title"))
         self.setObjectName("ttReport")
-        self.setMinimumWidth(560)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 22, 24, 18)
         layout.setSpacing(10)
@@ -135,6 +134,10 @@ class ReportDialog(QDialog):
         self.status.setWordWrap(True)
         self.status.setTextInteractionFlags(qt_enum("TextInteractionFlag", "TextSelectableByMouse"))
         layout.addWidget(self.status)
+        # Sem setMinimumWidth: um minimo explicito impede o layout de impor o
+        # dele, e em frances os quatro botoes saiam cortados nos 560 px que
+        # havia aqui. A largura de abertura so tem piso, para o texto respirar.
+        self.resize(max(600, self.sizeHint().width()), self.sizeHint().height())
 
     def text(self):
         return bug_report.compose(self.description.toPlainText(), self.info,

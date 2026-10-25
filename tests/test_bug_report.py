@@ -32,7 +32,7 @@ def test_o_relato_leva_versoes_erro_e_fim_do_andamento():
 
 
 def test_sem_descricao_o_relato_ainda_sai():
-    assert bug_report.compose("", {}).startswith("(sem descricao)")
+    assert bug_report.compose("", {}).startswith("(no description)")
 
 
 def test_mailto_vai_para_o_endereco_com_assunto_e_corpo():
@@ -52,7 +52,7 @@ def test_mailto_longo_e_cortado_e_avisa_que_o_resto_foi_copiado():
     assert len(url) <= bug_report.MAILTO_LIMIT + 200
     texto = unquote(url.split("body=", 1)[1])
     assert texto.startswith("inicio importante")
-    assert "area de transferencia" in texto
+    assert "copied to the clipboard" in texto
 
 
 def test_o_github_abre_o_formulario_de_bug_preenchido():
