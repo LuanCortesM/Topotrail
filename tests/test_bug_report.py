@@ -1,8 +1,22 @@
 """O relato de problema: o que vai junto, o que fica de fora e os enderecos."""
 
+import importlib.util
+import pathlib
 from urllib.parse import parse_qs, unquote, urlparse
 
-from ui import bug_report
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def _carregar(nome):
+    """Pelo caminho, e nao por `from ui import`: no CI o pytest nao roda da raiz
+    do repositorio e o pacote `ui` nao esta no caminho de importacao."""
+    spec = importlib.util.spec_from_file_location("tt_" + nome, ROOT / "ui" / (nome + ".py"))
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
+bug_report = _carregar("bug_report")
 
 INFO = {"plugin": "1.5.1", "qgis": "4.0.2-Norrkoping", "qt": "6.8.3", "python": "3.12.10",
         "gdal": "3.11.4", "numpy": "2.2.6", "scipy": "1.15.3",

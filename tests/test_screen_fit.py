@@ -5,9 +5,24 @@ enxerga 1280 x 720, e sem a barra de tarefas sobram 672 px; num 1366 x 768 a
 125% sobram 566 px e o botao Continuar ficava fora da tela.
 """
 
+import importlib.util
+import pathlib
+
 import pytest
 
-from ui import screen_fit
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def _carregar(nome):
+    """Pelo caminho, e nao por `from ui import`: no CI o pytest nao roda da raiz
+    do repositorio e o pacote `ui` nao esta no caminho de importacao."""
+    spec = importlib.util.spec_from_file_location("tt_" + nome, ROOT / "ui" / (nome + ".py"))
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
+screen_fit = _carregar("screen_fit")
 
 # Area util em pixels logicos (tela / escala, menos a barra de tarefas de 48 px)
 TELAS = {
