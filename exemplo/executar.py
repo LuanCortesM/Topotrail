@@ -29,14 +29,14 @@ SAIDA = os.path.join(PASTA, "saida")
 # Comprimentos e tempos sao continuos e admitem a ultima casa variar com a
 # versao do NumPy ou do GDAL; contagens sao inteiras e tem de bater exatamente.
 ESPERADO = {
-    "comprimento_m": 14347.5,
-    "tempo_h": 3.96,
-    "tempo_hms": "3h58",
-    "ganho_m": 969.2,
-    "perda_m": 649.7,
-    "alt_max_m": 1551.1,
-    "travessias": 4,
-    "zonas": 12,
+    "comprimento_m": 13159.0,
+    "tempo_h": 3.67,
+    "tempo_hms": "3h40",
+    "ganho_m": 898.9,
+    "perda_m": 579.4,
+    "alt_max_m": 1577.8,
+    "travessias": 2,
+    "zonas": 13,
 }
 
 # Tolerancia relativa das grandezas continuas.
@@ -62,7 +62,7 @@ def parametros(mde, origem, destino, intermediarios, saida):
         # --- limites do terreno ---
         "ALT_MIN": 0.0,                   # padrao; a cena vai de 791 a 2023 m
         "ALT_MAX": 2600.0,                # padrao
-        "SLOPE_MAX": 55.0,                # padrao; acima disto a celula sai da rota
+        "SLOPE_MAX": 85.0,                # padrao; acima disto a celula sai da rota
         "SLOPE_SCORE_MAX": 50.0,          # padrao; declividade de nota zero
 
         # --- pesos dos criterios ---

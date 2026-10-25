@@ -220,7 +220,7 @@
   "slope": "Slope",
   "slope_degrees": "Degrees",
   "slope_max": "Maximum admissible slope (%)",
-  "slope_max_help": "Above this a cell counts as unusable. 100% is 45 degrees.",
+  "slope_max_help": "Above this a cell counts as unusable. 100% is 45 degrees. The default, 85%, connects the walking trails tested and refuses cable or via ferrata sections; raise it only for a route of that kind.",
   "slope_percent": "Percent (%)",
   "slope_score": "Slope at which the score reaches zero (%)",
   "slope_score_help": "Where the slope score reaches zero. If most of your area exceeds this, the criterion stops telling one hillside from another and the plugin warns you.",

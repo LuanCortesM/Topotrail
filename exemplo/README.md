@@ -75,17 +75,17 @@ Eight files in `saida/`, which are the seven products plus the diagnostic log:
 
 ### The numbers to check
 
-These are the values `executar.py` compares. Three things changed after 1.4.1. `tempo_h` is now Tobler's time along the route, without the terrain slowdown, which expresses preference and not pace (up to 1.4.1 it reported the accumulated cost). The drainage now informs the route instead of pushing it away from the streams, so the route moved slightly (14404.5 m and 3 crossings before) and each crossing is counted on the channel axis. And the zones keep the stream margins, so there are 12 instead of 11.
+These are the values `executar.py` compares, measured with TopoTrail 1.5.0. Four things changed after 1.4.1. The default maximum slope is 85% instead of 55%, so the route now crosses the steepest part of the synthetic escarpment instead of going round it (14404.5 m, 1551.1 m high point and 3 crossings in 1.4.1). `tempo_h` is Tobler's time along the route, without the terrain slowdown, which expresses preference and not pace. The drainage informs the route instead of pushing it away from the streams, and each crossing is counted on the channel axis. And the zones keep the stream margins.
 
 | Quantity | Attribute | Expected |
 |---|---|---|
-| Route length | `compr_m` | **14347.5** m |
-| Walking time, Tobler pace | `tempo_h` / `tempo_hms` | **3.96** h — **3h58** |
-| Accumulated ascent | `ganho_m` | **969.2** m |
-| Accumulated descent | `perda_m` | **649.7** m |
-| Highest point on the route | `alt_max_m` | **1551.1** m |
-| Watercourse crossings | features in `_travessias.gpkg` | **4** |
-| Potential access zones | features in `exemplo.gpkg` | **12** |
+| Route length | `compr_m` | **13159.0** m |
+| Walking time, Tobler pace | `tempo_h` / `tempo_hms` | **3.67** h — **3h40** |
+| Accumulated ascent | `ganho_m` | **898.9** m |
+| Accumulated descent | `perda_m` | **579.4** m |
+| Highest point on the route | `alt_max_m` | **1577.8** m |
+| Watercourse crossings | features in `_travessias.gpkg` | **2** |
+| Potential access zones | features in `exemplo.gpkg` | **13** |
 
 Counts must match exactly. Lengths, times and elevations are compared with a
 relative tolerance of 0.1%, which absorbs last-digit differences between NumPy
@@ -96,28 +96,29 @@ Other values from the same run, useful if you want to look further than the
 route. They are not compared automatically, so treat them as orientation rather
 than as a contract:
 
-* the route has 437 vertices in 2 legs, starts at 966.5 m and ends at 1285.9 m,
+* the route has 392 vertices in 2 legs, starts at 966.5 m and ends at 1285.9 m,
   and its lowest point is 915.3 m. It passes within 21.2 m — half a cell
   diagonal — of each of the three declared points, which is as close as a route
   made of cell centres can pass;
-* `tempo_campo_h` is **9.90 h** (9h54). It is the same route rescaled to the
+* `tempo_campo_h` is **9.17 h** (9h10). It is the same route rescaled to the
   2.4 km/h median measured in field survey work: Tobler's 6 km/h maximum is an
   unburdened walker on a path, and multiplying the maximum speed by a constant
   divides every cost by it, so the **path does not change** — only the duration;
-* the corridor is a 100 m radius buffer, so 200 m wide, covering 2 830 240 m²;
-* the twelve zones total 1587.2 ha (eleven and 1421.4 ha up to 1.4.1, when the
-  zones also lost the stream margins);
-* suitability runs 0.1333 to 0.9704, median 0.6582; relative topographic risk
-  runs 0.0154 to 1.0000, median 0.4078;
+* the corridor is a 100 m radius buffer, so 200 m wide, covering 2 605 717 m²;
+* the thirteen zones total 1851.7 ha (eleven and 1421.4 ha in 1.4.1, when the
+  zones lost the stream margins and stopped at 55% slope);
+* suitability runs 0.1333 to 0.9763, median 0.6468; relative topographic risk
+  runs 0.0108 to 1.0000, median 0.2752 (the risk is scaled by the maximum slope,
+  so it is lower than with 55%);
 * transitability, over 90 000 valid cells: **26.30%** class 1, **36.33%**
   class 2, **30.96%** class 3, **6.13%** class 4, **0.27%** class 5. All five
   classes are populated, which is why the escarpment is in the synthetic relief;
 * drainage extraction found 932 channel cells, a 35.86 km network, a drainage
-  density of 0.443 km/km². The four crossings are a 1.251 km² headwater
-  channel, a 7.662 km² stream, a 1.663 km² headwater channel and a 3.186 km²
-  stream; none of them changes the cost of the route, they are listed to check;
-* the cost surface blocked 7798 cells for exceeding `SLOPE_MAX = 55%` and left
-  82 202 navigable.
+  density of 0.443 km/km². The two crossings are a 1.251 km² headwater
+  channel and a 7.662 km² stream; neither changes the cost of the route, they
+  are listed to check;
+* the cost surface blocked 311 cells for exceeding `SLOPE_MAX = 85%` and left
+  89 689 navigable.
 
 ### Warnings you will see, and can ignore
 

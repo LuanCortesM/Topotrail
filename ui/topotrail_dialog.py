@@ -1216,7 +1216,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
 
         card, inner = _card(self.t("lim_box"), "ruler")
         self._bind(card._title_label, "lim_box")
-        self.slope_max = _spin(0.1, 10000, 55.0, 1, 1, " %")
+        self.slope_max = _spin(0.1, 10000, 85.0, 1, 1, " %")
         self.slope_score_max = _spin(0.1, 10000, 50.0, 1, 1, " %")
         self.alt_min = _spin(-500, 9000, 0.0, 0, 10, " m")
         self.alt_max = _spin(-500, 9000, 2600.0, 0, 10, " m")

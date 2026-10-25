@@ -115,7 +115,8 @@ window says so.** Tune them to your terrain and report the ones you use.
   ruggedness are also zero by default, so that existing results do not move
   under anyone; wetness requires the DEM drainage to be enabled.
 * **Terrain limits**: the elevation range, the maximum admissible slope (above
-  it a cell is unusable — 100% is 45°), and the slope at which the slope score
+  it a cell is unusable — 100% is 45°; the default, 85%, connects the walking
+  trails tested and refuses cable or via ferrata sections), and the slope at which the slope score
   reaches zero. If most of your area exceeds that last one, the criterion stops
   telling one hillside from another, and the plugin warns you when that happens.
 * **How the zones are cut**: the cut percentile (75 keeps the best quarter of the

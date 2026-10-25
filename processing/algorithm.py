@@ -3066,9 +3066,11 @@ def check_route_connectivity(cost_array, points, slope=None, penalty=None,
                     else np.zeros(cost_array.shape, dtype=bool))
         necessario = minimum_connecting_slope(slope, barreira, points, max_slope)
         if necessario is not None:
-            sugestao = (" Com a declividade maxima em {}% (hoje {:g}%) os pontos se ligam; em MDE "
-                        "de {:.0f} m, trilhas reais de montanha passam por celulas bem acima de "
-                        "55%.".format(necessario, max_slope, cell_size_m or 0))
+            sugestao = (" Com a declividade maxima em {}% (hoje {:g}%) os pontos se ligam. "
+                        "Em MDE de {:.0f} m, as trilhas de caminhada testadas couberam em 85%; "
+                        "acima disso costumam estar trechos com cabo, corrente ou via ferrata: "
+                        "aumente o limite so se a rota for desse tipo.".format(
+                            necessario, max_slope, cell_size_m or 0))
         elif so_vertice:
             sugestao = ""
         else:
@@ -4233,7 +4235,14 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 self.SLOPE_MAX,
                 self.tr("alg_slopemax"),
                 _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
-                defaultValue=55.0,
+                # 85%, e nao os 55% ate a 1.4.1. Em 35 trilhas reais (17 de caminhada,
+                # 6 exigentes, 8 alpinas, Copernicus 30 m): 55% ligava 18 -- e so 13 das
+                # 17 de caminhada --, 85% liga 33 e todas as de caminhada, com a melhor
+                # concordancia; o que fica de fora sao rotas de cabo e via ferrata (Half
+                # Dome pede 118%, Triglav 94%), que o padrao nao deve sugerir a um leigo.
+                # A 100% ligava uma a mais e havia mais rotas por terreno mais ingreme
+                # que o da propria trilha (6 contra 4); a 150%, rota por celula de 140%.
+                defaultValue=85.0,
             )
         )
         self.addParameter(

@@ -220,7 +220,7 @@
   "slope": "Declividade",
   "slope_degrees": "Graus",
   "slope_max": "Declividade máxima admitida (%)",
-  "slope_max_help": "Acima disto a célula é considerada inviável. 100% equivale a 45 graus.",
+  "slope_max_help": "Acima disto a célula é considerada inviável. 100% equivale a 45 graus. O padrão, 85%, liga as trilhas de caminhada testadas e recusa trechos de cabo ou via ferrata; aumente só se a rota for desse tipo.",
   "slope_percent": "Porcentagem (%)",
   "slope_score": "Declividade de nota zero (%)",
   "slope_score_help": "Onde a nota de declividade chega a zero. Se a maior parte da sua área passar deste valor, o critério para de distinguir encostas e o plugin avisa.",

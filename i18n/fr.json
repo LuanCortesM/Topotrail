@@ -220,7 +220,7 @@
   "slope": "Pente",
   "slope_degrees": "Degrés",
   "slope_max": "Pente maximale admise (%)",
-  "slope_max_help": "Au-delà, la cellule est jugée impraticable. 100 % équivaut à 45 degrés.",
+  "slope_max_help": "Au-delà, la cellule est jugée impraticable. 100 % correspond à 45 degrés. La valeur par défaut, 85 %, relie les sentiers de randonnée testés et refuse les passages à câble ou en via ferrata ; ne l'augmentez que pour un itinéraire de ce type.",
   "slope_percent": "Pourcentage (%)",
   "slope_score": "Pente de score nul (%)",
   "slope_score_help": "Là où le score de pente atteint zéro. Si la majeure partie de votre zone dépasse cette valeur, le critère cesse de distinguer les versants et l'extension vous avertit.",

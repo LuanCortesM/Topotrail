@@ -220,7 +220,7 @@
   "slope": "Pendiente",
   "slope_degrees": "Grados",
   "slope_max": "Pendiente máxima admitida (%)",
-  "slope_max_help": "Por encima de esto la celda se considera inviable. 100 % equivale a 45 grados.",
+  "slope_max_help": "Por encima de esto la celda se considera inviable. 100% equivale a 45 grados. El valor por defecto, 85%, conecta los senderos de caminata probados y rechaza tramos con cable o vía ferrata; auméntelo solo si la ruta es de ese tipo.",
   "slope_percent": "Porcentaje (%)",
   "slope_score": "Pendiente de puntuación cero (%)",
   "slope_score_help": "Donde la puntuación de pendiente llega a cero. Si la mayor parte de su área supera este valor, el criterio deja de distinguir laderas y el plugin le avisa.",

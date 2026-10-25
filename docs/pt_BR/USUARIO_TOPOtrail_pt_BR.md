@@ -118,7 +118,8 @@ janela diz isso.** Ajuste-os ao seu terreno e informe os que usou.
   rugosidade também são zero por padrão, para que resultados existentes não se
   movam sem que ninguém peça; a umidade exige a drenagem do MDE ligada.
 * **Limites do terreno**: a faixa altimétrica, a declividade máxima admitida
-  (acima dela a célula é inutilizável — 100% são 45°) e a declividade em que a
+  (acima dela a célula é inutilizável — 100% são 45°; o padrão, 85%, liga as
+  trilhas de caminhada testadas e recusa trechos de cabo ou via ferrata) e a declividade em que a
   nota de declividade chega a zero. Se a maior parte da sua área ultrapassa essa
   última, o critério deixa de distinguir uma encosta de outra, e o plugin avisa
   quando isso acontece.
