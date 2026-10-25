@@ -54,6 +54,15 @@ DIRETORIOS_DE_CACHE = (
 )
 
 
+# Configuracoes de ferramentas que o scanner do plugins.qgis.org reconhece na
+# raiz do plugin. Com qualquer uma delas no zip a versao sai "Validated
+# (configured)" -- o selo laranja, para um administrador revisar -- em vez de
+# "Validated". A 1.5.0 e a 1.5.1 sairam assim por causa do .flake8, que so serve
+# ao CI (comprimento de linha) e nao suprime nada que o site cobre: as regras
+# de estilo do site sao informativas e estao desligadas.
+CONFIGURACOES_DO_SCANNER = (".flake8", ".bandit", ".secrets.baseline")
+
+
 def versao_do_manifesto():
     parser = configparser.ConfigParser(interpolation=None)
     parser.read(os.path.join(RAIZ, "metadata.txt"), encoding="utf-8")
@@ -64,6 +73,8 @@ def deve_excluir(caminho):
     """Decide pela posicao do caminho DENTRO do plugin (sem a pasta raiz)."""
     partes = caminho.split("/")
     if partes[0] in DIRETORIOS_EXCLUIDOS:
+        return True
+    if len(partes) == 1 and partes[0] in CONFIGURACOES_DO_SCANNER:
         return True
     if any(parte in DIRETORIOS_DE_CACHE for parte in partes):
         return True

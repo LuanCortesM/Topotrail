@@ -68,6 +68,21 @@ def test_o_zip_nao_leva_cache_nem_suites_nem_ferramentas(tmp_path):
     assert "TopoTrail/processing/algorithm.py" in nomes
 
 
+def test_o_zip_nao_leva_configuracao_que_o_scanner_do_qgis_reconhece(tmp_path):
+    """Com .flake8, .bandit ou .secrets.baseline na raiz do plugin, o
+    plugins.qgis.org marca a versao como "Validated (configured)", em laranja,
+    e nao como "Validated". Foi o que aconteceu com a 1.5.0 e a 1.5.1."""
+    if not _tem_git():
+        pytest.skip("sem repositorio git para 'git archive HEAD'")
+    modulo = _empacotador()
+    caminho_zip, _ = modulo.empacotar(str(tmp_path))
+    with zipfile.ZipFile(caminho_zip) as pacote:
+        raiz = {nome.split("/")[1] for nome in pacote.namelist() if nome.count("/") == 1}
+    assert not raiz & {".flake8", ".bandit", ".secrets.baseline"}, raiz
+    # o .flake8 continua no repositorio: e ele que da o limite de linha ao CI
+    assert (ROOT / ".flake8").is_file()
+
+
 def test_o_zip_sai_do_head_e_nao_da_arvore_de_trabalho(tmp_path):
     """Um arquivo nao versionado na arvore nao pode aparecer no pacote."""
     if not _tem_git():
