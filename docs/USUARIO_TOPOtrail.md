@@ -72,6 +72,14 @@ as it was resolved and the statistics of every intermediate raster. **Attach it
 to any bug report**, and keep it beside any figure you publish — it is what lets
 someone else reproduce the run.
 
+To report a problem, use **Report a problem**, at the bottom right of the
+window. Describe what happened; the plugin adds the versions (TopoTrail, QGIS,
+Qt, Python, GDAL, NumPy, SciPy, operating system), the last error and the last
+lines of the progress log, with your home folder replaced by `~`. *Send by
+e-mail* opens your e-mail program addressed to the author with the text ready,
+and also copies it, for those who use webmail; *Open on GitHub* opens the bug
+form already filled in. Attach the diagnostic log to the e-mail if you can.
+
 ## Using the window
 
 Open **TopoTrail** from the toolbar or the `TopoTrail` menu. The window is a

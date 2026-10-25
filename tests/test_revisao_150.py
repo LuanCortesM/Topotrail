@@ -88,9 +88,9 @@ def test_o_conselho_da_representatividade_segue_o_modo(algorithm):
     dem = np.tile(np.arange(100, dtype=float), (100, 1)) + 1000.0
     rep = algorithm.zone_representativeness(dem < 1030.0, np.ones(dem.shape, bool), {"altitude": dem})
     caminhavel, aviso = algorithm.describe_representativeness(rep, walkability=True)
-    assert aviso and "zonas caminhaveis" in caminhavel and "ligue 'Faixas de altitude'" not in caminhavel
+    assert aviso and "zonas caminhaveis" in caminhavel and "ligue 'Equilibrar zonas por faixa altimetrica'" not in caminhavel
     manual, _ = algorithm.describe_representativeness(rep, bands_need_auto_threshold=True)
-    assert "limiar em 0" in manual and "ligue 'Faixas de altitude'" not in manual
+    assert "limiar em 0" in manual and "ligue 'Equilibrar zonas por faixa altimetrica'" not in manual
 
 
 def test_aviso_de_celula_grossa_quando_quem_engrossa_e_a_reamostragem(hydrology, monkeypatch):

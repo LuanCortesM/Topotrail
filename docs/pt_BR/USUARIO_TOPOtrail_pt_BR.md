@@ -74,6 +74,15 @@ como foi resolvido e as estatísticas de cada raster intermediário. **Anexe-o a
 qualquer relato de problema**, e guarde-o ao lado de qualquer figura que você
 publicar — é o que permite a outra pessoa reproduzir a execução.
 
+Para relatar um problema, use **Relatar problema**, no canto inferior direito
+da janela. Conte o que aconteceu; o plugin junta as versões (TopoTrail, QGIS,
+Qt, Python, GDAL, NumPy, SciPy, sistema operacional), o último erro e as
+últimas linhas do andamento, com a sua pasta pessoal trocada por `~`. *Enviar
+por e-mail* abre o seu programa de e-mail endereçado ao autor com o texto
+pronto, e também o copia, para quem usa e-mail no navegador; *Abrir no GitHub*
+abre o formulário de bug já preenchido. Se puder, anexe ao e-mail o registro
+técnico.
+
 ## Usando a janela
 
 Abra **TopoTrail** pela barra de ferramentas ou pelo menu `TopoTrail`. A janela é

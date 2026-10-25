@@ -16,8 +16,8 @@ abre e entende.
 import os
 import traceback
 
-from qgis.PyQt.QtCore import QObject, pyqtSignal
-from qgis.PyQt.QtGui import QFont, QFontMetrics, QPixmap
+from qgis.PyQt.QtCore import QObject, QUrl, pyqtSignal
+from qgis.PyQt.QtGui import QDesktopServices, QFont, QFontMetrics, QGuiApplication, QPixmap, QScreen
 from qgis.PyQt.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
     QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
@@ -30,16 +30,23 @@ from qgis.core import (
 )
 import qgis.processing as processing
 
+from . import bug_report
 from . import icons
 from . import i18n
+from . import screen_fit
+from .report_dialog import ReportDialog
 from .support import (
     class_enum,
     log_quietly,
     TopotrailSupportMixin, append_gui_diagnostic_log, qt_enum,
-    serialize_processing_params, size_policy,
+    serialize_processing_params, size_policy, topotrail_log_path,
 )
 
 PLUGIN_DIR = os.path.dirname(os.path.dirname(__file__))
+
+# DOI de conceito no Zenodo: resolve sempre para a versao mais recente. O DOI
+# de cada versao so existe depois do release, entao nao da para grava-lo aqui.
+CONCEPT_DOI = "10.5281/zenodo.20295565"
 
 # Tamanho do texto das etapas, usado na folha de estilo e na medida da pilula.
 STEP_TEXT_PX = 12
@@ -635,7 +642,11 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         self._feedback = None
         self._labels = []          # (widget, chave) para troca de idioma
         self._format_initialised = False
-        self.setMinimumSize(940, 720)
+        self._fitted = False
+        self._last_error = ""
+        self._last_log_path = ""
+        # O piso de sempre; ao abrir, _fit_to_screen o reduz onde a tela e menor.
+        self.setMinimumSize(*screen_fit.FLOOR)
         self._build()
         self._retranslate()
         self._apply_theme()
@@ -888,6 +899,15 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         layout.addWidget(self.author_label)
 
         layout.addStretch(1)
+        # Relatar fica a vista em todos os passos, e nao escondido dentro do
+        # Sobre: quem acabou de ver um erro nao vai procurar o caminho. No
+        # cabecalho nao cabia a 940 px em frances e espanhol; aqui sobra faixa.
+        self.report_button = QPushButton()
+        self.report_button.setObjectName("ttHeaderAction")
+        self.report_button.setCursor(qt_enum("CursorShape", "PointingHandCursor"))
+        self.report_button.clicked.connect(self._show_report)
+        self._bind(self.report_button, "report")
+        layout.addWidget(self.report_button, 0, qt_enum("AlignmentFlag", "AlignVCenter"))
         # O nome das instituicoes saiu daqui: as tres logos ao lado dizem
         # exatamente isso, e repetir em texto so competia por largura -- em
         # 940 px a linha era cortada. Fica como dica de ferramenta da placa,
@@ -920,9 +940,86 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         return footer
 
     def _show_about(self):
-        """Creditos completos. As logos ja estao na lateral; aqui fica o texto."""
-        QMessageBox.about(self, self.t("about"),
-                          self.t("about_text").format(version=_plugin_version()))
+        """Creditos, como citar e os enderecos do projeto.
+
+        Montado a mao, e nao por QMessageBox.about: os links precisam abrir
+        no navegador, e o de relatar abre a janela de relato, nao um site.
+        """
+        fonte = bug_report.read_metadata(PLUGIN_DIR).get("repository", "").strip()
+        manual = fonte + ("/blob/main/docs/pt_BR/USUARIO_TOPOtrail_pt_BR.md" if self.lang == "pt"
+                          else "/blob/main/docs/USUARIO_TOPOtrail.md")
+        box = QMessageBox(self)
+        box.setWindowTitle(self.t("about"))
+        logo = os.path.join(PLUGIN_DIR, "logo.png")
+        if os.path.exists(logo):
+            box.setIconPixmap(QPixmap(logo).scaled(
+                64, 64, qt_enum("AspectRatioMode", "KeepAspectRatio"),
+                qt_enum("TransformationMode", "SmoothTransformation")))
+        box.setText(self.t("about_text").format(
+            version=_plugin_version(), doi=CONCEPT_DOI, manual=manual, source=fonte))
+        rotulo = box.findChild(QLabel, "qt_msgbox_label")
+        if rotulo is not None:
+            # Na largura padrao do QMessageBox o endereco do DOI quebrava ao meio.
+            rotulo.setMinimumWidth(480)
+            rotulo.setOpenExternalLinks(False)
+            rotulo.setTextInteractionFlags(qt_enum("TextInteractionFlag", "TextBrowserInteraction"))
+            rotulo.linkActivated.connect(lambda href: self._about_link(box, href))
+        (getattr(box, "exec", None) or box.exec_)()
+
+    def _about_link(self, box, href):
+        if href == "topotrail:report":
+            box.accept()
+            self._show_report()
+        else:
+            QDesktopServices.openUrl(QUrl(href))
+
+    def _show_report(self):
+        """A janela de relato, ja com o ultimo erro e o registro tecnico."""
+        caminho = self._last_log_path
+        saida = self.output_edit.text().strip()
+        if not caminho and saida and os.path.exists(topotrail_log_path(saida)):
+            caminho = topotrail_log_path(saida)
+        janela = ReportDialog(self, self.t, PLUGIN_DIR, _plugin_version(), self.lang,
+                              error=self._last_error, log_path=caminho,
+                              log=self.log_view.toPlainText())
+        janela.setAttribute(qt_enum("WidgetAttribute", "WA_DeleteOnClose"))
+        # open(), e nao exec(): modal so para esta janela, o QGIS continua livre.
+        janela.open()
+        return janela
+
+    # -- tamanho da janela ---------------------------------------------------
+    def _qgis_screen(self):
+        """A tela em que o QGIS esta e o centro da janela dele."""
+        principal = None
+        try:
+            principal = self.iface.mainWindow() if self.iface else None
+        except Exception as exc:  # iface sem janela (script, teste)
+            log_quietly("janela principal do QGIS", exc)
+        if isinstance(principal, QWidget) and principal.isVisible() and hasattr(principal, "screen"):
+            tela = principal.screen()
+            if isinstance(tela, QScreen):
+                centro = principal.frameGeometry().center()
+                return tela, (centro.x(), centro.y())
+        return QGuiApplication.primaryScreen(), None
+
+    def _fit_to_screen(self, available=None, center=None):
+        """Piso, tamanho e posicao a partir da area util da tela (ver screen_fit).
+
+        Respeita quem ja chamou resize() ou move() antes de mostrar a janela.
+        """
+        self._fitted = True
+        if available is None:
+            tela, center = self._qgis_screen()
+            if tela is None:
+                return
+            area = tela.availableGeometry()
+            available = (area.x(), area.y(), area.width(), area.height())
+        ajuste = screen_fit.fit(available, center)
+        self.setMinimumSize(*ajuste["minimum"])
+        if not self.testAttribute(qt_enum("WidgetAttribute", "WA_Resized")):
+            self.resize(*ajuste["size"])
+        if not self.testAttribute(qt_enum("WidgetAttribute", "WA_Moved")):
+            self.move(*ajuste["position"])
 
     def _page_head(self, layout, glyph, title_key, subtitle_key, step=1):
         row = QHBoxLayout()
@@ -1250,7 +1347,13 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         inner.addWidget(self._label("min_area"))
         inner.addWidget(self.min_area)
         inner.addWidget(self.altitude_band)
-        inner.addWidget(self.band_size)
+        # O campo da faixa ficava solto embaixo da caixa, sem dizer o que era.
+        row = QHBoxLayout()
+        row.addWidget(self._label("alg_bandsize"))
+        row.addWidget(self.band_size)
+        row.addStretch(1)
+        inner.addLayout(row)
+        self.altitude_band.toggled.connect(self.band_size.setEnabled)
         self.breaks_edit = QLineEdit("20, 35, 60, 100")
         inner.addWidget(self._label("breaks"))
         inner.addWidget(self.breaks_edit)
@@ -1597,6 +1700,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         claro. Reaplicar aqui, uma vez, resolve sem depender da ordem de chamada.
         """
         super().showEvent(event)
+        if not self._fitted:
+            self._fit_to_screen()
         if not getattr(self, "_theme_settled", False):
             self._theme_settled = True
             self._apply_theme()
@@ -1826,6 +1931,8 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             return
         params = self._collect()
         self.log_view.clear()
+        self._last_error = ""
+        self._last_log_path = ""
         self.progress.setRange(0, 0)
 
         if getattr(self, "_log_relay", None) is None:
@@ -1917,6 +2024,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             # A rota falhou e o resto foi entregue: isso nao e um "Pronto".
             erros = [linha[2:] for linha in self.log_view.toPlainText().splitlines()
                      if linha.startswith("\u2716 ")]
+            self._last_error = erros[-1] if erros else ""
             QMessageBox.warning(self, self.t("route_missing_title"),
                                 self.t("route_missing_text").format(
                                     count=loaded, error=erros[-1] if erros else "?"))
@@ -1933,6 +2041,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             self.output_edit.text(), "interface_erro", erro=str(error),
             traceback=traceback.format_exc(),
             parametros=serialize_processing_params(params))
+        self._last_error, self._last_log_path = str(error), log_path
         self.cleanup_temp_point_files()
         QMessageBox.critical(self, self.t("fail_title"),
                              self.t("fail_text").format(error=str(error),

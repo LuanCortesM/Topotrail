@@ -2239,7 +2239,7 @@ def describe_representativeness(relatorio, altitude_bands_on=False, walkability=
         if walkability:
             frase += (" As zonas caminhaveis seguem so a transitabilidade e nao sao escolhidas "
                       "por faixa de altitude: se a amostragem precisa cobrir o gradiente, gere as "
-                      "zonas por adequabilidade com 'Faixas de altitude'.")
+                      "zonas por adequabilidade com 'Equilibrar zonas por faixa altimetrica'.")
         elif bands_need_auto_threshold:
             frase += (" As faixas de altitude estao ligadas, mas so valem com o limiar automatico: "
                       "deixe o limiar em 0 para que as zonas sejam escolhidas dentro de cada faixa.")
@@ -2249,8 +2249,8 @@ def describe_representativeness(relatorio, altitude_bands_on=False, walkability=
                       "percentil das zonas.")
         else:
             frase += (" As zonas nao cobrem o gradiente de altitude: se a amostragem precisa "
-                      "representa-lo, ligue 'Faixas de altitude' (as zonas passam a ser escolhidas "
-                      "dentro de cada faixa).")
+                      "representa-lo, ligue 'Equilibrar zonas por faixa altimetrica' (passo 3: "
+                      "as zonas passam a ser escolhidas dentro de cada faixa).")
     frase += (" O plugin compara so o relevo. Zonas de acesso facil costumam coincidir com area "
               "alterada: confira a cobertura do solo (por exemplo, MapBiomas) antes de definir "
               "os pontos de amostragem.")

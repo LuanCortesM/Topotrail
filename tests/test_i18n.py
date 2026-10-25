@@ -210,3 +210,15 @@ def test_the_window_does_not_claim_the_defaults_were_calibrated(code):
         baixo = valor.lower()
         assert not any(termo.lower() in baixo for termo in proibido), (
             "{}.{} volta a afirmar calibracao: {!r}".format(code, chave, valor))
+
+
+@pytest.mark.parametrize("code", [REFERENCE] + TRANSLATIONS)
+def test_the_about_box_says_how_to_cite_and_where_to_report(code):
+    """O Sobre so dizia "plugins.qgis.org/plugins/TopoTrail", em texto, sem
+    link; nao dizia como citar nem por onde relatar um problema."""
+    texto = _load(code)["about_text"].format(
+        version="9.9.9", doi="10.5281/zenodo.1", manual="https://manual", source="https://fonte")
+    assert "https://doi.org/10.5281/zenodo.1" in texto
+    assert "9.9.9" in texto and "Maciel, L. S. C." in texto
+    for alvo in ("https://manual", "https://fonte", "topotrail:report"):
+        assert "href='{}'".format(alvo) in texto, (code, alvo)

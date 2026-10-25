@@ -271,3 +271,11 @@ def test_no_colour_is_hardcoded_outside_the_theme_tables():
     unexpected = {colour for colour in found if colour.lower() not in allowed}
     assert not unexpected, (
         f"cores fixas fora das tabelas de tema: {sorted(unexpected)}")
+
+
+def test_the_about_box_cites_the_concept_doi_of_citation_cff():
+    """O DOI de conceito resolve sempre para a versao mais recente; o da versao
+    so existe depois do release, por isso a janela usa o de conceito."""
+    cff = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
+    conceito = re.search(r'^doi: "([^"]+)"', cff, re.MULTILINE).group(1)
+    assert 'CONCEPT_DOI = "{}"'.format(conceito) in DIALOG

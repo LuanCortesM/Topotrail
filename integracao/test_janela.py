@@ -168,3 +168,54 @@ def test_rota_que_falha_nao_termina_em_pronto(janela):
     dialogo._finish(True, {}, {"START_POINT_FILE": "origem.geojson"})
     assert caixas[-1][0] == "warning", caixas
     assert "os pontos nao se ligam" in caixas[-1][1]
+
+
+def test_a_janela_cabe_num_notebook_com_escala(qgis_app, processing_qgis, plugin):
+    """1366 x 768 a 125%: 566 px uteis. Com o piso fixo de 720 o botao
+    Continuar ficava fora da tela."""
+    modulo = importlib.import_module(os.path.basename(RAIZ) + ".ui.topotrail_dialog")
+    dialogo = modulo.TopotrailDialog(iface_simulado())
+    try:
+        dialogo._fit_to_screen(available=(0, 0, 1093, 566))
+        assert dialogo.height() + 40 <= 566 and dialogo.width() + 16 <= 1093
+        assert dialogo.minimumHeight() <= dialogo.height()
+        dialogo.show()
+        qgis_app.processEvents()
+        assert dialogo.height() + 40 <= 566, "o primeiro show desfez o ajuste"
+        assert dialogo.next_button.isVisible()
+        rodape = dialogo.next_button.mapTo(dialogo, dialogo.next_button.rect().bottomLeft())
+        assert rodape.y() <= dialogo.height()
+    finally:
+        dialogo.shutdown()
+        dialogo.deleteLater()
+
+
+def test_relatar_problema_leva_o_ultimo_erro_e_vai_para_o_email_do_metadata(janela, monkeypatch):
+    dialogo, _caixas = janela
+    relato = importlib.import_module(os.path.basename(RAIZ) + ".ui.report_dialog")
+    abertos = []
+    monkeypatch.setattr(relato, "_open", lambda url: abertos.append(url) or True)
+
+    dialogo._log_line("✖ A rota nao foi gerada: os pontos nao se ligam.")
+    dialogo._finish(True, {}, {"START_POINT_FILE": "origem.geojson"})
+    janela_relato = dialogo._show_report()
+    try:
+        assert "os pontos nao se ligam" in janela_relato.details.toPlainText()
+        janela_relato.description.setPlainText("A rota nao saiu no passo 4.")
+        janela_relato.email_button.click()
+        assert abertos and abertos[-1].startswith("mailto:herpetomantiqueira@gmail.com?")
+        from qgis.PyQt.QtWidgets import QApplication
+        copiado = QApplication.clipboard().text()
+        assert copiado.startswith("A rota nao saiu no passo 4.")
+        assert "TopoTrail: " in copiado and "os pontos nao se ligam" in copiado
+        janela_relato.github_button.click()
+        assert "/issues/new?template=bug_report.yml" in abertos[-1]
+    finally:
+        janela_relato.close()
+
+
+def test_o_botao_de_relatar_esta_no_cabecalho_em_todos_os_idiomas(janela):
+    dialogo, _ = janela
+    for codigo in ("pt", "en", "es", "fr", "zh", "ja"):
+        dialogo.language_box.setCurrentIndex(dialogo.language_box.findData(codigo))
+        assert dialogo.report_button.text() and dialogo.report_button.text() != "report"

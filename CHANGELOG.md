@@ -4,6 +4,20 @@ Mudanças relevantes do TopoTrail. Formato
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões em
 [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [Unreleased]
+
+### Adicionado
+
+- Botão **Relatar problema**, no canto inferior direito da janela, em todos os passos. A pessoa escreve o que aconteceu e o plugin junta as versões (TopoTrail, QGIS, Qt, Python, GDAL, NumPy, SciPy, sistema), o último erro, o registro técnico e as últimas linhas do andamento, com a pasta pessoal trocada por `~`. *Enviar por e-mail* abre o programa de e-mail endereçado ao `email` do `metadata.txt` e copia o texto, para quem usa webmail; *Abrir no GitHub* abre o formulário de bug já preenchido; *Copiar texto* serve a qualquer outro canal. A caixa de falha aponta para o botão.
+
+### Alterado
+
+- A janela se ajusta à tela: o piso de 940 × 720 continua onde cabe e encolhe até a área útil onde não cabe (os passos rolam), e ela abre centralizada sobre o QGIS. Num notebook 1366 × 768 a 125% o botão Continuar ficava embaixo da barra de tarefas; a 150% num 1920 × 1080 sumia a faixa de baixo.
+- O Sobre diz o que o plugin gera hoje (inclusive os cursos d'água), traz como citar com o DOI de conceito do Zenodo e tem links para o manual, o código-fonte e o relato de problema.
+- O campo do tamanho da faixa altimétrica ganhou rótulo e só fica ativo com as faixas ligadas; o aviso de representatividade usa o nome da opção que aparece na janela ("Equilibrar zonas por faixa altimétrica").
+- A ajuda do teto vadeável não repete mais a frase do cartão da drenagem: diz o que o teto faz.
+- No `metadata.txt`, a descrição deixa de dizer que o plugin não detecta hidrografia: a drenagem vem do próprio MDE.
+
 ## [1.5.0] - 2026-10-25
 
 ### Adicionado
