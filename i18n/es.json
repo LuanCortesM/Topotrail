@@ -127,6 +127,8 @@
   "dir_low": "Malos (menor es mejor)",
   "done_text": "{count} capa(s) cargada(s) en el proyecto.",
   "done_title": "Listo",
+  "route_missing_text": "{count} capa(s) cargada(s) — zonas y mapas —, pero la ruta no se generó:\n\n{error}",
+  "route_missing_title": "Terminado sin la ruta",
   "end": "Destino",
   "err_alt": "La altitud mínima debe ser menor que la máxima.",
   "err_breaks": "Los límites de transitabilidad deben ser cuatro números crecientes, separados por comas.",

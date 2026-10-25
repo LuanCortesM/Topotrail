@@ -147,3 +147,24 @@ def test_nenhum_texto_fica_cortado_em_nenhum_idioma(janela, qgis_app):
                     problemas.append("{} passo {}: opcao '{}'".format(
                         codigo, passo + 1, caixa.currentText()[:30]))
     assert not problemas, problemas
+
+
+def test_o_teto_de_vau_aparece_com_a_drenagem_ligada(janela):
+    """O cartao dos cursos d'agua abre marcado (drenagem ligada por padrao), mas
+    o campo do teto vadeavel nascia escondido: o setChecked vinha antes de o
+    cartao saber mostrar o corpo."""
+    dialogo, _caixas = janela
+    assert dialogo.want_streams.isChecked()
+    assert not dialogo.want_streams.body.isHidden()
+    dialogo.want_streams.setChecked(False)
+    assert dialogo.want_streams.body.isHidden()
+
+
+def test_rota_que_falha_nao_termina_em_pronto(janela):
+    """Com zonas ligadas, a falha da rota deixa de abortar -- e a janela fechava
+    com a caixa "Pronto", com o erro so numa linha do log."""
+    dialogo, caixas = janela
+    dialogo._log_line("✖ A rota nao foi gerada: os pontos nao se ligam.")
+    dialogo._finish(True, {}, {"START_POINT_FILE": "origem.geojson"})
+    assert caixas[-1][0] == "warning", caixas
+    assert "os pontos nao se ligam" in caixas[-1][1]

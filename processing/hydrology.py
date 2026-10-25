@@ -369,11 +369,17 @@ def analyse_hydrology(dem_array, transform, min_basin_km2=1.0, feedback=None,
         # o mesmo terreno a 90 m achou 54% dos rios. (O aviso vale so quando a
         # rede foi pedida -- o mesmo criterio do aviso de largura acima.)
         if warn_about_width and max(work_px, work_py) > COARSE_CELL_M:
+            if factor > 1:
+                # o MDE pode ser de 30 m: quem engrossou foi a reamostragem
+                remedio = ("recorte a area de estudo para que a drenagem seja calculada "
+                           "na resolucao do MDE")
+            else:
+                remedio = "use um MDE de 30 m"
             feedback.pushWarning(
                 "A drenagem foi extraida em pixel de {:.0f} m. Nos testes, um MDE de "
                 "90 m achou so cerca de metade dos rios mapeados (contra 80% com um "
                 "MDE de 30 m). Confira os cursos d'agua com a hidrografia oficial antes "
-                "de ir a campo, ou use um MDE de 30 m.".format(max(work_px, work_py))
+                "de ir a campo, ou {}.".format(max(work_px, work_py), remedio)
             )
         if density is not None and not (0.5 <= density <= 5.0):
             feedback.pushWarning(

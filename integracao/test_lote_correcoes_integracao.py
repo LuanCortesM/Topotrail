@@ -476,3 +476,16 @@ def test_zonas_saem_com_o_relatorio_de_representatividade(executar, cena, tmp_pa
         eventos = [json.loads(linha) for linha in log if linha.strip()]
     rep = [e for e in eventos if e.get("event") == "representatividade_das_zonas"]
     assert rep and rep[0]["altitude"]["faixas"] == 10
+
+
+def test_rota_que_falha_apaga_a_rota_velha_de_mesmo_nome(executar, paredao, tmp_path):
+    """Uma rota de execucao anterior com o mesmo nome ficava na pasta, como se
+    descrevesse a rota que acabou de falhar."""
+    dem, inicio, fim = paredao
+    velha = tmp_path / "v_rota.gpkg"
+    velha.write_bytes(b"rota de outra execucao")
+    resultado, feedback, erro = executar(
+        parametros_base(dem, str(tmp_path / "v.gpkg"), inicio, fim))
+    assert erro is None, erro
+    assert "OUTPUT_ROUTE" not in resultado
+    assert not velha.exists()

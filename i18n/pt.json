@@ -127,6 +127,8 @@
   "dir_low": "Ruins (menor é melhor)",
   "done_text": "{count} camada(s) carregada(s) no projeto.",
   "done_title": "Pronto",
+  "route_missing_text": "{count} camada(s) carregada(s) — zonas e mapas —, mas a rota não foi gerada:\n\n{error}",
+  "route_missing_title": "Concluído sem a rota",
   "end": "Destino",
   "err_alt": "A altitude mínima precisa ser menor que a máxima.",
   "err_breaks": "Os limites de transitabilidade precisam ser quatro números crescentes, separados por vírgula.",

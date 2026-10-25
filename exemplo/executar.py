@@ -93,8 +93,8 @@ def parametros(mde, origem, destino, intermediarios, saida):
         "ROUTE_MARGIN_M": 5000.0,         # padrao
 
         # --- drenagem e travessias ---
-        # NAO e o padrao: a extracao de drenagem vem desligada. Aqui esta ligada
-        # porque e ela que produz o setimo produto, a camada de travessias.
+        # padrao desde a versao que sucede a 1.4.1 (antes vinha desligada); e ela
+        # que produz o setimo produto, a camada de travessias.
         "STREAMS_FROM_DEM": True,
         "STREAM_MIN_BASIN_KM2": 1.0,      # padrao
         "STREAM_FORD_MAX_KM2": 50.0,      # padrao: acima disto vira barreira

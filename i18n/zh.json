@@ -127,6 +127,8 @@
   "dir_low": "不利（越小越好）",
   "done_text": "已向工程加载 {count} 个图层。",
   "done_title": "完成",
+  "route_missing_text": "已加载 {count} 个图层（区域和地图），但未生成路线：\n\n{error}",
+  "route_missing_title": "已完成，但没有路线",
   "end": "终点",
   "err_alt": "最小高程必须小于最大高程。",
   "err_breaks": "通行性阈值须为四个递增数字，用逗号分隔。",

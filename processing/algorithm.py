@@ -1440,8 +1440,9 @@ def build_route_cost(score_array, cost_model, contrast, penalty_mask=None, feedb
     """
     finite = np.isfinite(score_array)
     # penalty_mask pode ser booleano (fator fixo de 8x) ou um array de fatores
-    # reais -- 1 onde nao ha restricao, 2/4/8 nas travessias de cursos d'agua
-    # por tamanho, inf onde a travessia nao e presumida.
+    # reais -- 1 onde nao ha restricao (inclusive nos cursos vadeaveis, que so
+    # informam a rota), 8 na camada penalizada, inf onde a travessia nao e
+    # presumida.
     factor = None
     if penalty_mask is not None:
         if penalty_mask.dtype == bool:
@@ -1523,7 +1524,7 @@ def stream_crossing_factors(stream_mask, basin_km2, ford_max_km2, transform, cha
     return factors, area, classes
 
 
-def _com_travessias_diagonais(path_cells, stream_mask, crossing_area=None):
+def _com_travessias_diagonais(path_cells, stream_mask, crossing_area=None, marcar=False):
     """Insere a celula de canto quando a rota atravessa a drenagem na diagonal.
 
     Um passo diagonal cruza o canto compartilhado por quatro celulas. Quando a
@@ -1543,7 +1544,7 @@ def _com_travessias_diagonais(path_cells, stream_mask, crossing_area=None):
     saida = []
     celulas = list(path_cells)
     for posicao, atual in enumerate(celulas):
-        saida.append(atual)
+        saida.append((atual, False) if marcar else atual)
         if posicao + 1 >= len(celulas):
             continue
         (row0, col0), (row1, col1) = atual, celulas[posicao + 1]
@@ -1556,7 +1557,9 @@ def _com_travessias_diagonais(path_cells, stream_mask, crossing_area=None):
             continue
         if len(cantos) > 1 and crossing_area is not None:
             cantos.sort(key=lambda rc: float(np.nan_to_num(crossing_area[rc])), reverse=True)
-        saida.append(cantos[0])
+        # com `marcar`, o canto sai sinalizado: ele nao e um passo da rota, e a
+        # distancia percorrida nao pode somar 1 + 1 onde a rota andou raiz de 2
+        saida.append((cantos[0], True) if marcar else cantos[0])
     return saida
 
 
@@ -1607,14 +1610,23 @@ def detect_stream_crossings(path_cells, stream_mask, crossing_area, crossing_cla
     """
     crossings = []
     run = None
-    anterior = None
-    percorrido = 0.0          # distancia ao longo da rota, em celulas
-    for cell in _com_travessias_diagonais(path_cells, stream_mask, crossing_area) + [None]:
+    percorrido = 0.0          # distancia ao longo da rota, em celulas, so pelos passos reais
+    ultimo_real = None
+    pos_anterior = None
+    pos = 0.0
+    celulas = _com_travessias_diagonais(path_cells, stream_mask, crossing_area, marcar=True)
+    for cell, inserida in celulas + [(None, False)]:
         on = False
         if cell is not None:
             row, col = cell
-            if anterior is not None:
-                percorrido += float(np.hypot(row - anterior[0], col - anterior[1]))
+            if inserida:
+                # o canto fica no meio do passo diagonal que a rota deu
+                pos = percorrido + np.sqrt(2.0) / 2.0
+            else:
+                if ultimo_real is not None:
+                    percorrido += float(np.hypot(row - ultimo_real[0], col - ultimo_real[1]))
+                ultimo_real = cell
+                pos = percorrido
             if 0 <= row < stream_mask.shape[0] and 0 <= col < stream_mask.shape[1]:
                 on = bool(stream_mask[row, col])
         if on:
@@ -1622,20 +1634,20 @@ def detect_stream_crossings(path_cells, stream_mask, crossing_area, crossing_cla
             k = int(crossing_class[row, col])
             if run is None:
                 run = {"entrada": (row, col), "area_km2": a, "classe": k,
-                       "celulas": 1, "passos": 0.0, "inicio": percorrido, "fim": percorrido}
+                       "celulas": 1, "passos": 0.0, "inicio": pos, "fim": pos}
             else:
                 run["area_km2"] = max(run["area_km2"], a)
                 run["classe"] = max(run["classe"], k)
                 run["celulas"] += 1
-                run["fim"] = percorrido
-                if anterior is not None:
-                    run["passos"] += float(np.hypot(row - anterior[0], col - anterior[1]))
+                run["fim"] = pos
+                if pos_anterior is not None:
+                    run["passos"] += float(pos - pos_anterior)
         elif run is not None:
             # uma travessia de uma celula so percorre uma celula de faixa
             run["passos"] = max(run["passos"], 1.0)
             crossings.append(run)
             run = None
-        anterior = cell
+        pos_anterior = pos if cell is not None else pos_anterior
     return crossings
 
 
@@ -1645,9 +1657,15 @@ def detect_stream_crossings(path_cells, stream_mask, crossing_area, crossing_cla
 # Batedor eram 14 "travessias" num trecho em que a rota segue o corrego. Um evento
 # que se estende por mais que isto e um trecho junto ao curso, nao uma travessia.
 STREAM_CONTACT_MERGE_M = 150.0
+# Em celula grossa a rota toca o eixo a cada 2 ou 3 celulas (180-270 m a 90 m):
+# a distancia de fusao nunca fica abaixo de 3,5 celulas da drenagem.
+STREAM_CONTACT_MERGE_CELLS = 3.5
+# Contatos com bacias que diferem mais que isto sao cursos diferentes (um
+# corrego e o riacho ao lado), e cada um continua sendo uma travessia.
+STREAM_CONTACT_SAME_STREAM_RATIO = 2.0
 
 
-def merge_stream_contacts(contacts, pixel_size_m, merge_m=STREAM_CONTACT_MERGE_M):
+def merge_stream_contacts(contacts, pixel_size_m, merge_m=None, stream_cell_m=None):
     """Funde contatos proximos e classifica cada evento: travessia ou trecho junto ao curso.
 
     Cada contato vem de detect_stream_crossings, com `inicio` e `fim` em celulas
@@ -1656,16 +1674,24 @@ def merge_stream_contacts(contacts, pixel_size_m, merge_m=STREAM_CONTACT_MERGE_M
     `tipo` ("travessia" ou "junto ao curso").
     """
     passo = float(pixel_size_m)
+    if merge_m is None:
+        merge_m = max(STREAM_CONTACT_MERGE_M,
+                      STREAM_CONTACT_MERGE_CELLS * max(passo, float(stream_cell_m or 0.0)))
     eventos = []
     for c in contacts:
-        if eventos and (c["inicio"] - eventos[-1]["fim"]) * passo <= merge_m:
+        if eventos:
             e = eventos[-1]
-            e["fim"] = c["fim"]
-            e["area_km2"] = max(e["area_km2"], c["area_km2"])
-            e["classe"] = max(e["classe"], c["classe"])
-            e["contatos"] += 1
-        else:
-            eventos.append(dict(c, contatos=1))
+            perto = (c["inicio"] - e["fim"]) * passo <= merge_m
+            a, b = e["area_ultimo"], c["area_km2"]
+            mesmo_curso = max(a, b) <= STREAM_CONTACT_SAME_STREAM_RATIO * max(min(a, b), 1e-9)
+            if perto and mesmo_curso:
+                e["fim"] = c["fim"]
+                e["area_km2"] = max(e["area_km2"], c["area_km2"])
+                e["area_ultimo"] = c["area_km2"]
+                e["classe"] = max(e["classe"], c["classe"])
+                e["contatos"] += 1
+                continue
+        eventos.append(dict(c, contatos=1, area_ultimo=c["area_km2"]))
     for e in eventos:
         e["extensao_m"] = max(e["fim"] - e["inicio"], e.get("passos") or 1.0) * passo
         e["tipo"] = "junto ao curso" if e["extensao_m"] > merge_m else "travessia"
@@ -1983,8 +2009,9 @@ def combine_constraints(route_mask, zone_mask, layer_mask,
       (hoje 1, isto e, so informa) e so e intransponivel onde o fator ja veio
       infinito, acima do teto vadeavel declarado pelo usuario. Um rio e uma
       linha, e toda rota de um vale ao vizinho precisa cruzar uma;
-    * as zonas, no modo "evitar", excluem a camada do usuario, mas NAO a
-      drenagem. Desde que a drenagem passou a vir ligada por padrao, tirar as
+    * as zonas excluem o rio acima do teto vadeavel (que a rota nao cruza e o
+      mapa de transitabilidade chama de intransitavel) e, no modo "evitar", a
+      camada do usuario -- mas NAO a drenagem vadeavel. Desde que a drenagem passou a vir ligada por padrao, tirar as
       margens das zonas tiraria da amostragem justamente o habitat ripario --
       alvo de levantamento de anfibios, de flora de mata ciliar. Quem quiser
       excluir margens fornece a hidrografia como camada de restricao.
@@ -2012,6 +2039,8 @@ def combine_constraints(route_mask, zone_mask, layer_mask,
     route_mask = route_mask & ~route_barrier
     factor = np.where(route_barrier, np.inf, factor)
     penalty_mask = factor if np.any(factor != 1.0) else None
+    if stream_factor is not None:
+        zone_mask = zone_mask & np.isfinite(stream_factor)
     if constraint_mode == CONSTRAINT_AVOID:
         if layer_mask is not None:
             zone_mask = zone_mask & ~layer_mask
@@ -2103,14 +2132,21 @@ def _ks_distance(a, b, rng=None):
 
 
 def northness(dem_array, transform):
-    """Cosseno do aspecto: +1 encosta voltada para o norte, -1 para o sul, 0 plano."""
-    d_linha, d_coluna = np.gradient(dem_array.astype(np.float64))
+    """Cosseno do aspecto: +1 encosta voltada para o norte, -1 para o sul, 0 plano.
+
+    Sem dado (NaN na vizinhanca) sai NaN, e nao 0: senao a borda de um MDE
+    recortado por poligono vira um pico de "terreno plano" na distribuicao.
+    """
+    dy = abs(float(transform[5])) or 1.0
+    dx = abs(float(transform[1])) or 1.0
+    d_linha, d_coluna = np.gradient(dem_array.astype(np.float64), dy, dx)
     # linha cresce para o sul quando o pixel tem altura negativa (norte para cima):
     # z subindo para o sul quer dizer encosta descendo para o norte.
     d_norte = d_linha * (-np.sign(float(transform[5])) or 1.0)
     modulo = np.hypot(d_linha, d_coluna)
     with np.errstate(invalid="ignore", divide="ignore"):
-        return np.where(modulo > 0, d_norte / modulo, 0.0)
+        valido = np.isfinite(modulo) & np.isfinite(dem_array)
+        return np.where(valido, np.where(modulo > 0, d_norte / modulo, 0.0), np.nan)
 
 
 def zone_representativeness(zone_mask, area_mask, variables):
@@ -2175,7 +2211,8 @@ def zone_representativeness(zone_mask, area_mask, variables):
     return relatorio
 
 
-def describe_representativeness(relatorio, altitude_bands_on=False):
+def describe_representativeness(relatorio, altitude_bands_on=False, walkability=False,
+                                bands_need_auto_threshold=False):
     """(texto, aviso): a frase para o usuario e se ela deve sair como aviso."""
     if not relatorio:
         return None, False
@@ -2199,7 +2236,14 @@ def describe_representativeness(relatorio, altitude_bands_on=False):
     aviso = bool(altitude and altitude["faixas_cobertas"] < min(
         REPRESENTATIVENESS_WARN_BINS, altitude["faixas"]))
     if aviso:
-        if altitude_bands_on:
+        if walkability:
+            frase += (" As zonas caminhaveis seguem so a transitabilidade e nao sao escolhidas "
+                      "por faixa de altitude: se a amostragem precisa cobrir o gradiente, gere as "
+                      "zonas por adequabilidade com 'Faixas de altitude'.")
+        elif bands_need_auto_threshold:
+            frase += (" As faixas de altitude estao ligadas, mas so valem com o limiar automatico: "
+                      "deixe o limiar em 0 para que as zonas sejam escolhidas dentro de cada faixa.")
+        elif altitude_bands_on:
             frase += (" Mesmo com as faixas de altitude, parte do gradiente fica de fora: se a "
                       "amostragem precisa representa-lo, reduza a area minima de fragmento ou o "
                       "percentil das zonas.")
@@ -3524,6 +3568,7 @@ def save_access_route(
     stream_mask=None,
     stream_area=None,
     stream_class=None,
+    stream_cell_m=None,
     field_speed_kmh=FIELD_SURVEY_SPEED_KMH,
     alternatives_pct=0.0,
     slope_array=None,
@@ -3804,7 +3849,7 @@ def save_access_route(
         global_cells = [(row + row_min, col + col_min) for row, col in path_cells]
         crossings = merge_stream_contacts(
             detect_stream_crossings(global_cells, stream_mask, stream_area, stream_class),
-            float(pixel_size_m or abs(transform[1])))
+            float(pixel_size_m or abs(transform[1])), stream_cell_m=stream_cell_m)
         if crossings:
             labels = _ford_labels()
             geometries, attributes = [], []
@@ -5008,9 +5053,18 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 distance = morphology.distance_transform_edt(~channels, sampling=(py, px))
                 channels = distance <= float(constraint_buffer_m)
             stream_mask = channels.astype(bool)
-            restricted_mask |= stream_mask
             stream_factor, stream_area, stream_class = stream_crossing_factors(
                 stream_mask, basin_km2, stream_ford_max_km2, transform, channel_axis=channel_axis)
+            # So o rio acima do teto vadeavel restringe; o resto da drenagem so
+            # informa a rota (FORD_CLASSES) e as zonas mantem as margens.
+            restricted_mask |= stream_mask & ~np.isfinite(stream_factor)
+            if feedback:
+                labels = _ford_labels()
+                counts = [int(((stream_class == k) & valid_mask).sum()) for k in range(len(FORD_CLASSES) + 1)]
+                feedback.pushInfo(
+                    "Cursos d'agua por classe de bacia (celulas): " + "; ".join(
+                        "{} = {:,}".format(labels[k], counts[k]) for k in range(len(labels))) +
+                    ". Acima de {:.1f} km2 a travessia a vau nao e presumida.".format(stream_ford_max_km2))
 
         layer_mask = None
         if constraint_layer is not None:
@@ -5042,13 +5096,6 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
              route_barrier, tratamento) = combine_constraints(
                 route_constraint_mask, zone_constraint_mask,
                 layer_mask, stream_factor, constraint_mode)
-            if stream_factor is not None and feedback:
-                labels = _ford_labels()
-                counts = [int(((stream_class == k) & valid_mask).sum()) for k in range(len(FORD_CLASSES) + 1)]
-                feedback.pushInfo(
-                    "Travessia de cursos d'agua por classe de bacia (celulas): " + "; ".join(
-                        "{} = {:,}".format(labels[k], counts[k]) for k in range(len(labels))) +
-                    ". Acima de {:.1f} km2 a travessia a vau nao e presumida.".format(stream_ford_max_km2))
             if feedback:
                 feedback.pushInfo(
                     "Restricoes: {:,} celulas atingidas ({:.2f}% da area valida), {}.".format(
@@ -5059,7 +5106,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 celulas=affected, modo=("evitar" if constraint_mode == CONSTRAINT_AVOID else "encarecer"),
                 buffer_m=float(constraint_buffer_m),
                 fonte_drenagem=bool(streams_from_dem),
-                drenagem_na_rota="graduada por area de bacia" if stream_mask.any() else None,
+                drenagem_na_rota=("so informa; barreira acima do teto vadeavel"
+                                  if stream_mask.any() else None),
                 teto_vadeavel_km2=float(stream_ford_max_km2),
                 celulas_barreira_rota=int(route_barrier.sum()),
                 fonte_camada=bool(constraint_layer is not None),
@@ -5342,6 +5390,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                     stream_mask=(channel_axis if channel_axis is not None and channel_axis.any()
                                  else None),
                     stream_area=stream_area, stream_class=stream_class,
+                    stream_cell_m=(stream_metrics.get("pixel_trabalho_m")
+                                   if channel_axis is not None else None),
                     field_speed_kmh=field_speed_kmh,
                     alternatives_pct=alternatives_pct,
                     slope_array=slope_data,
@@ -5361,7 +5411,21 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                         or (feedback is not None and feedback.isCanceled())):
                     raise
                 rota_falhou = str(erro)
-                append_diagnostic_log(debug_log_path, "rota_nao_gerada", erro=rota_falhou)
+                # Arquivos de rota com este nome sao de uma execucao anterior, ou
+                # parciais desta: nenhum descreve a rota que acabou de falhar.
+                base_saida = os.path.splitext(output_path)[0]
+                apagados = []
+                for sufixo in ("_rota.gpkg", "_corredor.gpkg", "_travessias.gpkg",
+                               "_alternativas.gpkg", "_folga.tif"):
+                    velho = base_saida + sufixo
+                    if os.path.exists(velho):
+                        try:
+                            os.remove(velho)
+                            apagados.append(os.path.basename(velho))
+                        except OSError as exc:
+                            _LOG.debug("arquivo de rota velho nao removido: %s", exc)
+                append_diagnostic_log(debug_log_path, "rota_nao_gerada", erro=rota_falhou,
+                                      arquivos_de_rota_removidos=apagados)
                 if feedback:
                     feedback.reportError(
                         "A rota nao foi gerada: {} As zonas e os mapas sao entregues mesmo "
@@ -5410,7 +5474,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             frase, aviso = describe_representativeness(
                 representatividade,
                 altitude_bands_on=bool(altitude_band_threshold and threshold_is_auto
-                                       and not walkability_zones))
+                                       and not walkability_zones),
+                walkability=bool(walkability_zones),
+                bands_need_auto_threshold=bool(altitude_band_threshold and not threshold_is_auto
+                                               and not walkability_zones))
             if frase and feedback:
                 (feedback.pushWarning if aviso else feedback.pushInfo)(frase)
             gdf = vectorize_binary_raster(binary_result, transform, proj, feedback)

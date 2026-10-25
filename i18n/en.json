@@ -127,6 +127,8 @@
   "dir_low": "Bad (lower is better)",
   "done_text": "{count} layer(s) loaded into the project.",
   "done_title": "Done",
+  "route_missing_text": "{count} layer(s) loaded — zones and maps — but the route was not produced:\n\n{error}",
+  "route_missing_title": "Finished without the route",
   "end": "Destination",
   "err_alt": "Minimum altitude must be lower than maximum.",
   "err_breaks": "Transitability breaks must be four increasing numbers, separated by commas.",

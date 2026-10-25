@@ -127,6 +127,8 @@
   "dir_low": "Défavorables (valeur faible = mieux)",
   "done_text": "{count} couche(s) chargée(s) dans le projet.",
   "done_title": "Terminé",
+  "route_missing_text": "{count} couche(s) chargée(s) — zones et cartes —, mais l'itinéraire n'a pas été produit :\n\n{error}",
+  "route_missing_title": "Terminé sans l'itinéraire",
   "end": "Destination",
   "err_alt": "L'altitude minimale doit être inférieure à la maximale.",
   "err_breaks": "Les seuils de praticabilité doivent être quatre nombres croissants, séparés par des virgules.",

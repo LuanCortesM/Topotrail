@@ -1181,6 +1181,9 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         stream_body.addWidget(holder)
         stream_body.addWidget(self._help_label("ford_max_help"))
         self.want_streams.toggled(self.want_streams.body.setVisible)
+        # O cartao ja nasce marcado (drenagem ligada por padrao), e o setChecked
+        # veio antes deste toggled: sem isto o teto vadeavel ficava escondido.
+        self.want_streams.body.setVisible(self.want_streams.isChecked())
         for card in optional_cards:
             card.toggled(lambda _value: self._refresh_context())
 
@@ -1910,6 +1913,14 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
             return
         loaded = self._load_results(results or {})
         self.cleanup_temp_point_files()
+        if (params or {}).get("START_POINT_FILE") and not (results or {}).get("OUTPUT_ROUTE"):
+            # A rota falhou e o resto foi entregue: isso nao e um "Pronto".
+            erros = [linha[2:] for linha in self.log_view.toPlainText().splitlines()
+                     if linha.startswith("\u2716 ")]
+            QMessageBox.warning(self, self.t("route_missing_title"),
+                                self.t("route_missing_text").format(
+                                    count=loaded, error=erros[-1] if erros else "?"))
+            return
         QMessageBox.information(self, self.t("done_title"),
                                 self.t("done_text").format(count=loaded))
 

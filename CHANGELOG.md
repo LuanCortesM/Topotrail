@@ -13,12 +13,14 @@ Mudanças relevantes do TopoTrail. Formato
 ### Alterado
 
 - Drenagem extraída do MDE ligada por padrão (Processing e janela), e ela passa a **informar** a rota, não a desviar: abaixo do teto vadeável as travessias são listadas com a classe de tamanho e não mudam o custo (até a 1.4.1 custavam 2×, 4× e 8× em toda a faixa de 30 m, o que tirava a rota dos fundos de vale; em 62 trilhas reais isso piorou a concordância em 32 e melhorou em 15). A travessia é contada no eixo do canal, e contatos a menos de 150 m um do outro viram um evento só: travessia, ou trecho em que a rota segue junto ao curso (campo `tipo`, com `extensao_m`). No Batedor, 14 "travessias" eram a rota subindo o vale do córrego: viram 3 trechos junto ao curso. O campo `fator_custo` saiu da camada. Com MDE de 30 m ela achou 80% dos rios do OpenStreetMap e 23 de 27 travessias de rio em 51 trilhas consagradas. Em célula acima de 45 m, um aviso pede para conferir com a hidrografia oficial.
-- As zonas mantêm as margens dos cursos d'água, que são hábitat de amostragem; no modo "evitar" elas excluem só a camada de restrição do usuário. No exemplo, 11 zonas viram 12.
+- As zonas mantêm as margens dos cursos d'água, que são hábitat de amostragem; no modo "evitar" elas excluem só a camada de restrição do usuário. O rio acima do teto vadeável, que a rota não cruza, continua fora das zonas. No exemplo, 11 zonas viram 12.
+- Com a drenagem ligada por padrão, as superfícies exatamente planas de 0,5 km² ou mais (lagos e represas achatados no MDE) saem da área válida também por padrão, como já acontecia na 1.4.1 quando a drenagem era ligada. Em MDE de valores inteiros, uma planície pode ter patamares exatamente planos: confira o aviso de superfícies d'água no log.
 
 - `tempo_h` e `tempo_campo_h` passam a ser o tempo de Tobler ao longo da rota, sem o retardo por terreno e sem os fatores de vau, que exprimem preferência e não ritmo. O custo acumulado continua em `custo`. Em 51 trilhas consagradas o valor antigo inflava a duração de 1,10 a 1,91 vez (mediana 1,39). No exemplo, a duração passa de 6,48 h a 3,96 h, já com a rota da drenagem que só informa.
 
 ### Corrigido
 
+- Revisão de código antes da versão: contatos de cursos diferentes (bacias que diferem mais de 2×) não se fundem mais num evento; a distância de fusão acompanha a célula (pelo menos 3,5 células), para o MDE de 90 m não voltar a contar dezenas de "travessias"; a extensão junto ao curso não infla mais 41% nos passos diagonais; a mensagem de restrições não mostra mais "None"; na janela, o campo do teto de vau aparece com a drenagem ligada; a rota que falha não termina mais com a caixa "Pronto" (aviso com o erro) e apaga a rota velha de mesmo nome; o conselho de representatividade segue o modo das zonas; a face norte/sul não vira "plano" na borda sem dado; o aviso de célula grossa diferencia MDE grosso de reamostragem por memória.
 - Rota impossível com zonas pedidas: a falha da rota abortava o algoritmo e levava junto as zonas e os mapas. Agora a falha vira erro no log e o resto é entregue. Só a rota, ou cancelamento, continua interrompendo.
 
 ## [1.4.1] - 2026-10-06

@@ -45,13 +45,14 @@ values next to the expected ones, ending in `CONFERE` (they match) or
 all match.
 
 All 52 Processing parameters are written out in full in `executar.py`, each one
-commented with whether it is the plugin default. Two are not defaults, and they
-are the two that matter for this example:
+commented with whether it is the plugin default. Two matter most for this
+example:
 
-* `STREAMS_FROM_DEM = True` — drainage extraction is off by default; it is on
-  here because it is what produces the seventh product, the crossings layer;
-* `VIA_POINTS_FILE` — an intermediate destination, so the example exercises the
-  multi-leg route rather than a single origin-to-destination leg.
+* `STREAMS_FROM_DEM = True` — drainage extraction, on by default since the
+  version after 1.4.1 (it was off before); it is what produces the seventh
+  product, the crossings layer;
+* `VIA_POINTS_FILE` — an intermediate destination, not a default, so the example
+  exercises the multi-leg route rather than a single origin-to-destination leg.
 
 The interface language is pinned to `pt` inside the script, because the language
 decides the class labels written next to the transitability raster. Change it
