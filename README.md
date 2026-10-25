@@ -650,8 +650,8 @@ does it. Participation is governed by the
 Every release is archived on Zenodo. Cite the version you used:
 
 > Maciel, L. S. C. (2026). *TopoTrail: a QGIS plugin for DEM-based topographic
-> suitability and least-cost route planning* (version 1.4.1) [Computer
-> software]. Zenodo. https://doi.org/10.5281/zenodo.23177383
+> suitability and least-cost route planning* (version 1.5.0) [Computer
+> software]. Zenodo. https://doi.org/10.5281/zenodo.23647726
 
 The concept DOI
 [10.5281/zenodo.20295565](https://doi.org/10.5281/zenodo.20295565) always
@@ -663,10 +663,10 @@ the sidebar.
 @software{maciel_topotrail_2026,
   author    = {Maciel, Luan da Silva Cortes},
   title     = {TopoTrail: a QGIS plugin for DEM-based topographic suitability and least-cost route planning},
-  version   = {1.4.1},
+  version   = {1.5.0},
   year      = {2026},
   publisher = {Zenodo},
-  doi       = {10.5281/zenodo.23177383},
+  doi       = {10.5281/zenodo.23647726},
   url       = {https://github.com/LuanCortesM/Topotrail}
 }
 ```
