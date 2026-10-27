@@ -1351,7 +1351,10 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         card, inner = _card(self.t("zone_box"), "crop")
         self._bind(card._title_label, "zone_box")
         self.percentile = _spin(0.1, 99.9, 75.0, 1, 1)
-        self.min_area = _spin(0, 1e6, 50.0, 1, 5, " ha")
+        # No minimo (-1) o campo mostra "Automatica": 0,05% da area analisada,
+        # de 1 a 50 ha. Um valor digitado fixa a area; 0 desliga o filtro.
+        self.min_area = _spin(-1, 1e6, -1, 1, 5, " ha")
+        self._bind(self.min_area, "min_area_auto", "setSpecialValueText")
         self.altitude_band = self._check("band")
         self.altitude_band.setChecked(True)
         self.band_size = _spin(1, 5000, 200.0, 0, 10, " m")
@@ -1360,6 +1363,7 @@ class TopotrailDialog(QDialog, TopotrailSupportMixin):
         inner.addWidget(self._help_label("percentile_help"))
         inner.addWidget(self._label("min_area"))
         inner.addWidget(self.min_area)
+        inner.addWidget(self._help_label("min_area_help"))
         inner.addWidget(self.altitude_band)
         # O campo da faixa ficava solto embaixo da caixa, sem dizer o que era.
         row = QHBoxLayout()

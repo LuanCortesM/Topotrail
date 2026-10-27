@@ -333,8 +333,18 @@ suitability (`AUTO_PERCENTILE`, default 75). With `ALTITUDE_BAND_THRESHOLD` on �
 which is the default, and applies only to the automatic threshold — the
 percentile is taken **within each elevation band** of `ALTITUDE_BAND_SIZE_M`
 (default 200 m, minimum 50 m), so that a high scene does not select only its
-valley floors. Patches smaller than `MIN_PATCH_AREA_HA` (default 50 ha) are
-dropped.
+valley floors. Patches smaller than `MIN_PATCH_AREA_HA` are dropped. The
+default (−1) is automatic: 0.05% of the analysed area, between 1 and 50 ha.
+That is 5 ha in a 10,000 ha area and 50 ha from 100,000 ha upward; up to 1.5.2
+it was a fixed 50 ha.
+- **Why.** With 50 ha, the zones of a ~10,000 ha protected area left the steep
+  middle elevations out: 4 of 10 bands in Carnaúbas State Park.
+- **The test.** In 15 strictly protected areas sampled from the Brazilian
+  national register (500 to 300,000 ha, at least 300 m of relief), 50 ha left
+  bands out in 7. The proportional rule fixed 4 of them and created no warning
+  elsewhere; in the large areas it gives the same zones as 50 ha.
+
+Type a value to fix the minimum; 0 turns the filter off.
 
 ## Cost surface, route and corridor
 

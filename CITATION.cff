@@ -79,5 +79,5 @@ identifiers:
   - type: url
     value: "https://github.com/LuanCortesM/Topotrail/releases/tag/v1.5.2"
     description: "GitHub release v1.5.2"
-version: "1.5.2"
-date-released: "2026-10-25"
+version: "1.5.3"
+date-released: "2026-10-27"

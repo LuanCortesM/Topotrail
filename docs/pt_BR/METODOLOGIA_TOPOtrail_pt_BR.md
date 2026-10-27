@@ -307,7 +307,17 @@ quando este é zero, tirado de um percentil da própria adequabilidade da cena
 padrão, e vale apenas para o limiar automático — o percentil é tomado **dentro de
 cada faixa altimétrica** de `ALTITUDE_BAND_SIZE_M` (padrão 200 m, mínimo 50 m),
 para que uma cena alta não selecione só os seus fundos de vale. Fragmentos
-menores que `MIN_PATCH_AREA_HA` (padrão 50 ha) são descartados.
+menores que `MIN_PATCH_AREA_HA` são descartados. O padrão (−1) é automático:
+0,05% da área analisada, entre 1 e 50 ha. Isso dá 5 ha numa área de 10 mil ha e
+50 ha a partir de 100 mil ha; até a 1.5.2 eram 50 ha fixos.
+- **Por quê.** Com 50 ha, as zonas de uma UC de ~10 mil ha deixavam de fora as
+  altitudes médias, que são as encostas: 4 de 10 faixas no PE das Carnaúbas.
+- **O teste.** Em 15 UCs de proteção integral sorteadas do Cadastro Nacional
+  (500 a 300.000 ha, pelo menos 300 m de desnível), os 50 ha deixavam faixas de
+  fora em 7. A regra proporcional resolveu 4 delas e não criou aviso nas
+  outras; nas UCs grandes dá as mesmas zonas que os 50 ha.
+
+Para fixar a área mínima, digite um valor; 0 desliga o filtro.
 
 ## Superfície de custo, rota e corredor
 

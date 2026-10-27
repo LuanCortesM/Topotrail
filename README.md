@@ -727,6 +727,9 @@ The full, per-version changelog lives in [`metadata.txt`](metadata.txt) and is
 what the QGIS plugin repository shows; [`CHANGELOG.md`](CHANGELOG.md) lists each
 change of 1.4.0 onwards on its own line. In short:
 
+- **1.5.3** — The minimum patch area of the access zones is automatic by
+  default (0.05% of the analysed area, 1 to 50 ha), so the zones of a
+  10,000 ha protected area no longer leave the steep middle elevations out.
 - **1.5.2** — Packaging only: the zip no longer ships the developer's Flake8
   configuration, so the QGIS plugin repository validates it as plain Validated.
 - **1.5.1** — The window fits the screen (on laptops with display scaling the

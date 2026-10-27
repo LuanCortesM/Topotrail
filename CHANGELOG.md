@@ -4,6 +4,19 @@ Mudanças relevantes do TopoTrail. Formato
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões em
 [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.3] - 2026-10-27
+
+### Alterado
+
+- **Área mínima do fragmento das zonas automática por padrão:** 0,05% da área analisada, entre 1 e 50 ha. Dá 5 ha numa área de 10 mil ha e 50 ha a partir de 100 mil ha; até a 1.5.2 eram 50 ha fixos.
+  - **Por quê.** Com 50 ha, as zonas de uma UC de ~10 mil ha deixavam as encostas de fora: nas Carnaúbas, 4 de 10 faixas de altitude; no MONA Mantiqueira Paulista, 6 de 10. Com a regra nova, cobrem 9 e 10.
+  - **O teste.** 15 UCs de proteção integral sorteadas do Cadastro Nacional, de 500 a 300 mil ha, com pelo menos 300 m de desnível.
+    - Com 50 ha, as zonas deixavam faixas de fora em 7.
+    - A regra proporcional resolveu 4 delas, não criou aviso em nenhuma e, nas UCs grandes, dá o mesmo que os 50 ha.
+    - Os 5 ha fixos resolviam as mesmas 4, mas picotavam as zonas das UCs grandes em 4 a 9 vezes mais fragmentos.
+  - **Na janela.** O campo mostra "Automática". Um valor digitado fixa a área, e 0 continua desligando o filtro. No Processing, o automático é −1.
+  - **No log.** O registro mostra a área usada e a área analisada.
+
 ## [1.5.2] - 2026-10-25
 
 ### Corrigido

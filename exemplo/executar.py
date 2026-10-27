@@ -36,7 +36,7 @@ ESPERADO = {
     "perda_m": 579.4,
     "alt_max_m": 1577.8,
     "travessias": 2,
-    "zonas": 13,
+    "zonas": 21,
 }
 
 # Tolerancia relativa das grandezas continuas.
@@ -77,7 +77,7 @@ def parametros(mde, origem, destino, intermediarios, saida):
         "GENERATE_ZONES": True,           # padrao
         "THRESHOLD": 0.0,                 # padrao: 0 = usar o percentil automatico
         "AUTO_PERCENTILE": 75.0,          # padrao
-        "MIN_PATCH_AREA_HA": 50.0,        # padrao
+        "MIN_PATCH_AREA_HA": -1.0,        # padrao: automatica (0,05% da area, 1 a 50 ha)
         "ALTITUDE_BAND_THRESHOLD": True,  # padrao
         "ALTITUDE_BAND_SIZE_M": 200.0,    # padrao
         "WALKABILITY_ZONES": False,       # padrao

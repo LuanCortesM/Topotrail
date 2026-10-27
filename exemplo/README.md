@@ -75,7 +75,7 @@ Eight files in `saida/`, which are the seven products plus the diagnostic log:
 
 ### The numbers to check
 
-These are the values `executar.py` compares, measured with TopoTrail 1.5.0. Four things changed after 1.4.1. The default maximum slope is 85% instead of 55%, so the route now crosses the steepest part of the synthetic escarpment instead of going round it (14404.5 m, 1551.1 m high point and 3 crossings in 1.4.1). `tempo_h` is Tobler's time along the route, without the terrain slowdown, which expresses preference and not pace. The drainage informs the route instead of pushing it away from the streams, and each crossing is counted on the channel axis. And the zones keep the stream margins.
+These are the values `executar.py` compares, measured with TopoTrail 1.5.0. The exception is the zone count: after 1.5.2 the minimum patch area became automatic, and the count went from 13 to 21. Four things changed after 1.4.1. The default maximum slope is 85% instead of 55%, so the route now crosses the steepest part of the synthetic escarpment instead of going round it (14404.5 m, 1551.1 m high point and 3 crossings in 1.4.1). `tempo_h` is Tobler's time along the route, without the terrain slowdown, which expresses preference and not pace. The drainage informs the route instead of pushing it away from the streams, and each crossing is counted on the channel axis. And the zones keep the stream margins.
 
 | Quantity | Attribute | Expected |
 |---|---|---|
@@ -85,7 +85,7 @@ These are the values `executar.py` compares, measured with TopoTrail 1.5.0. Four
 | Accumulated descent | `perda_m` | **579.4** m |
 | Highest point on the route | `alt_max_m` | **1577.8** m |
 | Watercourse crossings | features in `_travessias.gpkg` | **2** |
-| Potential access zones | features in `exemplo.gpkg` | **13** |
+| Potential access zones | features in `exemplo.gpkg` | **21** |
 
 Counts must match exactly. Lengths, times and elevations are compared with a
 relative tolerance of 0.1%, which absorbs last-digit differences between NumPy
@@ -105,7 +105,9 @@ than as a contract:
   unburdened walker on a path, and multiplying the maximum speed by a constant
   divides every cost by it, so the **path does not change** — only the duration;
 * the corridor is a 100 m radius buffer, so 200 m wide, covering 2 605 717 m²;
-* the thirteen zones total 1851.7 ha (eleven and 1421.4 ha in 1.4.1, when the
+* the twenty-one zones total 1970.3 ha. The minimum patch area is automatic since the
+  version after 1.5.2: 0.05% of the 8100 ha analysed, 4.05 ha. With the fixed 50 ha of
+  1.5.2 there were thirteen zones and 1851.7 ha (eleven and 1421.4 ha in 1.4.1, when the
   zones lost the stream margins and stopped at 55% slope);
 * suitability runs 0.1333 to 0.9763, median 0.6468; relative topographic risk
   runs 0.0108 to 1.0000, median 0.2752 (the risk is scaled by the maximum slope,

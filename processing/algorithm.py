@@ -63,7 +63,7 @@ from qgis.core import (  # noqa: E402
 
 _LOG = logging.getLogger("TopoTrail")
 
-PLUGIN_VERSION = "1.5.2"
+PLUGIN_VERSION = "1.5.3"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -97,6 +97,18 @@ NEAREST_VALID_CELL_RADIUS = 30
 # medido na auditoria: 7.500 m de deslocamento com zero mensagens.
 NEAREST_VALID_CELL_WARN_M = 100.0
 MIN_ALTITUDE_BAND_SIZE_M = 50.0
+
+# Area minima do fragmento das zonas. O padrao (-1) e automatico: 0,05% da area
+# analisada, entre 1 e 50 ha -- 5 ha numa UC de 10 mil ha, 50 ha a partir de
+# 100 mil ha. Ate a 1.5.2 eram 50 ha fixos. Medido em 15 UCs de protecao
+# integral sorteadas do Cadastro Nacional (500 a 300.000 ha, amplitude de pelo
+# menos 300 m): com 50 ha as zonas deixavam faixas de altitude de fora em 7; a
+# regra proporcional resolveu 4 delas, nao criou aviso em nenhuma e, nas UCs
+# grandes, da o mesmo que os 50 ha. Os 5 ha fixos resolviam as mesmas 4, mas
+# picotavam as zonas das UCs grandes em 4 a 9 vezes mais fragmentos.
+MIN_PATCH_AREA_AUTO = -1.0
+MIN_PATCH_AREA_FRACTION = 0.0005
+MIN_PATCH_AREA_BOUNDS_HA = (1.0, 50.0)
 
 # Unidade do raster de declividade fornecido pelo usuario. Internamente o
 # TopoTrail trabalha sempre em porcentagem.
@@ -2297,6 +2309,12 @@ def metric_crs_for_raster(transform, shape, proj):
     return f"EPSG:{epsg}"
 
 
+def automatic_min_patch_area_ha(analysed_area_ha):
+    """Area minima automatica do fragmento: 0,05% da area analisada, entre 1 e 50 ha."""
+    lo, hi = MIN_PATCH_AREA_BOUNDS_HA
+    return float(min(hi, max(lo, MIN_PATCH_AREA_FRACTION * float(analysed_area_ha))))
+
+
 def filter_small_regions(binary_array, transform, proj, min_area_ha, feedback=None, log_path=None):
     """Remove connected raster fragments smaller than a minimum area.
 
@@ -4280,8 +4298,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 self.MIN_PATCH_AREA_HA,
                 self.tr("alg_minarea"),
                 _qgs_enum(QgsProcessingParameterNumber, "Type", "Double"),
-                defaultValue=50.0,
-                minValue=0.0,
+                defaultValue=MIN_PATCH_AREA_AUTO,
+                minValue=MIN_PATCH_AREA_AUTO,
             )
         )
         self.addParameter(
@@ -4805,8 +4823,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             message = "Os limites de declividade devem ser maiores que zero."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise _erro(message)
-        if min_patch_area_ha < 0:
-            message = "A area minima do fragmento nao pode ser negativa."
+        if min_patch_area_ha < 0 and min_patch_area_ha != MIN_PATCH_AREA_AUTO:
+            message = "A area minima do fragmento nao pode ser negativa (-1 = automatica)."
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise _erro(message)
         if not (0 <= threshold <= 1):
@@ -4840,7 +4858,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             feedback.pushInfo(f"Declividade de custo maximo: {slope_score_max}%")
             feedback.pushInfo(f"Threshold: {threshold}")
             feedback.pushInfo(f"Percentil automatico: {auto_percentile}")
-            feedback.pushInfo(f"Area minima do fragmento: {min_patch_area_ha} ha")
+            feedback.pushInfo(
+                "Area minima do fragmento: automatica (0,05% da area analisada, de 1 a 50 ha)"
+                if min_patch_area_ha == MIN_PATCH_AREA_AUTO
+                else f"Area minima do fragmento: {min_patch_area_ha} ha")
             feedback.pushInfo(
                 f"Zonas vetoriais: {'sim' if generate_zones else 'nao'}; "
                 f"modo caminhavel: {'sim' if walkability_zones else 'nao'}; "
@@ -5468,12 +5489,22 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 modo_caminhavel=bool(walkability_zones),
                 threshold_por_faixa_altimetrica=bool(altitude_band_threshold and threshold_is_auto and not walkability_zones),
             )
-            binary_result = filter_small_regions(binary_result, transform, proj, min_patch_area_ha, feedback, debug_log_path)
+            area_minima_ha = min_patch_area_ha
+            area_analisada_ha = float(np.sum(valid_mask & altitude_range_mask)) * area_pixel_m2 / 1e4
+            if min_patch_area_ha == MIN_PATCH_AREA_AUTO:
+                area_minima_ha = automatic_min_patch_area_ha(area_analisada_ha)
+                if feedback:
+                    feedback.pushInfo(
+                        "Area minima do fragmento automatica: {:.1f} ha (0,05% de {:,.0f} ha "
+                        "analisados, entre 1 e 50 ha).".format(area_minima_ha, area_analisada_ha))
+            binary_result = filter_small_regions(binary_result, transform, proj, area_minima_ha, feedback, debug_log_path)
             append_diagnostic_log(
                 debug_log_path,
                 "zonas_filtradas",
                 pixels_aptos_apos_filtro=int(np.sum(binary_result == 1)),
-                area_min_fragmento_ha=min_patch_area_ha,
+                area_min_fragmento_ha=area_minima_ha,
+                area_min_automatica=bool(min_patch_area_ha == MIN_PATCH_AREA_AUTO),
+                area_analisada_ha=area_analisada_ha,
             )
             representatividade = zone_representativeness(
                 binary_result == 1, valid_mask & altitude_range_mask,
