@@ -37,8 +37,9 @@ Portuguese documentation is kept in [`docs/pt_BR`](docs/pt_BR). The interface
 and the Processing parameters are available in six languages — Portuguese,
 English, Spanish, French, Chinese (Simplified) and Japanese — chosen from a
 selector in the window; Portuguese and English are reviewed, the other four are
-community drafts. The run log written to the Processing panel and the
-diagnostic `.log` file are in Portuguese only.
+community drafts. Since 1.5.5 the run log written to the Processing panel
+follows the chosen language too; the diagnostic `.log` file is a technical
+record whose field names are in Portuguese.
 
 ---
 
@@ -727,6 +728,9 @@ The full, per-version changelog lives in [`metadata.txt`](metadata.txt) and is
 what the QGIS plugin repository shows; [`CHANGELOG.md`](CHANGELOG.md) lists each
 change of 1.4.0 onwards on its own line. In short:
 
+- **1.5.5** — Progress messages, warnings and errors follow the chosen
+  language (they were in Portuguese only), with each language's number
+  separators.
 - **1.5.4** — The route warns when it goes a long way round terrain steeper
   than the maximum slope, and gives the limit that would allow the shorter
   route; the route itself does not change.

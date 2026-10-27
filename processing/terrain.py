@@ -16,6 +16,20 @@ Only NumPy is required; nothing here touches QGIS or GDAL.
 
 import numpy as np
 
+try:
+    from .mensagens import t
+except ImportError:  # carregado por caminho, fora do pacote (suite sem QGIS)
+    import importlib.util as _importlib_util
+    import os as _os
+    import sys as _sys
+
+    if "_topotrail_mensagens" not in _sys.modules:
+        _spec = _importlib_util.spec_from_file_location(
+            "_topotrail_mensagens", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "mensagens.py"))
+        _sys.modules["_topotrail_mensagens"] = _importlib_util.module_from_spec(_spec)
+        _spec.loader.exec_module(_sys.modules["_topotrail_mensagens"])
+    t = _sys.modules["_topotrail_mensagens"].t
+
 
 # Acima disto a derivacao de relevo passa a ser um risco para o processo do
 # QGIS, nao so uma espera. O MDE e promovido a float64 e cada gradiente cria
@@ -47,29 +61,18 @@ BYTES_POR_CELULA = 230
 def check_terrain_size(dem_array, feedback=None):
     """Avisa ou barra grades cuja derivacao estouraria a memoria do QGIS."""
     celulas = int(np.asarray(dem_array).size)
-    gb = "{:.1f}".format(celulas * BYTES_POR_CELULA / 1e9).replace(".", ",")
-    quantas = "{:,}".format(celulas).replace(",", ".")
+    gb = celulas * BYTES_POR_CELULA / 1e9
     if celulas > MAX_TERRAIN_CELLS:
-        raise ValueError(
-            "O MDE tem {} celulas; derivar declividade, curvaturas e rugosidade "
-            "exigiria cerca de {} GB de memoria transitoria e muito provavelmente "
-            "encerraria o QGIS. Recorte o MDE para a area de interesse "
-            "(Raster > Extrair > Cortar pelo retangulo) ou reamostre para uma "
-            "celula maior antes de rodar.".format(quantas, gb))
+        raise ValueError(t("msg_mde_grande_erro", cells=celulas, gb=gb))
     if celulas > WARN_TERRAIN_CELLS and feedback:
-        feedback.pushWarning(
-            "MDE grande: {} celulas. A derivacao pode usar cerca de {} GB de "
-            "memoria e levar varios minutos. Recortar a area de interesse deixa "
-            "o resultado igual e a espera menor.".format(quantas, gb))
+        feedback.pushWarning(t("msg_mde_grande", cells=celulas, gb=gb))
 
 
 def _metric_spacing(transform):
     pixel_size_x = abs(float(transform[1]))
     pixel_size_y = abs(float(transform[5]))
     if pixel_size_x <= 0 or pixel_size_y <= 0:
-        raise ValueError(
-            "Resolucao espacial invalida no GeoTransform para derivar o relevo."
-        )
+        raise ValueError(t("msg_resolucao_relevo"))
     return pixel_size_x, pixel_size_y
 
 
@@ -127,10 +130,7 @@ def _masked_gradient(surface, valid, spacing_y, spacing_x):
 
 def _require_2d(dem_array, what):
     if dem_array.ndim != 2 or min(dem_array.shape) < 2:
-        raise ValueError(
-            f"O MDE precisa ter pelo menos 2 x 2 celulas para derivar {what}; "
-            f"recebido {tuple(dem_array.shape)}."
-        )
+        raise ValueError(t("msg_mde_pequeno", what=t(what), shape=tuple(dem_array.shape)))
 
 
 def slope_percent_from_dem(dem_array, transform, feedback=None):
@@ -138,7 +138,7 @@ def slope_percent_from_dem(dem_array, transform, feedback=None):
 
     Percentage is TopoTrail's internal unit. A 45 degree slope is 100%.
     """
-    _require_2d(dem_array, "a declividade")
+    _require_2d(dem_array, "msg_what_declividade")
     px, py = _metric_spacing(transform)
     filled, valid = _filled_for_gradient(dem_array)
     dz_dy, dz_dx = _masked_gradient(filled, valid, py, px)
@@ -148,12 +148,8 @@ def slope_percent_from_dem(dem_array, transform, feedback=None):
     if feedback:
         finite = slope[np.isfinite(slope)]
         if finite.size:
-            feedback.pushInfo(
-                "Declividade derivada do MDE ({:.1f} x {:.1f} m): "
-                "p50={:.1f}%, p95={:.1f}%, max={:.1f}%".format(
-                    px, py, float(np.percentile(finite, 50)),
-                    float(np.percentile(finite, 95)), float(finite.max()))
-            )
+            feedback.pushInfo(t("msg_decl_derivada", px=px, py=py, p50=float(np.percentile(finite, 50)),
+                                p95=float(np.percentile(finite, 95)), max=float(finite.max())))
     return slope
 
 
@@ -209,7 +205,7 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
     Application to terrain modeling and surface geometry analysis.
     Mathematical Geology 25: 657-669.
     """
-    _require_2d(dem_array, "as curvaturas")
+    _require_2d(dem_array, "msg_what_curvaturas")
     px, py = _metric_spacing(transform)
     filled, valid = _filled_for_gradient(dem_array)
 
@@ -273,14 +269,11 @@ def curvatures_from_dem(dem_array, transform, feedback=None):
         array[~np.isfinite(array)] = np.nan
 
     if feedback:
-        for name, array in (("horizontal (plan)", curv_h), ("vertical (profile)", curv_v)):
+        for name, array in ((t("msg_curv_h_nome"), curv_h), (t("msg_curv_v_nome"), curv_v)):
             finite = array[np.isfinite(array)]
             if finite.size:
-                feedback.pushInfo(
-                    "Curvatura {} derivada do MDE: p05={:.4g}, p50={:.4g}, p95={:.4g}".format(
-                        name, float(np.percentile(finite, 5)),
-                        float(np.percentile(finite, 50)), float(np.percentile(finite, 95)))
-                )
+                feedback.pushInfo(t("msg_curvatura_derivada", name=name, p05=float(np.percentile(finite, 5)),
+                                    p50=float(np.percentile(finite, 50)), p95=float(np.percentile(finite, 95))))
     return curv_h, curv_v
 
 
@@ -332,11 +325,8 @@ def roughness_index(dem_array, transform=None, feedback=None):
     if feedback:
         finite = tri[np.isfinite(tri)]
         if finite.size:
-            feedback.pushInfo(
-                "Rugosidade (TRI) derivada do MDE: p50={:.2f} m, p90={:.2f} m, max={:.2f} m".format(
-                    float(np.percentile(finite, 50)), float(np.percentile(finite, 90)),
-                    float(finite.max()))
-            )
+            feedback.pushInfo(t("msg_tri", p50=float(np.percentile(finite, 50)),
+                                p90=float(np.percentile(finite, 90)), max=float(finite.max())))
     return tri
 
 
@@ -359,7 +349,7 @@ def vector_ruggedness(dem_array, transform, feedback=None):
     blocos na mesma inclinacao media -- o TRI nao separa, apesar do que a
     documentacao anterior afirmava.
     """
-    _require_2d(dem_array, "a rugosidade")
+    _require_2d(dem_array, "msg_what_rugosidade")
     check_terrain_size(dem_array, feedback)
     px, py = _metric_spacing(transform)
     filled, valid = _filled_for_gradient(dem_array)
@@ -404,12 +394,8 @@ def vector_ruggedness(dem_array, transform, feedback=None):
     if feedback:
         finite = vrm[np.isfinite(vrm)]
         if finite.size:
-            feedback.pushInfo(
-                "Rugosidade vetorial (VRM) derivada do MDE: p50={:.5f}, p90={:.5f}, "
-                "max={:.5f}".format(
-                    float(np.percentile(finite, 50)), float(np.percentile(finite, 90)),
-                    float(finite.max()))
-            )
+            feedback.pushInfo(t("msg_vrm", p50=float(np.percentile(finite, 50)),
+                                p90=float(np.percentile(finite, 90)), max=float(finite.max())))
     return vrm
 
 

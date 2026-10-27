@@ -17,6 +17,23 @@ import pytest
 import nucleo_sem_qgis
 
 
+@pytest.fixture(autouse=True)
+def mensagens_em_portugues():
+    """As frases conferidas aqui sao as do portugues, a lingua em que o codigo foi escrito.
+
+    Fora do QGIS ninguem define o idioma das mensagens, e o padrao seria o
+    ingles. O portugues e fixado nas duas copias do modulo de mensagens: a do
+    algoritmo e a que terrain, hydrology e transitability carregam sozinhos.
+    """
+    copias = [nucleo_sem_qgis.algoritmo().mensagens, nucleo_sem_qgis.mensagens_avulso()]
+    anteriores = [copia.idioma() for copia in copias]
+    for copia in copias:
+        copia.definir_idioma("pt")
+    yield
+    for copia, anterior in zip(copias, anteriores):
+        copia.definir_idioma(anterior)
+
+
 @pytest.fixture(scope="session")
 def algorithm():
     """The real processing/algorithm.py, with QGIS and GDAL stubbed for import."""

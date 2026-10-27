@@ -46,9 +46,9 @@ _PESOS_ZERADOS = {"WEIGHT_SLOPE": 0.0, "WEIGHT_CURVH": 0.0, "WEIGHT_CURVV": 0.0}
 
 @pytest.mark.parametrize("extras,trecho", [
     (_PESOS_ZERADOS, "soma dos pesos"),
-    ({"SLOPE_MAX": 0.001}, "Nenhuma celula"),
+    ({"SLOPE_MAX": 0.001}, "Nenhuma célula"),
     ({"TRANSITABILITY_BREAKS": "isso nao e numero"}, "limites de transitabilidade"),
-    ({"START_POINT_FILE": "/nao/existe.geojson"}, "nao encontrado"),
+    ({"START_POINT_FILE": "/nao/existe.geojson"}, "não encontrado"),
 ])
 def test_erros_do_usuario_sao_qgsprocessingexception(
         executar, cena, tmp_path, extras, trecho):
@@ -79,8 +79,8 @@ def test_faixa_de_altitude_fora_do_mde_nao_derruba_rota_nem_rasters(executar, ce
     assert erro is None, (erro, feedback.linhas[-5:])
     assert "OUTPUT_ROUTE" in resultado and "OUTPUT_SCORE_RASTER" in resultado
     assert "OUTPUT_VECTOR" not in resultado
-    assert feedback.procurar("zonas nao foram geradas")
-    assert feedback.procurar("5000 a 9000 m")
+    assert feedback.procurar("zonas não foram geradas")
+    assert feedback.procurar("5.000 a 9.000 m")
 
 
 # ---- 4. excecoes do GDAL so no escopo do algoritmo -----------------------
@@ -175,7 +175,7 @@ def test_o_ramo_de_erro_amigavel_volta_a_ser_alcancavel(plugin, qgis_app):
             gdal.DontUseExceptions()
         with pytest.raises(Exception) as capturado:
             plugin.raster_metadata("/nao/existe.tif")
-        assert "Nao foi possivel abrir raster para metadados" in str(capturado.value), (
+        assert "Não foi possível abrir o raster para ler os metadados" in str(capturado.value), (
             ligadas, str(capturado.value))
     ogr.DontUseExceptions()   # ordem inversa: no GDAL < 3.7 e uma pilha
     gdal.DontUseExceptions()
@@ -292,10 +292,10 @@ def test_restricao_mais_fina_que_o_pixel_avisa(executar, cena, tmp_path):
                         GENERATE_ZONES=False, CONSTRAINT_LAYER=faixa,
                         CONSTRAINT_BUFFER_M=0.0, CONSTRAINT_MODE=0))
     assert erro is None, feedback.linhas[-5:]
-    assert feedback.procurar("0 celulas atingidas"), "a cena escolhida nao reproduz o caso"
-    avisos = feedback.procurar("nao atingiu nenhuma celula")
+    assert feedback.procurar("0 células atingidas"), "a cena escolhida nao reproduz o caso"
+    avisos = feedback.procurar("não atingiu nenhuma célula")
     assert avisos, [linha for linha in feedback.linhas if "restricao" in linha.lower()]
-    assert "buffer" in avisos[0]
+    assert "afastamento" in avisos[0]
 
 
 # ---- 9. deslocamento do ponto pedido sai no log e vira aviso --------------
@@ -327,7 +327,7 @@ def test_ponto_deslocado_e_relatado_com_a_distancia(executar, plugin, tmp_path):
     avisos = [linha for linha in feedback.linhas
               if linha.startswith("AVISO: ") and "foi movido" in linha]
     assert avisos, [linha for linha in feedback.linhas if "ponto" in linha.lower()]
-    assert "O comprimento, o tempo e o ganho" in avisos[0]
+    assert "O comprimento, o tempo e a subida" in avisos[0]
 
     registro = [json.loads(linha) for linha in
                 open(resultado["OUTPUT_DEBUG_LOG"], encoding="utf-8")
@@ -390,7 +390,7 @@ def test_sentinela_num_raster_de_criterio_avisa_nomeando_o_raster(
     avisos = [linha for linha in feedback.linhas
               if linha.startswith("AVISO: ") and "Curvatura horizontal" in linha]
     assert avisos, [linha for linha in feedback.linhas if "Curvatura" in linha]
-    assert any("escala fisica" in aviso or "limite do percentil" in aviso
+    assert any("escala física" in aviso or "limite do percentil" in aviso
                for aviso in avisos), avisos
 
 
@@ -448,8 +448,8 @@ def test_rota_impossivel_ainda_entrega_zonas_e_mapas(executar, paredao, tmp_path
     assert os.path.isfile(resultado["OUTPUT_VECTOR"])
     for chave in ("OUTPUT_SCORE_RASTER", "OUTPUT_RISK_RASTER", "OUTPUT_TRANSITABILITY"):
         assert os.path.isfile(resultado[chave])
-    assert feedback.procurar("ERRO: A rota nao foi gerada")
-    assert feedback.procurar("Concluido SEM a rota")
+    assert feedback.procurar("ERRO: A rota não foi gerada")
+    assert feedback.procurar("Concluído SEM a rota")
 
 
 def test_rota_impossivel_sem_zonas_continua_sendo_erro(executar, paredao, tmp_path):
@@ -458,7 +458,7 @@ def test_rota_impossivel_sem_zonas_continua_sendo_erro(executar, paredao, tmp_pa
     resultado, feedback, erro = executar(
         parametros_base(dem, str(tmp_path / "r.gpkg"), inicio, fim, GENERATE_ZONES=False))
     assert resultado is None
-    assert erro is not None and "conectar" in str(erro)
+    assert erro is not None and "ligar os pontos" in str(erro)
 
 
 def test_zonas_saem_com_o_relatorio_de_representatividade(executar, cena, tmp_path):

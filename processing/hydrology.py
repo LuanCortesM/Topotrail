@@ -45,6 +45,20 @@ import heapq
 
 import numpy as np
 
+try:
+    from .mensagens import t
+except ImportError:  # carregado por caminho, fora do pacote (suite sem QGIS)
+    import importlib.util as _importlib_util
+    import os as _os
+    import sys as _sys
+
+    if "_topotrail_mensagens" not in _sys.modules:
+        _spec = _importlib_util.spec_from_file_location(
+            "_topotrail_mensagens", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "mensagens.py"))
+        _sys.modules["_topotrail_mensagens"] = _importlib_util.module_from_spec(_spec)
+        _spec.loader.exec_module(_sys.modules["_topotrail_mensagens"])
+    t = _sys.modules["_topotrail_mensagens"].t
+
 # Vizinhanca de 8 celulas, na ordem usada por todo o modulo.
 NEIGHBOURS = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1))
 
@@ -123,7 +137,7 @@ def fill_depressions(dem_array, feedback=None):
                     from qgis.core import QgsProcessingException as _Cancel
                 except Exception:
                     _Cancel = Exception
-                raise _Cancel("Extracao da drenagem cancelada pelo usuario.")
+                raise _Cancel(t("msg_cancelado_drenagem"))
             feedback.setProgress(100.0 * processadas / total)
         for d_row, d_col in NEIGHBOURS:
             n_row, n_col = row + d_row, col + d_col
@@ -270,9 +284,9 @@ def analyse_hydrology(dem_array, transform, min_basin_km2=1.0, feedback=None,
     pixel_size_x = abs(float(transform[1]))
     pixel_size_y = abs(float(transform[5]))
     if pixel_size_x <= 0 or pixel_size_y <= 0:
-        raise ValueError("Resolucao espacial invalida para extrair a drenagem.")
+        raise ValueError(t("msg_hidro_resolucao"))
     if not np.any(np.isfinite(dem_array)):
-        raise ValueError("O MDE nao possui celulas validas para extrair a drenagem.")
+        raise ValueError(t("msg_hidro_sem_celulas"))
 
     full_rows, full_cols = dem_array.shape
     factor = int(np.ceil(np.sqrt(dem_array.size / MAX_HYDROLOGY_CELLS)))
@@ -287,11 +301,8 @@ def analyse_hydrology(dem_array, transform, min_basin_km2=1.0, feedback=None,
         work = dem_array[deslocamento::factor, deslocamento::factor]
         work_px, work_py = pixel_size_x * factor, pixel_size_y * factor
         if feedback:
-            feedback.pushInfo(
-                "Hidrologia calculada em grade reamostrada {}x ({} x {} celulas, "
-                "pixel {:.0f} m) para manter o tempo de resposta.".format(
-                    factor, work.shape[1], work.shape[0], work_px)
-            )
+            feedback.pushInfo(t("msg_hidro_reamostrada", factor=factor, cols=work.shape[1], rows=work.shape[0],
+                                pixel=work_px))
     else:
         work, work_px, work_py = dem_array, pixel_size_x, pixel_size_y
 
@@ -350,19 +361,10 @@ def analyse_hydrology(dem_array, transform, min_basin_km2=1.0, feedback=None,
 
     if feedback:
         density = metrics["densidade_drenagem_km_por_km2"]
-        feedback.pushInfo(
-            "Drenagem extraida do MDE: limiar {:.2f} km2, {:,.0f} km de rede em "
-            "{:,.0f} km2, densidade {:.2f} km/km2.".format(
-                float(min_basin_km2), network_km, area_km2, density or 0.0)
-        )
+        feedback.pushInfo(t("msg_drenagem_resumo", threshold=float(min_basin_km2), network=network_km,
+                            area=area_km2, density=density or 0.0))
         if factor > 1 and warn_about_width:
-            feedback.pushWarning(
-                "A rede foi calculada em pixel de {:.0f} m, entao cada curso d'agua "
-                "ocupa pelo menos essa largura ao voltar para a grade do MDE -- um "
-                "afastamento pedido menor que isso nao tem efeito pratico. Para uma "
-                "faixa mais estreita, recorte a area de estudo ou forneca uma camada "
-                "de hidrografia vetorial.".format(max(work_px, work_py))
-            )
+            feedback.pushWarning(t("msg_hidro_largura", pixel=max(work_px, work_py)))
         # A drenagem passou a vir ligada por padrao, e a confiabilidade dela cai
         # com a celula: contra o OpenStreetMap, em 51 trilhas consagradas, um
         # MDE de 30 m achou 80% dos rios e 23 de 27 travessias de rio na trilha;
@@ -371,23 +373,12 @@ def analyse_hydrology(dem_array, transform, min_basin_km2=1.0, feedback=None,
         if warn_about_width and max(work_px, work_py) > COARSE_CELL_M:
             if factor > 1:
                 # o MDE pode ser de 30 m: quem engrossou foi a reamostragem
-                remedio = ("recorte a area de estudo para que a drenagem seja calculada "
-                           "na resolucao do MDE")
+                remedio = t("msg_remedio_recorte")
             else:
-                remedio = "use um MDE de 30 m"
-            feedback.pushWarning(
-                "A drenagem foi extraida em pixel de {:.0f} m. Nos testes, um MDE de "
-                "90 m achou so cerca de metade dos rios mapeados (contra 80% com um "
-                "MDE de 30 m). Confira os cursos d'agua com a hidrografia oficial antes "
-                "de ir a campo, ou {}.".format(max(work_px, work_py), remedio)
-            )
+                remedio = t("msg_remedio_30m")
+            feedback.pushWarning(t("msg_hidro_celula_grossa", pixel=max(work_px, work_py), remedy=remedio))
         if density is not None and not (0.5 <= density <= 5.0):
-            feedback.pushWarning(
-                "A densidade de drenagem resultante ({:.2f} km/km2) esta fora da faixa "
-                "usual de 1 a 3 km/km2 para relevo montanhoso. Se a rede parecer densa "
-                "demais aumente o limiar de area de contribuicao; se parecer esparsa "
-                "demais, reduza.".format(density)
-            )
+            feedback.pushWarning(t("msg_hidro_densidade", density=density))
     if return_basin_area:
         return channels, twi, basin_km2, metrics
     return channels, twi, metrics

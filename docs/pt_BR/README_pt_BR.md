@@ -32,8 +32,9 @@ com a sua evidência.
 A interface e os parâmetros do Processing estão disponíveis em seis idiomas —
 português, inglês, espanhol, francês, chinês simplificado e japonês —,
 escolhidos num seletor da janela; português e inglês são revisados, os outros
-quatro são rascunhos da comunidade. O registro de execução no painel do
-Processing e o arquivo `.log` de diagnóstico estão apenas em português.
+quatro são rascunhos da comunidade. Desde a 1.5.5, o registro de execução no
+painel do Processing também segue o idioma escolhido; o arquivo `.log` de
+diagnóstico é um registro técnico, com os nomes dos campos em português.
 
 ---
 

@@ -59,7 +59,7 @@ def test_rota_que_contorna_a_escarpa_avisa_quanto_subir(executar, tmp_path):
     assert erro is None, (erro, feedback.linhas[-6:])
     avisos = feedback.procurar("contorna terreno")
     assert len(avisos) == 1, feedback.linhas[-8:]
-    assert "aumente a declividade maxima para 90%" in avisos[0]
+    assert "aumente a declividade máxima para 90%" in avisos[0]
     desvio = _evento(resultado, "desvio_pela_declividade")
     assert desvio and desvio[0]["avisar"] and desvio[0]["razao"] > 2
 

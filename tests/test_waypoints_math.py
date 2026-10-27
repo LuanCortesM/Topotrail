@@ -104,7 +104,7 @@ def test_optimisation_respects_the_asymmetry_of_walking_uphill(algorithm):
 def test_too_many_waypoints_to_optimise_is_refused_clearly(algorithm):
     elevation, cost = _terrain()
     points = [(2, 2)] + [(5 + i, 5 + i) for i in range(algorithm.MAX_OPTIMISED_WAYPOINTS + 1)] + [(37, 37)]
-    with pytest.raises(ValueError, match="otimizacao de ordem"):
+    with pytest.raises(ValueError, match="otimização da ordem"):
         algorithm.multi_leg_route(cost, points, optimise_order=True)
 
 
@@ -116,7 +116,7 @@ def test_a_single_point_is_not_a_route(algorithm):
 
 def test_two_waypoints_in_the_same_cell_are_reported_by_position(algorithm):
     elevation, cost = _terrain()
-    with pytest.raises(Exception, match="mesma celula"):
+    with pytest.raises(Exception, match="mesma célula"):
         algorithm.multi_leg_route(cost, [(3, 3), (20, 20), (20, 20), (36, 36)])
 
 

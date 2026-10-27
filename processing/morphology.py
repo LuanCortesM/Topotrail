@@ -31,7 +31,7 @@ def label(mask, connectivity=8):
     """(rotulos int32, n) das regioes True de `mask`; 0 e fundo."""
     mask = np.asarray(mask, dtype=bool)
     if connectivity not in (4, 8):
-        raise ValueError("connectivity deve ser 4 ou 8")
+        raise ValueError("connectivity must be 4 or 8")
     if has_scipy():
         estrutura = (np.ones((3, 3), dtype=bool) if connectivity == 8 else
                      np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool))

@@ -200,3 +200,13 @@ def carregar(name):
     sys.modules[chave] = module
     spec.loader.exec_module(module)
     return module
+
+
+def mensagens_avulso():
+    """O processing/mensagens.py que terrain, hydrology e transitability usam quando carregados sozinhos."""
+    chave = "_topotrail_mensagens"
+    if chave not in sys.modules:
+        spec = importlib.util.spec_from_file_location(chave, ROOT / "processing" / "mensagens.py")
+        sys.modules[chave] = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(sys.modules[chave])
+    return sys.modules[chave]

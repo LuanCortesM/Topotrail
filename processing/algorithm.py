@@ -20,7 +20,8 @@ if sys.platform == "win32":
 
 import numpy as np  # noqa: E402
 from osgeo import gdal, ogr, osr  # noqa: E402
-from . import morphology  # noqa: E402
+from . import mensagens, morphology  # noqa: E402
+from .mensagens import t  # noqa: E402
 from .hydrology import analyse_hydrology  # noqa: E402
 from .terrain import (  # noqa: E402
     check_terrain_size,
@@ -63,7 +64,7 @@ from qgis.core import (  # noqa: E402
 
 _LOG = logging.getLogger("TopoTrail")
 
-PLUGIN_VERSION = "1.5.4"
+PLUGIN_VERSION = "1.5.5"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -382,7 +383,7 @@ def ogr_memory_driver():
         driver = ogr.GetDriverByName(nome)
         if driver is not None and driver.GetMetadataItem("DCAP_VECTOR") == "YES":
             return driver
-    raise _erro("O GDAL desta instalacao nao tem driver vetorial em memoria.")
+    raise _erro(t("msg_gdal_sem_memoria"))
 
 
 def srs_from_projection(projection, default_crs=None):
@@ -435,7 +436,7 @@ class FeatureSet:
         self.geometries = [g for g in geometries]
         self.attributes = [dict(a) for a in attributes]
         if len(self.attributes) != len(self.geometries):
-            raise ValueError("FeatureSet: geometrias e atributos com tamanhos diferentes")
+            raise ValueError("FeatureSet: geometries and attributes differ in length")
         self.crs = crs
 
     def __len__(self):
@@ -456,7 +457,7 @@ class FeatureSet:
     def set_column(self, name, values):
         values = list(values)
         if len(values) != len(self.attributes):
-            raise ValueError(f"FeatureSet: coluna {name} com {len(values)} valores para {len(self)} feicoes")
+            raise ValueError(f"FeatureSet: column {name} has {len(values)} values for {len(self)} features")
         for record, value in zip(self.attributes, values):
             record[name] = value
 
@@ -472,7 +473,7 @@ class FeatureSet:
         source_srs = self.srs()
         target_srs = srs_from_any(target)
         if source_srs is None:
-            raise _erro("FeatureSet sem CRS de origem; nao ha como reprojetar")
+            raise _erro(t("msg_featureset_sem_crs"))
         if source_srs.IsSame(target_srs):
             return FeatureSet([g.Clone() for g in self.geometries], self.attributes, self.crs)
         transformation = osr.CoordinateTransformation(source_srs, target_srs)
@@ -480,7 +481,7 @@ class FeatureSet:
         for geometry in self.geometries:
             clone = geometry.Clone()
             if clone.Transform(transformation) != 0:
-                raise _erro("Falha ao reprojetar geometria com o OSR")
+                raise _erro(t("msg_reprojetar_geometria"))
             moved.append(clone)
         return FeatureSet(moved, self.attributes, str(target))
 
@@ -521,7 +522,7 @@ class FeatureSet:
         """Grava a colecao. ``stringify`` converte todo atributo em texto (KML)."""
         ogr_driver = ogr.GetDriverByName(driver)
         if ogr_driver is None:
-            raise _erro(f"Driver OGR indisponivel: {driver}")
+            raise _erro(t("msg_driver_ogr", driver=driver))
         if layer_name is None:
             layer_name = os.path.splitext(os.path.basename(path))[0]
         # "gpkg_*" e prefixo reservado do GeoPackage: um arquivo de saida chamado
@@ -546,7 +547,7 @@ class FeatureSet:
         if datasource is None:
             datasource = ogr_driver.CreateDataSource(path)
         if datasource is None:
-            raise _erro(f"Nao foi possivel criar o arquivo vetorial: {path}")
+            raise _erro(t("msg_criar_vetor", path=path))
         geom_type = ogr.wkbUnknown
         kinds = {ogr.GT_Flatten(g.GetGeometryType()) for g in self.geometries}
         if kinds == {ogr.wkbPolygon} or kinds == {ogr.wkbMultiPolygon} or kinds == {ogr.wkbPolygon, ogr.wkbMultiPolygon}:
@@ -557,7 +558,7 @@ class FeatureSet:
             geom_type = ogr.wkbPoint
         layer = datasource.CreateLayer(layer_name, srs=self.srs(), geom_type=geom_type)
         if layer is None:
-            raise _erro(f"Nao foi possivel criar a camada em: {path}")
+            raise _erro(t("msg_criar_camada", path=path))
 
         names = [name for name in self.columns if name != "geometry"]
         for name in names:
@@ -620,9 +621,9 @@ def raster_metadata(path):
     try:
         dataset = gdal.Open(path)
     except RuntimeError as exc:
-        raise _erro(f"Nao foi possivel abrir raster para metadados: {path}") from exc
+        raise _erro(t("msg_raster_metadados", path=path)) from exc
     if dataset is None:
-        raise _erro(f"Nao foi possivel abrir raster para metadados: {path}")
+        raise _erro(t("msg_raster_metadados", path=path))
     transform = dataset.GetGeoTransform()
     projection = dataset.GetProjection()
     band = dataset.GetRasterBand(1)
@@ -710,10 +711,10 @@ def projected_crs_is_metric(srs):
     """
     units = srs.GetLinearUnits() or 1.0
     if abs(units - 1.0) > 1e-6:
-        return False, f"unidade linear {srs.GetLinearUnitsName() or '?'} ({units:.4f} m)"
+        return False, t("msg_razao_unidade", unit=srs.GetLinearUnitsName() or "?", metres=units)
     projection = (srs.GetAttrValue("PROJECTION") or "").lower()
     if "mercator" in projection and "transverse" not in projection:
-        return False, f"projecao {srs.GetAttrValue('PROJECTION')} (escala varia com a latitude)"
+        return False, t("msg_razao_mercator", projection=srs.GetAttrValue("PROJECTION"))
     return True, ""
 
 
@@ -726,15 +727,15 @@ def copy_raster_with_assigned_crs(input_path, output_path, crs):
     try:
         dataset = gdal.Open(input_path)
     except RuntimeError as exc:
-        raise _erro(f"Nao foi possivel abrir raster sem CRS: {input_path}") from exc
+        raise _erro(t("msg_raster_sem_crs_abrir", path=input_path)) from exc
     if dataset is None:
-        raise _erro(f"Nao foi possivel abrir raster sem CRS: {input_path}")
+        raise _erro(t("msg_raster_sem_crs_abrir", path=input_path))
     driver = gdal.GetDriverByName("GTiff")
     if os.path.exists(output_path):
         driver.Delete(output_path)
     copy = driver.CreateCopy(output_path, dataset, strict=0, options=["COMPRESS=LZW"])
     if copy is None:
-        raise _erro(f"Nao foi possivel criar copia com CRS definido: {output_path}")
+        raise _erro(t("msg_raster_copia_crs", path=output_path))
     srs = srs_from_projection(None, crs)
     copy.SetProjection(srs.ExportToWkt())
     copy.FlushCache()
@@ -743,26 +744,27 @@ def copy_raster_with_assigned_crs(input_path, output_path, crs):
     return output_path
 
 
-def warp_raster_checked(input_path, output_path, warp_options, description="reprojecao"):
+def warp_raster_checked(input_path, output_path, warp_options, description=None):
     """Run GDAL Warp and fail loudly if the output is not created/openable."""
+    description = description or t("msg_etapa_reprojecao")
     output_dir = os.path.dirname(output_path)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
     try:
         result = gdal.Warp(output_path, input_path, options=warp_options)
     except Exception as exc:
-        raise _erro(f"Falha em {description}: {input_path} -> {output_path}: {exc}") from exc
+        raise _erro(t("msg_warp_falhou", step=description, source=input_path, target=output_path,
+                      error=exc)) from exc
     if result is None:
-        raise _erro(f"Falha em {description}: GDAL Warp retornou vazio para {input_path}")
+        raise _erro(t("msg_warp_vazio", step=description, path=input_path))
     result.FlushCache()
     result = None
     try:
         check = gdal.Open(output_path)
     except RuntimeError as exc:
-        raise _erro(
-            f"Falha em {description}: arquivo final nao abre: {output_path}") from exc
+        raise _erro(t("msg_warp_nao_abre", step=description, path=output_path)) from exc
     if check is None:
-        raise _erro(f"Falha em {description}: arquivo final nao abre: {output_path}")
+        raise _erro(t("msg_warp_nao_abre", step=description, path=output_path))
     check = None
     return output_path
 
@@ -801,10 +803,7 @@ def ensure_projected_working_crs(
 
     if original_srs is None:
         if strict_crs_mode:
-            message = (
-                "O raster de entrada não possui CRS definido. Para uso científico, "
-                "defina o CRS correto na fonte antes do processamento."
-            )
+            message = t("msg_raster_sem_crs_estrito")
             append_diagnostic_log(
                 log_path,
                 "validacao_falhou",
@@ -816,10 +815,7 @@ def ensure_projected_working_crs(
         assigned_default = True
         assigned_path = os.path.join(temp_dir, "dem_assumido_crs.tif")
         source_path = copy_raster_with_assigned_crs(dem_path, assigned_path, default_crs)
-        messages.append(
-            f"DEM sem CRS. CRS assumido para diagnostico: {default_crs}. "
-            "Resultado depende dessa suposicao; defina o CRS correto para uso cientifico."
-        )
+        messages.append(t("msg_dem_sem_crs", crs=default_crs))
         if feedback:
             feedback.pushWarning(messages[-1])
         original_srs = srs_from_projection(None, default_crs)
@@ -832,10 +828,7 @@ def ensure_projected_working_crs(
 
     lon_center, lat_center = geographic_center_of_raster(original_metadata)
     if abs(lat_center) > 84.0:
-        messages.append(
-            "O MDE esta acima de 84 graus de latitude, fora do dominio da UTM; a "
-            "distorcao da zona escolhida pode ser grande. Prefira um CRS polar."
-        )
+        messages.append(t("msg_latitude_84"))
         if feedback:
             feedback.pushWarning(messages[-1])
 
@@ -860,12 +853,10 @@ def ensure_projected_working_crs(
             srcNodata=original_metadata.get("nodata"), dstNodata=DEM_FILL_NODATA,
             **_grade_alinhada(cell_size_m),
         )
-        warp_raster_checked(source_path, prepared_path, warp_options, "reprojecao do DEM para CRS metrico")
+        warp_raster_checked(source_path, prepared_path, warp_options, t("msg_etapa_reprojecao_metrica"))
         reprojected = True
-        messages.append(
-            f"O CRS do MDE ({srs_label(original_srs)}) nao mede em metros -- {metric_reason}. "
-            f"DEM reprojetado para CRS de trabalho metrico: {working_crs}."
-        )
+        messages.append(t("msg_crs_nao_metrico", crs=srs_label(original_srs), reason=metric_reason,
+                          working=working_crs))
         if feedback:
             feedback.pushWarning(messages[-1])
     elif original_srs.IsProjected() and (rotated or non_square):
@@ -881,12 +872,11 @@ def ensure_projected_working_crs(
             creationOptions=["COMPRESS=LZW"],
             srcNodata=original_metadata.get("nodata"), dstNodata=DEM_FILL_NODATA,
         )
-        warp_raster_checked(source_path, prepared_path, warp_options, "reamostragem do DEM para grade regular")
+        warp_raster_checked(source_path, prepared_path, warp_options, t("msg_etapa_grade_regular"))
         reprojected = True
-        messages.append(
-            "MDE com {} ({:.3g} x {:.3g}); reamostrado para pixel quadrado de {:.3g} m, norte para cima.".format(
-                "grade rotacionada" if rotated else "pixel retangular", px_in, py_in, side)
-        )
+        messages.append(t(
+            "msg_grade_reamostrada", kind=t("msg_grade_rotacionada" if rotated else "msg_pixel_retangular"),
+            px=px_in, py=py_in, side=side))
         if feedback:
             feedback.pushWarning(messages[-1])
     elif original_srs.IsGeographic():
@@ -911,11 +901,11 @@ def ensure_projected_working_crs(
             dstNodata=DEM_FILL_NODATA,
             **_grade_alinhada(cell_size_m),
         )
-        warp_raster_checked(source_path, prepared_path, warp_options, "reprojecao do DEM para CRS metrico")
+        warp_raster_checked(source_path, prepared_path, warp_options, t("msg_etapa_reprojecao_metrica"))
         reprojected = True
-        messages.append(f"DEM reprojetado para CRS de trabalho metrico: {working_crs}.")
+        messages.append(t("msg_dem_reprojetado", crs=working_crs))
     elif not original_srs.IsProjected():
-        raise _erro("O CRS do DEM nao e geografico nem projetado. Defina um CRS valido antes de processar.")
+        raise _erro(t("msg_crs_invalido"))
     elif cell_size_m and cell_size_m > 0:
         prepared_path = os.path.join(temp_dir, "dem_trabalho_alinhado.tif")
         reason = "CRS projetado mantido; reamostrado para a celula de trabalho pedida"
@@ -925,14 +915,12 @@ def ensure_projected_working_crs(
             srcNodata=original_metadata.get("nodata"), dstNodata=DEM_FILL_NODATA,
             **_grade_alinhada(cell_size_m),
         )
-        warp_raster_checked(source_path, prepared_path, warp_options, "reamostragem para a celula de trabalho")
-        messages.append(f"DEM em CRS projetado mantido ({working_crs}), em celula de {cell_size_m:g} m alinhada.")
+        warp_raster_checked(source_path, prepared_path, warp_options, t("msg_etapa_celula_trabalho"))
+        messages.append(t("msg_crs_mantido_celula", crs=working_crs, cell=cell_size_m))
     else:
-        messages.append(f"DEM em CRS projetado mantido: {working_crs}.")
+        messages.append(t("msg_crs_mantido", crs=working_crs))
     if cell_size_m and cell_size_m > 0:
-        messages.append(
-            "Celula de trabalho fixa de {:g} m, alinhada a multiplos dela: recortes diferentes "
-            "da mesma area caem na mesma grade.".format(cell_size_m))
+        messages.append(t("msg_celula_fixa", cell=cell_size_m))
 
     prepared_metadata = raster_metadata(prepared_path)
     diagnostics = {
@@ -974,29 +962,32 @@ def validate_raster_grid_compatibility(reference_raster, candidate_raster, toler
     problems = []
 
     if reference["crs"] != candidate["crs"]:
-        problems.append(f"CRS diferente: referencia={reference['crs']} candidato={candidate['crs']}")
+        problems.append(t("msg_compat_crs", reference=reference["crs"], candidate=candidate["crs"]))
     if reference["rows"] != candidate["rows"]:
-        problems.append(f"Numero de linhas diferente: referencia={reference['rows']} candidato={candidate['rows']}")
+        problems.append(t("msg_compat_linhas", reference=reference["rows"], candidate=candidate["rows"]))
     if reference["cols"] != candidate["cols"]:
-        problems.append(f"Numero de colunas diferente: referencia={reference['cols']} candidato={candidate['cols']}")
+        problems.append(t("msg_compat_colunas", reference=reference["cols"], candidate=candidate["cols"]))
     if abs(reference["pixel_size_x"] - candidate["pixel_size_x"]) > tolerance:
-        problems.append("Resolucao X diferente")
+        problems.append(t("msg_compat_res_x"))
     if abs(reference["pixel_size_y"] - candidate["pixel_size_y"]) > tolerance:
-        problems.append("Resolucao Y diferente")
+        problems.append(t("msg_compat_res_y"))
     if reference["y_axis_orientation"] != candidate["y_axis_orientation"]:
-        problems.append("Orientacao do eixo Y diferente")
+        problems.append(t("msg_compat_eixo_y"))
     for index, (ref_value, cand_value) in enumerate(zip(reference["transform"], candidate["transform"])):
         if abs(ref_value - cand_value) > tolerance:
-            problems.append(f"GeoTransform diferente no indice {index}: referencia={ref_value} candidato={cand_value}")
+            problems.append(t("msg_compat_geotransform", index=index, reference=ref_value, candidate=cand_value))
     for index, (ref_value, cand_value) in enumerate(zip(reference["bounds"], candidate["bounds"])):
         if abs(ref_value - cand_value) > max(tolerance, reference["pixel_size_x"] * 1e-6):
-            problems.append(f"Extensao diferente no indice {index}: referencia={ref_value} candidato={cand_value}")
+            problems.append(t("msg_compat_extensao", index=index, reference=ref_value, candidate=cand_value))
+    # NoData diferente nao impede o uso: o raster alinhado ja sai com o do MDE.
+    blocking = list(problems)
     if reference["nodata"] != candidate["nodata"]:
-        problems.append(f"NoData diferente: referencia={reference['nodata']} candidato={candidate['nodata']}")
+        problems.append(t("msg_compat_nodata", reference=reference["nodata"], candidate=candidate["nodata"]))
 
     return {
         "compatible": len(problems) == 0,
         "problems": problems,
+        "blocking_problems": blocking,
         "reference_metadata": reference,
         "candidate_metadata": candidate,
     }
@@ -1029,17 +1020,12 @@ def align_raster_to_reference(candidate_path, reference_path, output_path, resam
         dstNodata=reference["nodata"] if reference["nodata"] is not None else -9999.0,
     )
     if feedback:
-        feedback.pushInfo(f"Alinhando raster ao MDE: {os.path.basename(candidate_path)}")
-    warp_raster_checked(candidate_path, output_path, warp_options, "alinhamento raster ao MDE")
+        feedback.pushInfo(t("msg_alinhando", name=os.path.basename(candidate_path)))
+    warp_raster_checked(candidate_path, output_path, warp_options, t("msg_etapa_alinhamento"))
     compatibility = validate_raster_grid_compatibility(reference_path, output_path)
-    blocking_problems = [
-        problem for problem in compatibility["problems"]
-        if not problem.startswith("NoData diferente")
-    ]
+    blocking_problems = compatibility["blocking_problems"]
     if blocking_problems:
-        raise _erro(
-            "Raster alinhado ainda incompativel com o MDE: " + "; ".join(blocking_problems)
-        )
+        raise _erro(t("msg_alinhado_incompativel", problems=t("msg_sep_itens").join(blocking_problems)))
     append_diagnostic_log(
         log_path,
         "raster_alinhado",
@@ -1061,14 +1047,14 @@ def read_raster(raster_path, feedback=None):
     try:
         dataset = gdal.Open(raster_path)
     except RuntimeError as exc:
-        raise _erro(f"Não foi possível abrir o raster: {raster_path}") from exc
+        raise _erro(t("msg_raster_abrir", path=raster_path)) from exc
     if dataset is None:
-        raise _erro(f"Não foi possível abrir o raster: {raster_path}")
+        raise _erro(t("msg_raster_abrir", path=raster_path))
 
     band = dataset.GetRasterBand(1)
     array = band.ReadAsArray()
     if array is None:
-        raise _erro(f"Não foi possível ler a banda 1 do raster: {raster_path}")
+        raise _erro(t("msg_raster_banda", path=raster_path))
 
     array = array.astype(np.float32)
     nodata = band.GetNoDataValue()
@@ -1081,12 +1067,11 @@ def read_raster(raster_path, feedback=None):
     if feedback:
         valid = array[~np.isnan(array)]
         if valid.size:
-            feedback.pushInfo(
-                f"Raster {os.path.basename(raster_path)}: shape={array.shape}, "
-                f"min={np.nanmin(valid):.4f}, max={np.nanmax(valid):.4f}, mean={np.nanmean(valid):.4f}"
-            )
+            feedback.pushInfo(t(
+                "msg_raster_resumo", name=os.path.basename(raster_path), shape=array.shape,
+                min=float(np.nanmin(valid)), max=float(np.nanmax(valid)), mean=float(np.nanmean(valid))))
         else:
-            feedback.pushInfo(f"Raster {os.path.basename(raster_path)}: sem valores válidos")
+            feedback.pushInfo(t("msg_raster_sem_validos", name=os.path.basename(raster_path)))
 
     dataset = None
     return array, transform, proj
@@ -1096,20 +1081,14 @@ def validate_raster_alignment(reference_shape, reference_transform, rasters, fee
     """Ensure every input raster shares the DEM grid."""
     for name, array, transform in rasters:
         if array.shape != reference_shape:
-            raise _erro(
-                f"{name} possui dimensões {array.shape}, mas o MDE possui {reference_shape}. "
-                "Reamostre e alinhe os rasters antes de processar."
-            )
+            raise _erro(t("msg_dimensoes", name=name, shape=array.shape, reference=reference_shape))
 
         diffs = [abs(float(transform[i]) - float(reference_transform[i])) for i in range(6)]
         if any(diff > 1e-9 for diff in diffs):
-            raise _erro(
-                f"{name} não está alinhado ao MDE. "
-                "Use a mesma extensão, resolução e origem de grade para todos os rasters."
-            )
+            raise _erro(t("msg_desalinhado", name=name))
 
         if feedback:
-            feedback.pushInfo(f"{name} alinhado ao MDE: shape={array.shape}")
+            feedback.pushInfo(t("msg_alinhado", name=name, shape=array.shape))
 
 
 def slope_to_percent(slope_data, slope_unit, feedback=None, log_path=None):
@@ -1133,20 +1112,14 @@ def slope_to_percent(slope_data, slope_unit, feedback=None, log_path=None):
     convertido = False
     if slope_unit == SLOPE_UNIT_DEGREES:
         if valid.size and maximum > 90.0:
-            raise _erro(
-                "A declividade foi declarada em graus, mas o raster chega a "
-                f"{maximum:.1f}. Declividade em graus nao passa de 90: este raster "
-                "esta em porcentagem. Corrija a unidade no parametro."
-            )
+            raise _erro(t("msg_graus_invalido", maximum=maximum))
         with np.errstate(invalid="ignore"):
             radianos = np.deg2rad(np.clip(slope_data, 0.0, 89.9))
             slope_data = (np.tan(radianos) * 100.0).astype(np.float32)
         convertido = True
         if feedback:
-            feedback.pushInfo(
-                f"Declividade convertida de graus para porcentagem: entrada max={maximum:.1f} graus, "
-                f"saida max={float(np.nanmax(slope_data[np.isfinite(slope_data)])):.1f}%."
-            )
+            feedback.pushInfo(t("msg_graus_convertido", maximum=maximum,
+                                output=float(np.nanmax(slope_data[np.isfinite(slope_data)]))))
 
     append_diagnostic_log(
         log_path, "unidade_declividade",
@@ -1181,10 +1154,7 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
     if hasattr(layer_source, "getFeatures"):
         crs = layer_source.crs()
         if not crs.isValid():
-            raise _erro(
-                "A camada de restricao nao possui CRS definido. Defina o CRS na origem "
-                "do dado antes de usa-la como restricao."
-            )
+            raise _erro(t("msg_restricao_sem_crs"))
         source_srs = osr.SpatialReference()
         source_srs.ImportFromWkt(crs.toWkt())
         for qgs_feature in layer_source.getFeatures():
@@ -1199,17 +1169,13 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
         try:
             datasource_in = ogr.Open(str(layer_source))
         except RuntimeError as exc:
-            raise _erro(
-                f"Nao foi possivel abrir a camada de restricao: {layer_source}") from exc
+            raise _erro(t("msg_restricao_abrir", source=layer_source)) from exc
         if datasource_in is None:
-            raise _erro(f"Nao foi possivel abrir a camada de restricao: {layer_source}")
+            raise _erro(t("msg_restricao_abrir", source=layer_source))
         layer_in = datasource_in.GetLayer(0)
         source_srs = layer_in.GetSpatialRef()
         if source_srs is None:
-            raise _erro(
-                "A camada de restricao nao possui CRS definido. Defina o CRS na origem "
-                "do dado antes de usa-la como restricao."
-            )
+            raise _erro(t("msg_restricao_sem_crs"))
         for feature_in in layer_in:
             geometry = feature_in.GetGeometryRef()
             if geometry is not None and not geometry.IsEmpty():
@@ -1228,9 +1194,7 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
         try:
             reproject = osr.CoordinateTransformation(source_srs, target_srs)
         except Exception as exc:
-            raise _erro(
-                f"Nao foi possivel reprojetar a camada de restricao para o CRS de trabalho: {exc}"
-            )
+            raise _erro(t("msg_restricao_reprojetar", error=exc))
 
     # Uniao acumulada: o equivalente ao unary_union, feito pelo GEOS via OGR.
     merged = None
@@ -1244,8 +1208,7 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
 
     if merged is None:
         if feedback:
-            feedback.pushWarning(
-                "A camada de restricao esta vazia ou sem geometrias validas; foi ignorada.")
+            feedback.pushWarning(t("msg_restricao_vazia"))
         return None
 
     if buffer_m > 0:
@@ -1276,11 +1239,9 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
         proporcao=float(mask.sum() / mask.size),
     )
     if feedback:
-        feedback.pushInfo(
-            "Camada de restricao: {} feicoes, buffer de {:.0f} m, "
-            "{:,} celulas atingidas ({:.2f}% da grade).".format(
-                feature_count, buffer_m, int(mask.sum()), 100.0 * mask.sum() / mask.size)
-        )
+        feedback.pushInfo(t(
+            "msg_restricao_resumo", features=feature_count, buffer=buffer_m, cells=int(mask.sum()),
+            pct=100.0 * mask.sum() / mask.size))
     # Zero celulas com a camada cheia era registrado como informacao e mais
     # nada: como restricted_mask.any() fica falso, o bloco de restricoes
     # inteiro e pulado e nem a linha "Restricoes: ..." chega a sair. Medido na
@@ -1291,15 +1252,8 @@ def rasterize_constraint_layer(layer_source, buffer_m, transform, shape, proj,
     # dentro da feicao -- entao vale dizer isso e dizer o que fazer.
     pixel_m = max(abs(float(transform[1])), abs(float(transform[5])))
     if feedback and feature_count and not mask.any():
-        feedback.pushWarning(
-            "A camada de restricao nao atingiu nenhuma celula: ela nao teve efeito "
-            "nenhum sobre a rota nem sobre o mapa. So e marcada a celula cujo centro "
-            "cai dentro da feicao, e com buffer de {:.0f} m nenhuma feicao cobre um "
-            "centro de celula -- tipicamente porque a feicao e mais estreita que o "
-            "pixel de {:.0f} m. Aumente a distancia a manter (buffer) para pelo menos "
-            "{:.0f} m, ou use um MDE de celula menor.".format(
-                buffer_m, pixel_m, buffer_m + pixel_m)
-        )
+        feedback.pushWarning(t("msg_restricao_sem_efeito", buffer=buffer_m, pixel=pixel_m,
+                               suggested=buffer_m + pixel_m))
     return mask
 
 
@@ -1482,10 +1436,8 @@ def build_route_cost(score_array, cost_model, contrast, penalty_mask=None, feedb
         if feedback:
             usable = cost[np.isfinite(cost)]
             if usable.size:
-                feedback.pushInfo(
-                    "Retardo por terreno (Tobler): min={:.2f}x, mediana={:.2f}x, max={:.2f}x".format(
-                        float(usable.min()), float(np.median(usable)), float(usable.max()))
-                )
+                feedback.pushInfo(t("msg_retardo", min=float(usable.min()), median=float(np.median(usable)),
+                                    max=float(usable.max())))
         return cost
     if cost_model == ROUTE_COST_EXPONENTIAL:
         cost = np.where(finite, np.exp(float(contrast) * (1.0 - score_array)), np.inf)
@@ -1498,13 +1450,12 @@ def build_route_cost(score_array, cost_model, contrast, penalty_mask=None, feedb
     if feedback:
         usable = cost[np.isfinite(cost)]
         if usable.size:
-            feedback.pushInfo(
-                "Superficie de custo ({}): min={:.3f}, max={:.3f}, contraste={:.1f}:1".format(
-                    "exponencial k=%.1f" % contrast if cost_model == ROUTE_COST_EXPONENTIAL
-                    else "inverso",
-                    float(usable.min()), float(usable.max()),
-                    float(usable.max() / max(usable.min(), 1e-9)))
-            )
+            feedback.pushInfo(t(
+                "msg_superficie_custo",
+                model=(t("msg_modelo_exponencial", k=contrast) if cost_model == ROUTE_COST_EXPONENTIAL
+                       else t("msg_modelo_inverso")),
+                min=float(usable.min()), max=float(usable.max()),
+                contrast=float(usable.max() / max(usable.min(), 1e-9))))
     return cost
 
 
@@ -1608,18 +1559,14 @@ def _saida_gpkg_utilizavel(path, layer_name, feedback=None):
                   if aberto.GetLayerByIndex(i).GetName() != layer_name]
         aberto = None
         if outras and feedback:
-            feedback.pushInfo(
-                "O GeoPackage de saida ja tem {} camada(s) ({}). A camada \"{}\" sera "
-                "gravada ao lado delas; nada do que ja estava no arquivo e apagado.".format(
-                    len(outras), ", ".join(outras[:4]) + ("..." if len(outras) > 4 else ""),
-                    layer_name))
+            feedback.pushInfo(t(
+                "msg_gpkg_camadas", n=len(outras),
+                layers=t("msg_sep_lista").join(outras[:4]) + ("..." if len(outras) > 4 else ""), layer=layer_name))
         return path
     alternativo = available_output_path(path)
     if feedback:
-        feedback.pushWarning(
-            "O GeoPackage {} existe e nao pode ser aberto para gravacao (em uso no QGIS "
-            "ou bloqueado pelo sistema). Salvando como {} para nao perder o arquivo "
-            "existente.".format(os.path.basename(path), os.path.basename(alternativo)))
+        feedback.pushWarning(t("msg_gpkg_bloqueado", name=os.path.basename(path),
+                               alternative=os.path.basename(alternativo)))
     return alternativo
 
 
@@ -1722,6 +1669,38 @@ def merge_stream_contacts(contacts, pixel_size_m, merge_m=None, stream_cell_m=No
     return eventos
 
 
+def _rotulo(chave):
+    """Nome de uma opcao da janela, no idioma da execucao, para as mensagens citarem."""
+    return mensagens.texto(chave)
+
+
+def _coord(valor):
+    """Coordenada no CRS de trabalho (sempre metrico), com ponto decimal em qualquer idioma."""
+    return "{:.1f}".format(float(valor))
+
+
+def _sim_nao(valor):
+    return t("msg_sim" if valor else "msg_nao")
+
+
+_NOMES_DOS_LIMITES = {"curvatura_horizontal": "msg_nome_curvh", "curvatura_vertical": "msg_nome_curvv",
+                      "umidade_twi": "msg_nome_umidade", "rugosidade_vrm": "msg_nome_rugosidade"}
+
+
+def _nome_do_limite(chave):
+    return t(_NOMES_DOS_LIMITES[chave]) if chave in _NOMES_DOS_LIMITES else chave
+
+
+def _origem_do_limite(origem):
+    """A origem do limite como o registro tecnico grava ("parametro", "cena P99"), traduzida."""
+    if origem == "parametro":
+        return t("msg_origem_parametro")
+    try:
+        return t("msg_origem_cena", p=float(str(origem).rsplit("P", 1)[1]))
+    except (IndexError, ValueError):
+        return str(origem)
+
+
 def _ford_labels():
     """Rotulos das classes de travessia no idioma do algoritmo."""
     keys = [key for _limit, _factor, key in FORD_CLASSES] + ["ford_river"]
@@ -1784,29 +1763,19 @@ def report_model_discrimination(slope_data, zone_score, valid_mask, slope_score_
         return saturated, amplitude
 
     if saturated >= SATURATION_WARNING_FRACTION:
-        feedback.pushWarning(
-            "{:.0f}% do terreno esta acima da declividade de custo maximo ({:.0f}%), "
-            "entao o criterio de declividade recebe nota zero na maior parte da area "
-            "e deixa de distinguir uma encosta da outra. Nesta cena a declividade tem "
-            "mediana {:.0f}% e P90 {:.0f}%. Para o relevo daqui, considere declividade "
-            "de custo maximo perto de {:.0f}% e limite absoluto perto de {:.0f}%.".format(
-                100.0 * saturated, slope_score_max,
-                float(np.percentile(valid_slope, 50)), suggested_score_max,
-                suggested_score_max, suggested_max)
-        )
+        feedback.pushWarning(t(
+            "msg_declividade_saturada", pct=100.0 * saturated, score_max=slope_score_max,
+            median=float(np.percentile(valid_slope, 50)), p90=suggested_score_max,
+            suggested_score=suggested_score_max, suggested_max=suggested_max))
     if amplitude < MIN_SCORE_AMPLITUDE:
-        feedback.pushWarning(
-            "A adequabilidade varia apenas {:.3f} entre o P05 e o P95: o modelo nao "
-            "esta distinguindo terreno nesta cena, e as zonas resultantes nao "
-            "significam nada. Reveja os limites de altitude e de declividade antes "
-            "de usar este resultado.".format(amplitude)
-        )
+        feedback.pushWarning(t("msg_modelo_nao_distingue", amplitude=amplitude))
     return saturated, amplitude
 
 
-def normalize_linear(array, min_val, max_val, feedback=None, name="Critério"):
+def normalize_linear(array, min_val, max_val, feedback=None, name=None):
+    name = name or t("msg_nome_criterio")
     if max_val <= min_val:
-        raise _erro(f"Limites inválidos para {name}: min={min_val}, max={max_val}")
+        raise _erro(t("msg_limites_invalidos", name=name, min=min_val, max=max_val))
 
     valid_mask = ~np.isnan(array)
     normalized = np.zeros_like(array, dtype=np.float32)
@@ -1814,25 +1783,22 @@ def normalize_linear(array, min_val, max_val, feedback=None, name="Critério"):
     normalized = np.clip(normalized, 0, 1)
 
     if feedback:
-        feedback.pushInfo(
-            f"{name} normalizado: min={np.nanmin(normalized):.4f}, "
-            f"max={np.nanmax(normalized):.4f}, mean={np.nanmean(normalized):.4f}"
-        )
+        feedback.pushInfo(t("msg_normalizado", name=name, min=float(np.nanmin(normalized)),
+                            max=float(np.nanmax(normalized)), mean=float(np.nanmean(normalized))))
 
     return normalized
 
 
-def normalize_cost(array, min_val, max_val, feedback=None, name="Critério"):
+def normalize_cost(array, min_val, max_val, feedback=None, name=None):
+    name = name or t("msg_nome_criterio")
     normalized = normalize_linear(array, min_val, max_val, feedback, name)
     valid_mask = ~np.isnan(array)
     result = np.zeros_like(normalized, dtype=np.float32)
     result[valid_mask] = 1.0 - normalized[valid_mask]
 
     if feedback:
-        feedback.pushInfo(
-            f"{name} invertido como custo: min={np.nanmin(result):.4f}, "
-            f"max={np.nanmax(result):.4f}, mean={np.nanmean(result):.4f}"
-        )
+        feedback.pushInfo(t("msg_invertido", name=name, min=float(np.nanmin(result)),
+                            max=float(np.nanmax(result)), mean=float(np.nanmean(result))))
 
     return result
 
@@ -1872,17 +1838,9 @@ def report_absurd_criterion_values(array, name, feedback=None, log_path=None,
         extremo=extremo,
     )
     if feedback:
-        feedback.pushWarning(
-            "{}: {:,} celulas ({:.2f}% do raster) trazem valores fora de qualquer "
-            "escala fisica{}. Quase sempre e um valor sentinela de NoData que o "
-            "arquivo nao declara (-3.4e38, -9999, 1e30). Enquanto nao for "
-            "declarado, o criterio e calculado com essas celulas dentro: o limite "
-            "do percentil explode, todas as celulas validas recebem nota proxima "
-            "de 1 e este criterio deixa de pesar no modelo. Declare o NoData na "
-            "origem do dado ou recorte a area valida.".format(
-                name, total, 100.0 * total / dados.size,
-                "" if extremo is None else " (extremo {:.3g})".format(extremo))
-        )
+        feedback.pushWarning(t(
+            "msg_valores_absurdos", name=name, cells=total, pct=100.0 * total / dados.size,
+            extreme="" if extremo is None else t("msg_valores_extremo", value=extremo)))
     return total
 
 
@@ -1906,16 +1864,17 @@ def curvature_limit(array, target=0.0):
 def normalize_curvature_preference(
     array,
     feedback=None,
-    name="Curvatura",
+    name=None,
     target=0.0,
     limit=None,
     floor=CURVATURE_SCORE_FLOOR,
 ):
     """Score curvature by proximity to a target, avoiding extreme concave/convex forms."""
+    name = name or t("msg_nome_curvatura")
     valid_mask = ~np.isnan(array)
     valid_data = array[valid_mask]
     if valid_data.size == 0:
-        raise _erro(f"{name} não contém valores válidos")
+        raise _erro(t("msg_sem_valores_validos", name=name))
 
     if limit is None or limit <= 0:
         limit = curvature_limit(valid_data, target)
@@ -1924,12 +1883,7 @@ def normalize_curvature_preference(
         # Segunda rede, para o caso de a sentinela ter entrado por outro
         # caminho: o limite e o sintoma direto -- medido 3,4e37 contra os
         # 0,0004 da mesma cena limpa.
-        feedback.pushWarning(
-            "{}: o limite do percentil saiu em {:.3g}, fora de qualquer escala de "
-            "curvatura de terreno. Com um limite assim toda celula valida recebe "
-            "nota proxima de 1 e o criterio some do modelo. Confira o NoData do "
-            "raster de {}.".format(name, limit, name)
-        )
+        feedback.pushWarning(t("msg_limite_percentil_absurdo", name=name, limit=limit))
 
     score = np.zeros_like(array, dtype=np.float32)
     score[valid_mask] = floor + (1.0 - floor) * (
@@ -1937,11 +1891,9 @@ def normalize_curvature_preference(
     )
 
     if feedback:
-        feedback.pushInfo(f"{name}: alvo={target:.4f}, limite={limit:.4f}")
-        feedback.pushInfo(
-            f"{name} score: min={np.nanmin(score):.4f}, "
-            f"max={np.nanmax(score):.4f}, mean={np.nanmean(score):.4f}"
-        )
+        feedback.pushInfo(t("msg_alvo_limite", name=name, target=target, limit=limit))
+        feedback.pushInfo(t("msg_nota_resumo", name=name, min=float(np.nanmin(score)),
+                            max=float(np.nanmax(score)), mean=float(np.nanmean(score))))
 
     return score
 
@@ -1956,7 +1908,7 @@ def calculate_slope_degrees(dem_array, transform, feedback=None):
     pixel_size_x = abs(float(transform[1]))
     pixel_size_y = abs(float(transform[5]))
     if pixel_size_x <= 0 or pixel_size_y <= 0:
-        raise _erro("Resolucao espacial invalida para calculo de declividade.")
+        raise _erro(t("msg_resolucao_declividade"))
     dem = dem_array.astype(np.float32)
     valid_mask = np.isfinite(dem)
     filled = np.where(valid_mask, dem, np.nanmean(dem[valid_mask]) if np.any(valid_mask) else 0.0)
@@ -1965,10 +1917,8 @@ def calculate_slope_degrees(dem_array, transform, feedback=None):
     slope[~valid_mask] = np.nan
     slope[~np.isfinite(slope)] = np.nan
     if feedback:
-        feedback.pushInfo(
-            f"Declividade calculada com resolucao {pixel_size_x:.3f} x {pixel_size_y:.3f}: "
-            f"{array_diagnostics(slope)}"
-        )
+        feedback.pushInfo(t("msg_declividade_calculada", px=pixel_size_x, py=pixel_size_y,
+                            stats=array_diagnostics(slope)))
     return slope
 
 
@@ -1983,7 +1933,7 @@ def calculate_curvature_arrays(dem_array, transform, feedback=None):
     pixel_size_x = abs(float(transform[1]))
     pixel_size_y = abs(float(transform[5]))
     if pixel_size_x <= 0 or pixel_size_y <= 0:
-        raise _erro("Resolucao espacial invalida para calculo de curvatura.")
+        raise _erro(t("msg_resolucao_curvatura"))
     dem = dem_array.astype(np.float32)
     valid_mask = np.isfinite(dem)
     filled = np.where(valid_mask, dem, np.nanmean(dem[valid_mask]) if np.any(valid_mask) else 0.0)
@@ -1997,10 +1947,8 @@ def calculate_curvature_arrays(dem_array, transform, feedback=None):
     curv_h[~np.isfinite(curv_h)] = np.nan
     curv_v[~np.isfinite(curv_v)] = np.nan
     if feedback:
-        feedback.pushInfo(
-            f"Curvaturas calculadas com resolucao {pixel_size_x:.3f} x {pixel_size_y:.3f}: "
-            f"H={array_diagnostics(curv_h)}, V={array_diagnostics(curv_v)}"
-        )
+        feedback.pushInfo(t("msg_curvaturas_calculadas", px=pixel_size_x, py=pixel_size_y,
+                            h=array_diagnostics(curv_h), v=array_diagnostics(curv_v)))
     return curv_h, curv_v
 
 
@@ -2010,10 +1958,8 @@ def binarize_result(array, threshold, feedback=None):
 
     if feedback:
         valid_pixels = int(np.sum(binary == 1))
-        feedback.pushInfo(
-            f"Binarização: {valid_pixels} pixels aptos de {binary.size} "
-            f"({valid_pixels / binary.size * 100:.2f}%)"
-        )
+        feedback.pushInfo(t("msg_binarizacao", valid=int(valid_pixels), total=int(binary.size),
+                            pct=valid_pixels / binary.size * 100))
 
     return binary
 
@@ -2068,11 +2014,9 @@ def combine_constraints(route_mask, zone_mask, layer_mask,
     if constraint_mode == CONSTRAINT_AVOID:
         if layer_mask is not None:
             zone_mask = zone_mask & ~layer_mask
-        tratamento = ("camada excluida das zonas e da rota; drenagem so informada na "
-                      "rota (barreira acima do teto vadeavel), mantida nas zonas")
+        tratamento = t("msg_tratamento_evitar")
     else:
-        tratamento = ("encarecidas em {:.0f}x (camada); drenagem so informada na "
-                      "rota".format(CONSTRAINT_PENALTY_FACTOR))
+        tratamento = t("msg_tratamento_encarecer", factor=CONSTRAINT_PENALTY_FACTOR)
     return route_mask, zone_mask, penalty_mask, route_barrier, tratamento
 
 
@@ -2080,10 +2024,8 @@ def build_walkability_mask(zone_constraint_mask, feedback=None):
     binary = zone_constraint_mask.astype(np.uint8)
     if feedback:
         valid_pixels = int(np.sum(binary == 1))
-        feedback.pushInfo(
-            f"Máscara caminhável: {valid_pixels} pixels aptos de {binary.size} "
-            f"({valid_pixels / binary.size * 100:.2f}%)"
-        )
+        feedback.pushInfo(t("msg_mascara_caminhavel", valid=int(valid_pixels), total=int(binary.size),
+                            pct=valid_pixels / binary.size * 100))
     return binary
 
 
@@ -2111,16 +2053,12 @@ def binarize_by_altitude_bands(score_array, dem_array, percentile, band_size_m, 
         current = next_altitude
 
     if feedback:
-        feedback.pushInfo(
-            f"Threshold por faixa altimetrica: {len(thresholds)} faixas de {band_size_m:.0f} m, "
-            f"percentil {percentile:.1f}"
-        )
+        feedback.pushInfo(t("msg_limiar_faixas", n=len(thresholds), size=band_size_m, percentile=percentile))
         for low, high, band_threshold, pixels in thresholds[:12]:
-            feedback.pushInfo(
-                f"  {low:.0f}-{high:.0f} m: threshold={band_threshold:.4f}, pixels={pixels}"
-            )
+            feedback.pushInfo(t("msg_limiar_faixa_item", low=low, high=high, threshold=band_threshold,
+                                pixels=int(pixels)))
         if len(thresholds) > 12:
-            feedback.pushInfo(f"  ... {len(thresholds) - 12} faixas adicionais")
+            feedback.pushInfo(t("msg_faixas_adicionais", n=len(thresholds) - 12))
 
     return binary
 
@@ -2240,44 +2178,33 @@ def describe_representativeness(relatorio, altitude_bands_on=False, walkability=
     """(texto, aviso): a frase para o usuario e se ela deve sair como aviso."""
     if not relatorio:
         return None, False
-    nomes = {"altitude": "altitude", "face_norte": "face norte/sul",
-             "umidade": "umidade do terreno (TWI)"}
+    nomes = {"altitude": "msg_repr_altitude", "face_norte": "msg_repr_face", "umidade": "msg_repr_umidade"}
     partes = []
     for nome in ("altitude", "face_norte", "umidade"):
         r = relatorio.get(nome)
         if not r:
             continue
-        texto = "{} em {} de {} faixas".format(nomes[nome], r["faixas_cobertas"], r["faixas"])
+        texto = t("msg_repr_item", name=t(nomes[nome]), covered=r["faixas_cobertas"], bands=r["faixas"])
         if r.get("largura_faixa"):
-            texto += " de {:.0f} m".format(r["largura_faixa"])
+            texto += t("msg_repr_largura", width=r["largura_faixa"])
         if nome == "altitude" and r["faltam"]:
-            texto += " (faltam {})".format("; ".join(
-                "{:.0f}-{:.0f} m".format(a, b) for a, b in r["faltam"]))
+            texto += t("msg_repr_faltam", ranges=t("msg_sep_itens").join(
+                t("msg_repr_intervalo", low=a, high=b) for a, b in r["faltam"]))
         partes.append(texto)
-    frase = ("Representatividade das zonas no relevo da area analisada: as zonas estao "
-             "presentes em " + ", ".join(partes) + ".")
+    frase = t("msg_repr_frase", parts=t("msg_sep_lista").join(partes))
     altitude = relatorio.get("altitude")
     aviso = bool(altitude and altitude["faixas_cobertas"] < min(
         REPRESENTATIVENESS_WARN_BINS, altitude["faixas"]))
     if aviso:
         if walkability:
-            frase += (" As zonas caminhaveis seguem so a transitabilidade e nao sao escolhidas "
-                      "por faixa de altitude: se a amostragem precisa cobrir o gradiente, gere as "
-                      "zonas por adequabilidade com 'Equilibrar zonas por faixa altimetrica'.")
+            frase += t("msg_repr_caminhaveis", option=_rotulo("band"))
         elif bands_need_auto_threshold:
-            frase += (" As faixas de altitude estao ligadas, mas so valem com o limiar automatico: "
-                      "deixe o limiar em 0 para que as zonas sejam escolhidas dentro de cada faixa.")
+            frase += t("msg_repr_limiar")
         elif altitude_bands_on:
-            frase += (" Mesmo com as faixas de altitude, parte do gradiente fica de fora: se a "
-                      "amostragem precisa representa-lo, reduza a area minima de fragmento ou o "
-                      "percentil das zonas.")
+            frase += t("msg_repr_mesmo_com_faixas")
         else:
-            frase += (" As zonas nao cobrem o gradiente de altitude: se a amostragem precisa "
-                      "representa-lo, ligue 'Equilibrar zonas por faixa altimetrica' (passo 3: "
-                      "as zonas passam a ser escolhidas dentro de cada faixa).")
-    frase += (" O plugin compara so o relevo. Zonas de acesso facil costumam coincidir com area "
-              "alterada: confira a cobertura do solo (por exemplo, MapBiomas) antes de definir "
-              "os pontos de amostragem.")
+            frase += t("msg_repr_ligue", option=_rotulo("band"))
+    frase += t("msg_repr_relevo")
     return frase, aviso
 
 
@@ -2355,11 +2282,9 @@ def filter_small_regions(binary_array, transform, proj, min_area_ha, feedback=No
         before_pixels = int(np.sum(binary_array == 1))
         after_pixels = int(np.sum(filtered == 1))
         removed_regions = int(region_count - len(keep_labels))
-        feedback.pushInfo(
-            f"Filtro de area minima: {min_area_ha:.2f} ha, "
-            f"{min_pixels} pixels por fragmento; {removed_regions} fragmentos removidos usando 8 vizinhos"
-        )
-        feedback.pushInfo(f"Pixels aptos apos filtro: {after_pixels} de {before_pixels}")
+        feedback.pushInfo(t("msg_area_minima_filtro", area=min_area_ha, pixels=int(min_pixels),
+                            removed=int(removed_regions)))
+        feedback.pushInfo(t("msg_pixels_apos_filtro", after=int(after_pixels), before=int(before_pixels)))
     append_diagnostic_log(
         log_path,
         "filtro_area_minima",
@@ -2391,13 +2316,10 @@ def save_score_raster(score_array, transform, proj, output_path, feedback=None):
         except RuntimeError:
             score_path = available_output_path(score_path)
             if feedback:
-                feedback.pushWarning(
-                    "O raster de adequabilidade anterior esta em uso no QGIS ou bloqueado pelo sistema. "
-                    f"Salvando novo arquivo como: {score_path}"
-                )
+                feedback.pushWarning(t("msg_adequabilidade_bloqueado", path=score_path))
     dataset = driver.Create(score_path, cols, rows, 1, gdal.GDT_Float32, options=["COMPRESS=LZW"])
     if dataset is None:
-        raise _erro("Nao foi possivel criar o raster de adequabilidade.")
+        raise _erro(t("msg_adequabilidade_falhou"))
 
     dataset.SetGeoTransform(transform)
     if proj:
@@ -2409,7 +2331,7 @@ def save_score_raster(score_array, transform, proj, output_path, feedback=None):
     dataset = None
 
     if feedback:
-        feedback.pushInfo(f"Raster de adequabilidade salvo: {score_path}")
+        feedback.pushInfo(t("msg_adequabilidade_salvo", path=score_path))
     return score_path
 
 
@@ -2441,7 +2363,7 @@ def save_transitability_raster(classes, transform, proj, output_path, feedback=N
         options=["COMPRESS=LZW", "PHOTOMETRIC=PALETTE"],
     )
     if dataset is None:
-        raise _erro("Nao foi possivel criar o raster de transitabilidade.")
+        raise _erro(t("msg_transitabilidade_falhou"))
     dataset.SetGeoTransform(transform)
     if proj:
         dataset.SetProjection(proj)
@@ -2480,7 +2402,7 @@ def save_transitability_raster(classes, transform, proj, output_path, feedback=N
     dataset = None
 
     if feedback:
-        feedback.pushInfo(f"Mapa de transitabilidade salvo: {path}")
+        feedback.pushInfo(t("msg_transitabilidade_salvo", path=path))
     return path
 
 
@@ -2500,13 +2422,10 @@ def save_risk_raster(risk_array, transform, proj, output_path, feedback=None):
         except RuntimeError:
             risk_path = available_output_path(risk_path)
             if feedback:
-                feedback.pushWarning(
-                    "O raster de risco topografico anterior esta em uso no QGIS ou bloqueado pelo sistema. "
-                    f"Salvando novo arquivo como: {risk_path}"
-                )
+                feedback.pushWarning(t("msg_risco_bloqueado", path=risk_path))
     dataset = driver.Create(risk_path, cols, rows, 1, gdal.GDT_Float32, options=["COMPRESS=LZW"])
     if dataset is None:
-        raise _erro("Nao foi possivel criar o raster de risco topografico.")
+        raise _erro(t("msg_risco_falhou"))
 
     dataset.SetGeoTransform(transform)
     if proj:
@@ -2518,7 +2437,7 @@ def save_risk_raster(risk_array, transform, proj, output_path, feedback=None):
     dataset = None
 
     if feedback:
-        feedback.pushInfo(f"Raster de risco topografico salvo: {risk_path}")
+        feedback.pushInfo(t("msg_risco_salvo", path=risk_path))
     return risk_path
 
 
@@ -2585,20 +2504,17 @@ def explain_empty_mask(dem, slope, valid_mask, min_altitude, max_altitude, max_s
     if altitudes.size:
         dentro = float(np.mean((altitudes >= min_altitude) & (altitudes <= max_altitude)))
         if dentro < 0.01:
-            partes.append(
-                "A faixa de altitude configurada ({:.0f} a {:.0f} m) nao cobre o MDE, que vai de "
-                "{:.0f} a {:.0f} m: ajuste a altitude minima e a maxima.".format(
-                    min_altitude, max_altitude, float(altitudes.min()), float(altitudes.max())))
+            partes.append(t("msg_causa_altitude", min=min_altitude, max=max_altitude,
+                            dem_min=float(altitudes.min()), dem_max=float(altitudes.max())))
     declividades = slope[valid_mask & np.isfinite(slope)]
     if declividades.size:
         abaixo = float(np.mean(declividades <= max_slope))
         if abaixo < 0.05:
-            partes.append(
-                "So {:.1f}% do terreno tem declividade ate o maximo admitido ({:g}%); a mediana "
-                "da cena e {:.0f}%.".format(100.0 * abaixo, max_slope, float(np.median(declividades))))
+            partes.append(t("msg_causa_declividade", pct=100.0 * abaixo, limit=max_slope,
+                            median=float(np.median(declividades))))
     if not altitudes.size:
-        partes.append("O MDE nao tem celulas validas.")
-    return " ".join(partes) or "Confira a faixa de altitude, a declividade maxima e as restricoes."
+        partes.append(t("msg_causa_sem_celulas"))
+    return " ".join(partes) or t("msg_causa_geral")
 
 
 def compute_topographic_risk(slope_data, curvh_data, curvv_data, valid_mask, max_slope, feedback=None):
@@ -2619,12 +2535,10 @@ def compute_topographic_risk(slope_data, curvh_data, curvv_data, valid_mask, max
     if feedback:
         values = risk[np.isfinite(risk)]
         if values.size:
-            feedback.pushInfo(
-                "Risco topografico relativo: "
-                f"min={np.nanmin(values):.3f}, p50={np.nanpercentile(values, 50):.3f}, "
-                f"p75={np.nanpercentile(values, 75):.3f}, p95={np.nanpercentile(values, 95):.3f}, "
-                f"max={np.nanmax(values):.3f}"
-            )
+            feedback.pushInfo(t(
+                "msg_risco_resumo", min=float(np.nanmin(values)), p50=float(np.nanpercentile(values, 50)),
+                p75=float(np.nanpercentile(values, 75)), p95=float(np.nanpercentile(values, 95)),
+                max=float(np.nanmax(values))))
     return risk
 
 
@@ -2653,7 +2567,7 @@ def vectorize_binary_raster(binary_array, transform, proj, feedback=None):
         driver = gdal.GetDriverByName("GTiff")
         dataset = driver.Create(temp_raster, cols, rows, 1, gdal.GDT_Byte)
         if dataset is None:
-            raise _erro("Não foi possível criar raster temporário")
+            raise _erro(t("msg_raster_temporario"))
 
         dataset.SetGeoTransform(transform)
         if proj:
@@ -2667,7 +2581,7 @@ def vectorize_binary_raster(binary_array, transform, proj, feedback=None):
         # Poligoniza para uma camada em memoria: nada toca o disco alem do raster.
         vector_ds = ogr_memory_driver().CreateDataSource("mask")
         if vector_ds is None:
-            raise _erro("Não foi possível criar vetor temporário")
+            raise _erro(t("msg_vetor_temporario"))
         layer = vector_ds.CreateLayer("polygons", srs=srs, geom_type=ogr.wkbPolygon)
         layer.CreateField(ogr.FieldDefn("value", ogr.OFTInteger))
 
@@ -2696,7 +2610,7 @@ def vectorize_binary_raster(binary_array, transform, proj, feedback=None):
 
         result = FeatureSet(geometries, attributes, crs)
         if feedback:
-            feedback.pushInfo(f"Vetorizações geradas: {len(result)} polígonos")
+            feedback.pushInfo(t("msg_vetorizacao", n=len(result)))
         return result
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -2710,7 +2624,7 @@ def save_vector(features, output_path, output_format, output_crs, feedback=None)
     }
 
     if len(features) == 0:
-        raise _erro("Nenhuma area atingiu o threshold configurado. Reduza o threshold ou revise os criterios.")
+        raise _erro(t("msg_sem_area_limiar"))
 
     output_dir = os.path.dirname(output_path)
     if output_dir and not os.path.exists(output_dir):
@@ -2721,17 +2635,17 @@ def save_vector(features, output_path, output_format, output_crs, feedback=None)
         # KML e sempre WGS84 por especificacao; o LIBKML reprojeta ao gravar.
         target_crs = None
         if feedback:
-            feedback.pushInfo("KML e gravado em EPSG:4326 por definicao do formato; o CRS de saida pedido nao se aplica.")
+            feedback.pushInfo(t("msg_kml_4326"))
     if target_crs:
         features = features.to_crs(target_crs)
         if feedback:
-            feedback.pushInfo(f"Resultado reprojetado para {target_label}")
+            feedback.pushInfo(t("msg_reprojetado", crs=target_label))
 
     export = FeatureSet(features.geometries, features.attributes, features.crs)
     if output_format == "Shapefile" and "area_m2" in export.columns:
         export.drop_column("area_m2")
         if feedback:
-            feedback.pushInfo("Campo area_m2 removido da saida Shapefile para evitar estouro de largura DBF; area_ha foi preservado.")
+            feedback.pushInfo(t("msg_shapefile_area"))
 
     driver = driver_map.get(output_format, "ESRI Shapefile")
     stringify = False
@@ -2752,14 +2666,11 @@ def save_vector(features, output_path, output_format, output_crs, feedback=None)
         except RuntimeError:
             output_path = available_output_path(output_path)
             if feedback:
-                feedback.pushWarning(
-                    "O vetor anterior esta em uso no QGIS ou bloqueado pelo sistema. "
-                    f"Salvando novo arquivo como: {output_path}"
-                )
+                feedback.pushWarning(t("msg_vetor_bloqueado", path=output_path))
     export.to_file(output_path, driver=driver, stringify=stringify)
 
     if feedback:
-        feedback.pushInfo(f"{output_format} salvo com sucesso: {len(features)} feições")
+        feedback.pushInfo(t("msg_vetor_salvo", format=output_format, n=len(features)))
     return output_path
 
 
@@ -2773,7 +2684,7 @@ def output_crs_target(output_crs):
     """
     if not output_crs or not output_crs.isValid():
         return None, None
-    label = output_crs.authid() or output_crs.description() or "CRS personalizado"
+    label = output_crs.authid() or output_crs.description() or t("msg_crs_personalizado")
     try:
         wkt = output_crs.toWkt()
     except Exception:
@@ -2832,9 +2743,9 @@ def transform_point_to_raster(point_path, raster_proj):
     try:
         datasource = ogr.Open(point_path)
     except RuntimeError as exc:
-        raise _erro(f"Nao foi possivel abrir o ponto: {point_path}") from exc
+        raise _erro(t("msg_ponto_abrir", path=point_path)) from exc
     if datasource is None:
-        raise _erro(f"Nao foi possivel abrir o ponto: {point_path}")
+        raise _erro(t("msg_ponto_abrir", path=point_path))
 
     raster_srs = osr.SpatialReference()
     raster_srs.ImportFromWkt(raster_proj) if raster_proj else raster_srs.ImportFromEPSG(4326)
@@ -2867,7 +2778,7 @@ def transform_point_to_raster(point_path, raster_proj):
                 if sub_geom and ogr.GT_Flatten(sub_geom.GetGeometryType()) == ogr.wkbPoint:
                     return float(sub_geom.GetX()), float(sub_geom.GetY())
 
-    raise _erro(f"Nenhuma geometria de ponto encontrada em: {point_path}")
+    raise _erro(t("msg_ponto_sem_geometria", path=point_path))
 
 
 def transform_points_to_raster(point_path, raster_proj):
@@ -2881,9 +2792,9 @@ def transform_points_to_raster(point_path, raster_proj):
     try:
         datasource = ogr.Open(point_path)
     except RuntimeError as exc:
-        raise _erro(f"Nao foi possivel abrir a camada de pontos: {point_path}") from exc
+        raise _erro(t("msg_camada_pontos_abrir", path=point_path)) from exc
     if datasource is None:
-        raise _erro(f"Nao foi possivel abrir a camada de pontos: {point_path}")
+        raise _erro(t("msg_camada_pontos_abrir", path=point_path))
 
     raster_srs = osr.SpatialReference()
     raster_srs.ImportFromWkt(raster_proj) if raster_proj else raster_srs.ImportFromEPSG(4326)
@@ -2916,7 +2827,7 @@ def transform_points_to_raster(point_path, raster_proj):
                     if sub and ogr.GT_Flatten(sub.GetGeometryType()) == ogr.wkbPoint:
                         points.append((float(sub.GetX()), float(sub.GetY())))
     if not points:
-        raise _erro(f"Nenhum ponto encontrado em: {point_path}")
+        raise _erro(t("msg_nenhum_ponto", path=point_path))
     return points
 
 
@@ -2962,7 +2873,7 @@ def nearest_valid_cell(valid_mask, row, col, radius=NEAREST_VALID_CELL_RADIUS):
             best = (rr, cc)
             best_dist = dist
     if best is None:
-        raise _erro("Ponto inicial ou final caiu fora das celulas viaveis e nao ha celula valida proxima.")
+        raise _erro(t("msg_ponto_sem_celula"))
     return best
 
 
@@ -3096,28 +3007,17 @@ def check_route_connectivity(cost_array, points, slope=None, penalty=None,
                     else np.zeros(cost_array.shape, dtype=bool))
         necessario = minimum_connecting_slope(slope, barreira, points, max_slope)
         if necessario is not None:
-            sugestao = (" Com a declividade maxima em {}% (hoje {:g}%) os pontos se ligam. "
-                        "Em MDE de {:.0f} m, as trilhas de caminhada testadas couberam em 85%; "
-                        "acima disso costumam estar trechos com cabo, corrente ou via ferrata: "
-                        "aumente o limite so se a rota for desse tipo.".format(
-                            necessario, max_slope, cell_size_m or 0))
+            sugestao = t("msg_ligacao_declividade", needed=necessario, current=max_slope,
+                         cell=cell_size_m or 0)
         elif so_vertice:
             sugestao = ""
         else:
-            sugestao = (" Nem sem limite de declividade os pontos se ligam: o que os separa e uma "
-                        "restricao no modo evitar, um curso d'agua acima do teto vadeavel, NoData "
-                        "no MDE, ou a margem de busca.")
+            sugestao = t("msg_ligacao_nem_sem_limite")
     append_diagnostic_log(log_path, "rota_sem_ligacao", declividade_que_liga_pct=necessario,
                           so_contato_de_vertice=bool(so_vertice))
     if so_vertice and necessario is None:
-        raise _erro(
-            "Os pontos so se ligam por um contato de vertice: em algum lugar do caminho, duas "
-            "celulas intransponiveis se tocam na diagonal e a passagem fica com largura zero. "
-            "Aqui falta largura, nao declividade: amplie o afastamento da restricao ou use um "
-            "MDE de maior resolucao, em que a passagem real apareca com mais de uma celula.")
-    raise _erro(
-        "Nao foi possivel conectar os pontos da rota: nao existe caminho de celulas viaveis "
-        "entre eles." + sugestao)
+        raise _erro(t("msg_contato_vertice"))
+    raise _erro(t("msg_sem_ligacao", hint=sugestao))
 
 
 def path_length_m(path_cells, pixel_size_m):
@@ -3192,15 +3092,10 @@ def check_slope_detour(score_crop, free_crop, sequence, path_cells, slope_crop, 
     desvio = slope_detour(path_cells, livre, slope_crop, max_slope, pixel_size_m)
     append_diagnostic_log(log_path, "desvio_pela_declividade", limite_pct=float(max_slope), **desvio)
     if desvio["avisar"] and feedback:
-        feedback.pushWarning(
-            "A rota contorna terreno acima da declividade maxima ({:g}%). Sem o limite ela teria "
-            "{:.1f} km em vez de {:.1f} km, passando {:.0f} m por rampas de ate {}%. Trilhas reais "
-            "costumam atravessar esse terreno por cabo, escada ou zigue-zague que o MDE de {:.0f} m "
-            "nao resolve: se a rota procurada e desse tipo, aumente a declividade maxima para {}%. "
-            "Se nao, o desvio e o caminho que evita esse terreno.".format(
-                max_slope, desvio["comprimento_sem_limite_m"] / 1000.0, desvio["comprimento_m"] / 1000.0,
-                desvio["metros_acima_do_limite"], desvio["declividade_que_encurta_pct"], pixel_size_m,
-                desvio["declividade_que_encurta_pct"]))
+        feedback.pushWarning(t(
+            "msg_desvio", limit=max_slope, free_km=desvio["comprimento_sem_limite_m"] / 1000.0,
+            route_km=desvio["comprimento_m"] / 1000.0, metres=desvio["metros_acima_do_limite"],
+            needed=desvio["declividade_que_encurta_pct"], cell=pixel_size_m))
     return desvio
 
 
@@ -3223,13 +3118,12 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
     dist[start_index] = 0.0
     finite_costs = cost_array[np.isfinite(cost_array)]
     if finite_costs.size == 0:
-        raise _erro("A area de busca da rota nao contem celulas viaveis.")
+        raise _erro(t("msg_area_busca_vazia"))
     min_step_cost = float(np.nanmin(finite_costs))
 
     if anisotropic:
         if elevation is None or pixel_size_m is None:
-            raise ValueError(
-                "O modelo anisotropico precisa da altitude e do tamanho do pixel.")
+            raise ValueError("The anisotropic model needs the elevation and the pixel size.")
         # A heuristica precisa continuar admissivel: o tempo por metro nunca fica
         # abaixo do de Tobler na sua velocidade maxima, e o retardo por terreno
         # nunca fica abaixo do seu minimo na cena.
@@ -3274,7 +3168,7 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
         # fica com o QGIS preso e o botao de cancelar sem efeito.
         if feedback is not None and expandidas % 20000 == 0:
             if feedback.isCanceled():
-                raise _cancelado("Calculo da rota cancelado pelo usuario.")
+                raise _cancelado(t("msg_cancelado_rota"))
             if progress_range is not None:
                 inicio, fim = progress_range
                 fracao = min(1.0, expandidas / float(total_celulas))
@@ -3348,21 +3242,8 @@ def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
         # de um unico contato pelo canto -- descrevia uma travessia que nao
         # existe no terreno.
         if _liga_apenas_pelo_canto(cost_array, start_rc, end_rc):
-            raise _erro(
-                "Os dois pontos so se ligam por um contato de vertice: em algum lugar do "
-                "caminho, duas celulas intransponiveis se tocam na diagonal e a passagem fica "
-                "com largura zero. Ate a versao 1.2.0 a rota escapava por esse vertice, o que "
-                "descrevia uma travessia que nao existe no terreno. Aqui falta largura, nao "
-                "declividade: reduza a area minima de fragmento para nao fatiar as areas "
-                "caminhaveis, amplie o afastamento da restricao, ou use um MDE de maior "
-                "resolucao, em que a passagem real apareca com mais de uma celula.")
-        raise _erro(
-            "Nao foi possivel conectar os pontos da rota: nao existe caminho de celulas viaveis "
-            "entre eles. Causas comuns: declividade maxima admitida baixa demais para o relevo "
-            "(celulas acima dela sao intransponiveis), camada de restricao no modo 'evitar' "
-            "cercando um dos pontos, cursos d'agua acima do teto vadeavel separando os pontos, "
-            "ou margem lateral de busca pequena. Aumente a declividade maxima, troque a restricao "
-            "para 'encarecer', eleve a maior bacia atravessavel a vau ou amplie a margem.")
+            raise _erro(t("msg_contato_vertice_trecho"))
+        raise _erro(t("msg_sem_caminho", avoid=_rotulo("alg_consavoid"), penalise=_rotulo("alg_conspen")))
 
     path = []
     index = end_index
@@ -3394,7 +3275,7 @@ def multi_leg_route(cost_array, waypoints_rc, elevation=None, pixel_size_m=None,
     efetivamente usada quando return_order=True.
     """
     if len(waypoints_rc) < 2:
-        raise ValueError("Uma rota precisa de pelo menos dois pontos.")
+        raise ValueError(t("msg_rota_poucos_pontos"))
 
     if optimise_order and len(waypoints_rc) > 3:
         waypoints_rc = optimise_waypoint_order(
@@ -3405,9 +3286,7 @@ def multi_leg_route(cost_array, waypoints_rc, elevation=None, pixel_size_m=None,
     for index in range(len(waypoints_rc) - 1):
         start, end = waypoints_rc[index], waypoints_rc[index + 1]
         if tuple(start) == tuple(end):
-            raise _erro(
-                "Os pontos {} e {} caem na mesma celula do raster. Use pontos mais "
-                "afastados ou um MDE de maior resolucao.".format(index + 1, index + 2))
+            raise _erro(t("msg_mesma_celula_trecho", a=index + 1, b=index + 2))
         passo = 100.0 / max(1, len(waypoints_rc) - 1)
         leg, cost = least_cost_path(cost_array, tuple(start), tuple(end),
                                     elevation=elevation, pixel_size_m=pixel_size_m,
@@ -3418,9 +3297,7 @@ def multi_leg_route(cost_array, waypoints_rc, elevation=None, pixel_size_m=None,
         # o primeiro ponto de cada trecho repete o ultimo do anterior
         cells.extend(leg if index == 0 else leg[1:])
         if feedback:
-            feedback.pushInfo(
-                "  trecho {} de {}: {} celulas, custo {:.4f}".format(
-                    index + 1, len(waypoints_rc) - 1, len(leg), cost))
+            feedback.pushInfo(t("msg_trecho", i=index + 1, n=len(waypoints_rc) - 1, cells=len(leg), cost=cost))
     if return_order:
         return cells, float(sum(leg_costs)), leg_costs, list(waypoints_rc)
     return cells, float(sum(leg_costs)), leg_costs
@@ -3440,16 +3317,11 @@ def optimise_waypoint_order(cost_array, waypoints_rc, elevation=None,
     """
     middle = list(range(1, len(waypoints_rc) - 1))
     if len(middle) > MAX_OPTIMISED_WAYPOINTS:
-        raise ValueError(
-            "A otimizacao de ordem aceita ate {} pontos intermediarios; foram dados "
-            "{}. Com mais que isso, informe a ordem desejada e desligue a "
-            "otimizacao.".format(MAX_OPTIMISED_WAYPOINTS, len(middle)))
+        raise ValueError(t("msg_otimizacao_max", max=MAX_OPTIMISED_WAYPOINTS, n=len(middle)))
 
     n = len(waypoints_rc)
     if feedback:
-        feedback.pushInfo(
-            "Otimizando a ordem de {} pontos intermediarios ({} trechos a calcular)."
-            .format(len(middle), n * (n - 1)))
+        feedback.pushInfo(t("msg_otimizando", n=len(middle), legs=n * (n - 1)))
 
     # O DP so le os pares que saem da origem, os que ligam pontos
     # intermediarios e os que chegam ao destino: calcular (i, 0) ou (last, j)
@@ -3460,7 +3332,7 @@ def optimise_waypoint_order(cost_array, waypoints_rc, elevation=None,
     for contagem, (i, j) in enumerate(necessarios, start=1):
         if feedback is not None:
             if feedback.isCanceled():
-                raise _cancelado("Otimizacao da ordem cancelada pelo usuario.")
+                raise _cancelado(t("msg_cancelado_ordem"))
             feedback.setProgress(100.0 * contagem / len(necessarios))
         _, cost = least_cost_path(cost_array, tuple(waypoints_rc[i]),
                                   tuple(waypoints_rc[j]), elevation=elevation,
@@ -3505,9 +3377,8 @@ def optimise_waypoint_order(cost_array, waypoints_rc, elevation=None,
     ordered = [waypoints_rc[0]] + [waypoints_rc[i] for i in order] + [waypoints_rc[last]]
     if feedback:
         original = sum(pair[(i, i + 1)] for i in range(n - 1))
-        feedback.pushInfo(
-            "  ordem informada: custo {:.4f}; melhor ordem: custo {:.4f} ({:+.1f}%)"
-            .format(original, end_state[0], 100.0 * (end_state[0] / original - 1.0)))
+        feedback.pushInfo(t("msg_ordem_custos", given=original, best=end_state[0],
+                            change=100.0 * (end_state[0] / original - 1.0)))
     return ordered
 
 
@@ -3540,7 +3411,7 @@ def route_graph_edges(cost_array, elevation=None, pixel_size_m=None,
         fator = fator.astype(np.float64)
     if anisotropic:
         if elevation is None or pixel_size_m is None:
-            raise ValueError("O modelo anisotropico precisa da altitude e do tamanho do pixel.")
+            raise ValueError("The anisotropic model needs the elevation and the pixel size.")
         altitude = np.asarray(elevation)
     indice = np.arange(rows * cols, dtype=np.int64).reshape(rows, cols)
     origens, destinos, pesos = [], [], []
@@ -3651,7 +3522,7 @@ def save_slack_raster(slack_pct, transform, proj, output_path, feedback=None):
     rows, cols = slack_pct.shape
     dataset = driver.Create(caminho, cols, rows, 1, gdal.GDT_Float32, options=["COMPRESS=LZW"])
     if dataset is None:
-        raise _erro("Nao foi possivel criar o raster de folga.")
+        raise _erro(t("msg_folga_falhou"))
     dataset.SetGeoTransform(transform)
     if proj:
         dataset.SetProjection(proj)
@@ -3702,9 +3573,9 @@ def save_access_route(
     invalid buffer/margin, unreachable endpoints or impossible paths.
     """
     if buffer_m <= 0:
-        raise _erro("A largura do corredor deve ser maior que zero.")
+        raise _erro(t("msg_corredor_zero"))
     if margin_m <= 0:
-        raise _erro("A margem de busca da rota deve ser maior que zero.")
+        raise _erro(t("msg_margem_zero"))
 
     output_dir = os.path.dirname(output_path)
     if output_dir and not os.path.exists(output_dir):
@@ -3717,7 +3588,8 @@ def save_access_route(
     valid_mask = np.isfinite(score_array)
     sequence = []
     rows_total, cols_total = score_array.shape
-    labels = ["inicial"] + [f"intermediario {i + 1}" for i in range(len(via_xy))] + ["final"]
+    labels = ([t("msg_rotulo_inicial")] + [t("msg_rotulo_intermediario", n=i + 1) for i in range(len(via_xy))]
+              + [t("msg_rotulo_final")])
     deslocamentos = []
     for label, (x, y) in zip(labels, [start_xy] + via_xy + [end_xy]):
         row, col = world_to_pixel(transform, x, y)
@@ -3726,12 +3598,9 @@ def save_access_route(
             # proxima": era a mensagem que quem digitava X, Y no CRS errado via.
             x0, y0 = pixel_to_world(transform, 0, 0)
             x1, y1 = pixel_to_world(transform, rows_total - 1, cols_total - 1)
-            raise _erro(
-                "O ponto {} ({:.6g}, {:.6g}) esta fora da extensao do MDE "
-                "(x {:.6g} a {:.6g}, y {:.6g} a {:.6g}, no CRS de trabalho). "
-                "Confira o CRS dos pontos: coordenadas digitadas sao lidas no CRS do projeto.".format(
-                    label, x, y, min(x0, x1), max(x0, x1), min(y0, y1), max(y0, y1))
-            )
+            raise _erro(t(
+                "msg_ponto_fora_mde", label=label, x=_coord(x), y=_coord(y), x0=_coord(min(x0, x1)),
+                x1=_coord(max(x0, x1)), y0=_coord(min(y0, y1)), y1=_coord(max(y0, y1))))
         celula = nearest_valid_cell(valid_mask, row, col)
         sequence.append(celula)
         if celula != (row, col):
@@ -3744,11 +3613,8 @@ def save_access_route(
             deslocamentos.append(dict(
                 ponto=label, pedido=[float(x), float(y)],
                 usado=[x_efetivo, y_efetivo], deslocamento_m=distancia))
-            texto = (
-                "O ponto {} caiu numa celula inviavel e foi movido {:,.0f} m para a "
-                "celula viavel mais proxima ({:.6g}, {:.6g} no CRS de trabalho). "
-                "O comprimento, o tempo e o ganho referem-se ao trajeto deslocado."
-            ).format(label, distancia, x_efetivo, y_efetivo)
+            texto = t("msg_ponto_deslocado", label=label, distance=distancia, x=_coord(x_efetivo),
+                      y=_coord(y_efetivo))
             if feedback:
                 if distancia > NEAREST_VALID_CELL_WARN_M:
                     feedback.pushWarning(texto)
@@ -3761,9 +3627,7 @@ def save_access_route(
     end_row, end_col = sequence[-1]
 
     if via_xy and feedback:
-        feedback.pushInfo(
-            "Rota por {} destino(s) intermediario(s); {} trechos.".format(
-                len(via_xy), len(sequence) - 1))
+        feedback.pushInfo(t("msg_rota_destinos", n=len(via_xy), legs=len(sequence) - 1))
 
     margin_pixels = meters_to_pixels(transform, score_array.shape, proj, margin_m)
     rows_used = [r for r, _ in sequence]
@@ -3775,10 +3639,7 @@ def save_access_route(
 
     score_crop = score_array[row_min:row_max, col_min:col_max]
     if score_crop.size > MAX_ROUTE_CROP_CELLS:
-        raise _erro(
-            "A area de busca da rota ficou grande demais. Reduza a margem de busca ou use pontos mais proximos "
-            "para evitar travamento durante o calculo."
-        )
+        raise _erro(t("msg_area_busca_grande"))
     penalty_crop = None
     if penalty_mask is not None:
         penalty_crop = penalty_mask[row_min:row_max, col_min:col_max]
@@ -3810,19 +3671,14 @@ def save_access_route(
     )
 
     if feedback:
-        feedback.pushInfo(
-            f"Planejamento de acesso: recorte {cost_crop.shape[1]} x {cost_crop.shape[0]} celulas; "
-            f"margem {margin_m:.0f} m"
-        )
+        feedback.pushInfo(t("msg_recorte", cols=cost_crop.shape[1], rows=cost_crop.shape[0], margin=margin_m))
 
     anisotropic = cost_model == ROUTE_COST_TOBLER
     elevation_crop = None
     pixel_size_m = None
     if anisotropic:
         if elevation_array is None:
-            raise _erro(
-                "O modelo de tempo de caminhada precisa do MDE, que nao foi repassado."
-            )
+            raise _erro(t("msg_tobler_sem_mde"))
         elevation_crop = elevation_array[row_min:row_max, col_min:col_max]
         pixel_size_m = float(np.sqrt(max(estimate_pixel_area_m2(
             transform, score_array.shape, proj), 1e-9)))
@@ -3838,10 +3694,7 @@ def save_access_route(
         optimise_order=optimise_order, feedback=feedback,
         crossing_factor=penalty_crop, return_order=True)
     if len(path_cells) < 2:
-        raise _erro(
-            "O ponto inicial e o ponto final caem na mesma celula do raster. "
-            "Use pontos mais afastados ou um raster de maior resolucao para gerar uma rota."
-        )
+        raise _erro(t("msg_mesma_celula"))
     if free_score is not None and slope_crop is not None and max_slope:
         check_slope_detour(
             cost_crop, free_score[row_min:row_max, col_min:col_max], ordem, path_cells, slope_crop,
@@ -3852,10 +3705,7 @@ def save_access_route(
     if lake_mask is not None:
         no_lago = sum(1 for row, col in path_cells if lake_mask[row + row_min, col + col_min])
         if no_lago and feedback:
-            feedback.pushWarning(
-                "A rota passa por {} celula(s) de superficie d'agua plana -- lago ou represa "
-                "achatados no MDE. Marque \"Considerar cursos d'agua extraidos do MDE\" para "
-                "trata-los como barreira.".format(no_lago))
+            feedback.pushWarning(t("msg_rota_lago", n=no_lago, option=_rotulo("alg_streams")))
     line = ogr.Geometry(ogr.wkbLineString)
     for x, y in coordinates:
         line.AddPoint_2D(float(x), float(y))
@@ -3886,13 +3736,8 @@ def save_access_route(
         route_attributes["tempo_campo_hms"] = format_hours(tempo_campo)
         route_attributes["velocidade_campo_kmh"] = float(field_speed_kmh)
         if feedback:
-            feedback.pushInfo(
-                "Duracao estimada: {:.2f} h em ritmo de Tobler ({:.1f} km/h de velocidade "
-                "maxima) e {:.2f} h em ritmo de levantamento de campo ({:.1f} km/h, medido "
-                "em inventario botanico na caatinga). A rota e a mesma nos dois casos: a velocidade "
-                "maxima altera a duracao, nao o tracado.".format(
-                    float(tempo_tobler), TOBLER_MAX_SPEED_KMH,
-                    tempo_campo, float(field_speed_kmh)))
+            feedback.pushInfo(t("msg_duracao", tobler=float(tempo_tobler), max_speed=TOBLER_MAX_SPEED_KMH,
+                                field=tempo_campo, field_speed=float(field_speed_kmh)))
     if elevation_array is not None:
         route_altitudes = [
             float(elevation_array[row + row_min, col + col_min])
@@ -3950,7 +3795,7 @@ def save_access_route(
         route = route.to_crs(target_crs)
         corridor = corridor.to_crs(target_crs)
         if feedback:
-            feedback.pushInfo(f"Rota e corredor reprojetados para {target_label}")
+            feedback.pushInfo(t("msg_rota_reprojetada", crs=target_label))
 
     for nome, path in (("rota", route_path), ("corredor", corridor_path)):
         alternativo = _saida_gpkg_utilizavel(path, nome, feedback)
@@ -3984,12 +3829,11 @@ def save_access_route(
                 k = min(item["classe"], len(labels) - 1)
                 attributes.append({
                     "n": number,
-                    "tipo": item["tipo"],
+                    "tipo": t("msg_tipo_travessia" if item["tipo"] == "travessia" else "msg_tipo_junto"),
                     "bacia_km2": round(float(item["area_km2"]), 3),
                     "classe": labels[k],
                     "extensao_m": round(float(item["extensao_m"]), 1),
-                    "aviso": ("Estimado so pelo relevo (area de contribuicao). Profundidade e "
-                              "corrente variam com a estacao e a chuva: confira em campo antes de usar."),
+                    "aviso": t("msg_travessia_aviso_campo"),
                 })
             crossings_set = FeatureSet(geometries, attributes, crs_wkt)
             if target_crs:
@@ -3998,20 +3842,18 @@ def save_access_route(
                 f"{base_path}_travessias.gpkg", "travessias", feedback)
             crossings_set.to_file(crossings_path, driver="GPKG", layer_name="travessias")
             if feedback:
-                n_trav = sum(1 for a in attributes if a["tipo"] == "travessia")
-                junto = [a for a in attributes if a["tipo"] != "travessia"]
-                feedback.pushInfo(
-                    "A rota cruza {} curso(s) d'agua e segue junto a curso d'agua em {} trecho(s), "
-                    "somando {:.1f} km: {}. Salvo em {}. Confira em campo: o MDE nao conhece "
-                    "vazao nem estacao, e trecho junto ao curso pode alagar na chuva.".format(
-                        n_trav, len(junto), sum(a["extensao_m"] for a in junto) / 1000.0,
-                        "; ".join("#{} {} {} ({:.1f} km2{})".format(
-                            a["n"], a["tipo"], a["classe"], a["bacia_km2"],
-                            "" if a["tipo"] == "travessia" else ", {:.0f} m".format(a["extensao_m"]))
-                            for a in attributes),
-                        crossings_path))
+                travessia = [item["tipo"] == "travessia" for item in crossings]
+                junto = [a for a, e_travessia in zip(attributes, travessia) if not e_travessia]
+                feedback.pushInfo(t(
+                    "msg_travessias_resumo", crossings=sum(travessia), along=len(junto),
+                    km=sum(a["extensao_m"] for a in junto) / 1000.0,
+                    items=t("msg_sep_itens").join(
+                        t("msg_travessia_item" if e_travessia else "msg_junto_item", n=a["n"], kind=a["tipo"],
+                          cls=a["classe"], area=a["bacia_km2"], length=a["extensao_m"])
+                        for a, e_travessia in zip(attributes, travessia)),
+                    path=crossings_path))
         elif feedback:
-            feedback.pushInfo("A rota nao cruza nenhum curso d'agua da rede extraida.")
+            feedback.pushInfo(t("msg_sem_travessias"))
 
     alternatives = None
     if alternatives_pct and alternatives_pct > 0:
@@ -4023,17 +3865,13 @@ def save_access_route(
 
     if feedback:
         length = route_length_m
-        feedback.pushInfo(f"Rota de acesso salva: {route_path}")
-        feedback.pushInfo(f"Corredor de acesso salvo: {corridor_path}")
+        feedback.pushInfo(t("msg_rota_salva", path=route_path))
+        feedback.pushInfo(t("msg_corredor_salvo", path=corridor_path))
         if np.isfinite(length):
-            feedback.pushInfo(f"Comprimento estimado da rota: {length:.1f} m")
+            feedback.pushInfo(t("msg_comprimento", length=length))
             if anisotropic:
-                feedback.pushInfo(
-                    "Tempo estimado de caminhada (Tobler, anisotropico): {:.2f} h "
-                    "({}), velocidade media {:.2f} km/h.".format(
-                        tempo_tobler, format_hours(tempo_tobler),
-                        (length / 1000.0) / max(tempo_tobler, 1e-9))
-                )
+                feedback.pushInfo(t("msg_tempo_tobler", hours=tempo_tobler, hms=format_hours(tempo_tobler),
+                                    speed=(length / 1000.0) / max(tempo_tobler, 1e-9)))
     append_diagnostic_log(
         log_path,
         "rota_calculada",
@@ -4066,10 +3904,7 @@ def _save_alternatives(cost_crop, elevation_crop, pixel_size_m, anisotropic, pen
     """
     if cost_crop.size > MAX_ALTERNATIVES_CELLS:
         if feedback:
-            feedback.pushWarning(
-                "Corredor de alternativas nao calculado: a area de busca tem {:,} celulas, "
-                "acima do teto de {:,}. Reduza a margem de busca.".format(
-                    cost_crop.size, MAX_ALTERNATIVES_CELLS))
+            feedback.pushWarning(t("msg_alternativas_grande", cells=int(cost_crop.size), limit=MAX_ALTERNATIVES_CELLS))
         return None
     slack = float(alternatives_pct) / 100.0
     cols = cost_crop.shape[1]
@@ -4113,16 +3948,9 @@ def _save_alternatives(cost_crop, elevation_crop, pixel_size_m, anisotropic, pen
                           afastamento_max_m=afastamento_max,
                           vetor=caminho_vetor, raster=caminho_raster)
     if feedback:
-        feedback.pushInfo(
-            "Corredor de alternativas (ate {:g}% acima do custo otimo): {:.1f} ha; o caminho "
-            "alternativo mais distante passa a {:,.0f} m da rota.".format(
-                alternatives_pct, area_ha, afastamento_max))
+        feedback.pushInfo(t("msg_alternativas_resumo", pct=alternatives_pct, area=area_ha, distance=afastamento_max))
         if afastamento_max > max(4.0 * float(buffer_m), 10.0 * px):
-            feedback.pushWarning(
-                "Ha caminhos com custo ate {:g}% maior que passam a {:,.0f} m da rota: ela nao "
-                "e bem determinada pelo modelo, e outro recorte do MDE ou outro pixel pode "
-                "troca-la por um desses corredores. Leia o corredor de alternativas, nao so a "
-                "linha.".format(alternatives_pct, afastamento_max))
+            feedback.pushWarning(t("msg_alternativas_aviso", pct=alternatives_pct, distance=afastamento_max))
     return caminho_vetor, caminho_raster
 
 
@@ -4723,6 +4551,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         elas valiam para o processo QGIS inteiro.
         """
         self._temp_dirs = []
+        mensagens.definir_idioma(_algorithm_language())
         try:
             with gdal_exceptions_scoped():
                 return self._run_algorithm(parameters, context, feedback)
@@ -4742,26 +4571,25 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         # ficou em _run_algorithm, junto da decisao de derivar ou nao, porque
         # depende do parametro DERIVE_FROM_DEM.
         for label, layer in [
-            ("Altitude / MDE", dem_layer),
-            ("Declividade", slope_layer),
-            ("Curvatura horizontal", curvh_layer),
-            ("Curvatura vertical", curvv_layer),
+            (t("msg_nome_mde"), dem_layer),
+            (t("msg_nome_declividade"), slope_layer),
+            (t("msg_nome_curvh"), curvh_layer),
+            (t("msg_nome_curvv"), curvv_layer),
         ]:
             if layer is None:
-                if label == "Altitude / MDE":
-                    raise _erro(f"Camada obrigatória ausente: {label}")
+                if layer is dem_layer:
+                    raise _erro(t("msg_camada_ausente", name=label))
                 continue
             if not layer.crs().isValid():
-                raise _erro(f"O raster {label} não possui CRS definido.")
+                raise _erro(t("msg_raster_sem_crs", name=label))
             # gdal.Open, e nao os.path.exists: um MDE dentro de um GeoPackage
             # ("GPKG:/caminho.gpkg:mde") e valido no QGIS e nao e um caminho.
             try:
                 probe = gdal.Open(str(layer.source()))
             except RuntimeError as exc:
-                raise _erro(
-                    f"O GDAL nao conseguiu abrir a camada {label}: {layer.source()}") from exc
+                raise _erro(t("msg_gdal_camada", name=label, source=layer.source())) from exc
             if probe is None:
-                raise _erro(f"O GDAL nao conseguiu abrir a camada {label}: {layer.source()}")
+                raise _erro(t("msg_gdal_camada", name=label, source=layer.source()))
             probe = None
 
         min_altitude = self.parameterAsDouble(parameters, self.ALT_MIN, context)
@@ -4787,15 +4615,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 float(part) for part in breaks_text.replace(";", ",").split(",") if part.strip()
             )
         except ValueError:
-            raise _erro(
-                f"Nao entendi os limites de transitabilidade: {breaks_text!r}. "
-                "Informe quatro numeros crescentes separados por virgula, em porcentagem."
-            )
+            raise _erro(t("msg_transit_limites_texto", text=repr(breaks_text)))
         if len(transitability_breaks) != 4:
-            raise _erro(
-                "Os limites de transitabilidade precisam ser exatamente quatro valores "
-                f"em porcentagem, crescentes. Recebi {len(transitability_breaks)}."
-            )
+            raise _erro(t("msg_transit_limites_quatro", n=len(transitability_breaks)))
         slope_unit = self.parameterAsEnum(parameters, self.SLOPE_UNIT, context)
         max_slope = self.parameterAsDouble(parameters, self.SLOPE_MAX, context)
         slope_score_max = self.parameterAsDouble(parameters, self.SLOPE_SCORE_MAX, context)
@@ -4899,80 +4721,73 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             },
         )
         if bool(start_point_file) != bool(end_point_file):
-            message = "Informe os dois pontos: inicial e final. Para gerar rota, ambos sao obrigatorios."
+            message = t("msg_pontos_obrigatorios")
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise _erro(message)
-        for point_file, label in [(start_point_file, "ponto inicial"), (end_point_file, "ponto final")]:
+        for point_file, label in [(start_point_file, t("msg_rotulo_inicial")), (end_point_file, t("msg_rotulo_final"))]:
             if point_file and not os.path.exists(point_file):
-                message = f"Arquivo do {label} nao encontrado: {point_file}"
+                message = t("msg_arquivo_ponto", label=label, path=point_file)
                 append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
                 raise _erro(message)
 
         if total_weight <= 0:
-            message = "A soma dos pesos deve ser maior que zero."
+            message = t("msg_pesos_soma")
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise _erro(message)
         if any(weight < 0 for weight in [altitude_weight, slope_weight, curvh_weight,
                                          curvv_weight, wetness_weight, roughness_weight,
                                          extra_weight]):
-            message = "Os pesos nao podem ser negativos."
+            message = t("msg_pesos_negativos")
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise _erro(message)
         if min_altitude >= max_altitude:
-            message = "A altitude minima deve ser menor que a altitude maxima."
+            message = t("msg_altitude_ordem")
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise _erro(message)
         if max_slope <= 0 or slope_score_max <= 0:
-            message = "Os limites de declividade devem ser maiores que zero."
+            message = t("msg_declividade_positiva")
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise _erro(message)
         if min_patch_area_ha < 0 and min_patch_area_ha != MIN_PATCH_AREA_AUTO:
-            message = "A area minima do fragmento nao pode ser negativa (-1 = automatica)."
+            message = t("msg_area_minima_negativa")
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise _erro(message)
         if not (0 <= threshold <= 1):
-            message = "O threshold deve estar entre 0 e 1."
+            message = t("msg_limiar_faixa_valida")
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise _erro(message)
         if not (0 < auto_percentile < 100):
-            message = "O percentil automatico deve estar entre 0 e 100."
+            message = t("msg_percentil_faixa")
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise _erro(message)
         if not (0 <= alternatives_pct <= MAX_ALTERNATIVES_PCT):
-            message = "A folga do corredor de alternativas deve estar entre 0 e {:.0f}%.".format(
-                MAX_ALTERNATIVES_PCT)
+            message = t("msg_folga_faixa", max=MAX_ALTERNATIVES_PCT)
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise _erro(message)
         if route_buffer_m <= 0 or route_margin_m <= 0:
-            message = "Corredor e margem de busca devem ser maiores que zero."
+            message = t("msg_corredor_margem")
             append_diagnostic_log(debug_log_path, "validacao_falhou", erro=message)
             raise _erro(message)
 
         if feedback:
-            feedback.pushInfo("=== PARÂMETROS CONFIGURADOS ===")
-            feedback.pushInfo(f"Log diagnostico: {debug_log_path}")
-            feedback.pushInfo(f"Altitude mínima: {min_altitude}")
-            feedback.pushInfo(f"Altitude máxima: {max_altitude}")
+            feedback.pushInfo(t("msg_param_titulo"))
+            feedback.pushInfo(t("msg_param_log", path=debug_log_path))
+            feedback.pushInfo(t("msg_param_alt_min", value=min_altitude))
+            feedback.pushInfo(t("msg_param_alt_max", value=max_altitude))
+            feedback.pushInfo(t("msg_param_decl_graus" if slope_unit == SLOPE_UNIT_DEGREES else "msg_param_decl_pct"))
+            feedback.pushInfo(t("msg_param_decl_max", value=max_slope))
+            feedback.pushInfo(t("msg_param_decl_custo", value=slope_score_max))
+            feedback.pushInfo(t("msg_param_limiar", value=threshold) if threshold else t("msg_param_limiar_auto"))
+            feedback.pushInfo(t("msg_param_percentil", value=auto_percentile))
             feedback.pushInfo(
-                "Declividade do raster de entrada em "
-                + ("graus (sera convertida para porcentagem)" if slope_unit == SLOPE_UNIT_DEGREES else "porcentagem")
-            )
-            feedback.pushInfo(f"Declividade máxima: {max_slope}%")
-            feedback.pushInfo(f"Declividade de custo maximo: {slope_score_max}%")
-            feedback.pushInfo(f"Threshold: {threshold}")
-            feedback.pushInfo(f"Percentil automatico: {auto_percentile}")
-            feedback.pushInfo(
-                "Area minima do fragmento: automatica (0,05% da area analisada, de 1 a 50 ha)"
-                if min_patch_area_ha == MIN_PATCH_AREA_AUTO
-                else f"Area minima do fragmento: {min_patch_area_ha} ha")
-            feedback.pushInfo(
-                f"Zonas vetoriais: {'sim' if generate_zones else 'nao'}; "
-                f"modo caminhavel: {'sim' if walkability_zones else 'nao'}; "
-                f"threshold por faixa altimetrica: {'sim' if altitude_band_threshold else 'nao'} "
-                f"({altitude_band_size_m:.0f} m)"
-            )
-            feedback.pushInfo(f"Pesos: altitude={altitude_weight}, declividade={slope_weight}, curvH={curvh_weight}, curvV={curvv_weight}")
-            feedback.pushInfo(f"Formato de saída: {output_format}")
+                t("msg_param_area_auto") if min_patch_area_ha == MIN_PATCH_AREA_AUTO
+                else t("msg_param_area", value=min_patch_area_ha))
+            feedback.pushInfo(t(
+                "msg_param_zonas", zones=_sim_nao(generate_zones), walkable=_sim_nao(walkability_zones),
+                bands=_sim_nao(altitude_band_threshold), size=altitude_band_size_m))
+            feedback.pushInfo(t("msg_param_pesos", alt=altitude_weight, slope=slope_weight, curvh=curvh_weight,
+                                curvv=curvv_weight))
+            feedback.pushInfo(t("msg_param_formato", format=output_format))
             feedback.pushInfo("================================")
 
         temp_work_dir = tempfile.mkdtemp(prefix="topotrail_work_")
@@ -4987,22 +4802,16 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         dem_path = dem_crs_info["dem_path"]
         prepared_rasters = {"dem": dem_path}
         derivative_layers = [
-            ("Declividade", slope_layer, "slope"),
-            ("Curvatura horizontal", curvh_layer, "curvh"),
-            ("Curvatura vertical", curvv_layer, "curvv"),
+            (t("msg_nome_declividade"), slope_layer, "slope"),
+            (t("msg_nome_curvh"), curvh_layer, "curvh"),
+            (t("msg_nome_curvv"), curvv_layer, "curvv"),
         ]
         missing = [label for label, layer, _ in derivative_layers if layer is None]
         if not derive_from_dem and missing:
-            raise _erro(
-                "Sem derivar do MDE, as camadas a seguir sao obrigatorias: "
-                + ", ".join(missing)
-                + ". Marque 'Derivar declividade e curvaturas do proprio MDE' ou forneca os rasters."
-            )
+            raise _erro(t("msg_camadas_obrigatorias", layers=t("msg_sep_lista").join(missing),
+                          option=_rotulo("alg_derive")))
         if derive_from_dem and not missing and feedback:
-            feedback.pushInfo(
-                "Rasters de declividade e curvatura foram fornecidos e serao usados; "
-                "a derivacao a partir do MDE foi ignorada."
-            )
+            feedback.pushInfo(t("msg_rasters_fornecidos"))
         derive_from_dem = derive_from_dem and bool(missing)
         # O bloco de parametros grava o que o usuario pediu; aqui fica o que de
         # fato aconteceu, que pode divergir quando ele fornece os rasters.
@@ -5057,10 +4866,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             if feedback:
                 finite = dem_data[np.isfinite(dem_data)]
                 feedback.pushInfo(
-                    "MDE convertido de pes para metros: agora cobre de {:.0f} a {:.0f} m.".format(
-                        float(finite.min()), float(finite.max())) if finite.size else
-                    "MDE convertido de pes para metros."
-                )
+                    t("msg_pes_metros", min=float(finite.min()), max=float(finite.max())) if finite.size
+                    else t("msg_pes_metros_curto"))
             append_diagnostic_log(debug_log_path, "unidade_vertical",
                                   unidade_declarada="pes", convertido_para_metros=True)
 
@@ -5081,9 +4888,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             # os derivados do MDE saem da propria grade e ja passaram pelo
             # aviso de faixa de altitude.
             for nome_raster, dados_raster in (
-                    ("Declividade", slope_data),
-                    ("Curvatura horizontal", curvh_data),
-                    ("Curvatura vertical", curvv_data)):
+                    (t("msg_nome_declividade"), slope_data),
+                    (t("msg_nome_curvh"), curvh_data),
+                    (t("msg_nome_curvv"), curvv_data)):
                 report_absurd_criterion_values(
                     dados_raster, nome_raster, feedback, debug_log_path)
         append_diagnostic_log(
@@ -5112,17 +4919,17 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             )
 
             for label, raster_proj in [
-                ("Declividade", slope_proj),
-                ("Curvatura horizontal", curvh_proj),
-                ("Curvatura vertical", curvv_proj),
+                (t("msg_nome_declividade"), slope_proj),
+                (t("msg_nome_curvh"), curvh_proj),
+                (t("msg_nome_curvv"), curvv_proj),
             ]:
                 if proj and raster_proj and proj != raster_proj:
-                    raise _erro(f"{label} possui projeção diferente do MDE.")
+                    raise _erro(t("msg_projecao_diferente", name=label))
 
         slope_data = slope_to_percent(slope_data, slope_unit, feedback, debug_log_path)
 
-        altitude_norm = normalize_linear(dem_data, min_altitude, max_altitude, feedback, "Altitude")
-        slope_norm = normalize_cost(slope_data, 0, slope_score_max, feedback, "Declividade")
+        altitude_norm = normalize_linear(dem_data, min_altitude, max_altitude, feedback, t("msg_nome_altitude"))
+        slope_norm = normalize_cost(slope_data, 0, slope_score_max, feedback, t("msg_nome_declividade"))
         limites = {
             "curvatura_horizontal": (curvh_limit if curvh_limit > 0 else curvature_limit(curvh_data)),
             "curvatura_vertical": (curvv_limit if curvv_limit > 0 else curvature_limit(curvv_data)),
@@ -5134,9 +4941,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 CURVATURE_DEVIATION_PERCENTILE),
         }
         curvh_norm = normalize_curvature_preference(
-            curvh_data, feedback, "Curvatura horizontal", limit=limites["curvatura_horizontal"])
+            curvh_data, feedback, t("msg_nome_curvh"), limit=limites["curvatura_horizontal"])
         curvv_norm = normalize_curvature_preference(
-            curvv_data, feedback, "Curvatura vertical", limit=limites["curvatura_vertical"])
+            curvv_data, feedback, t("msg_nome_curvv"), limit=limites["curvatura_vertical"])
 
         valid_mask = ~np.isnan(dem_data) & ~np.isnan(slope_data) & ~np.isnan(curvh_data) & ~np.isnan(curvv_data)
         area_pixel_m2 = estimate_pixel_area_m2(transform, dem_data.shape, proj)
@@ -5145,13 +4952,10 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         if agua_fora.any():
             valid_mask = valid_mask & ~agua_fora
             if feedback:
-                feedback.pushInfo(
-                    "Superficie d'agua achatada no MDE retirada da analise: {:.2f} km2 de mar ou "
-                    "NoData em 0 m{}.".format(
-                        float(mar_mask.sum()) * area_pixel_m2 / 1e6,
-                        "" if not (streams_from_dem and lagos_mask.any()) else
-                        " e {:.2f} km2 de lagos e represas".format(
-                            float(lagos_mask.sum()) * area_pixel_m2 / 1e6)))
+                feedback.pushInfo(t(
+                    "msg_agua_retirada", sea=float(mar_mask.sum()) * area_pixel_m2 / 1e6,
+                    lakes="" if not (streams_from_dem and lagos_mask.any()) else
+                    t("msg_agua_lagos", area=float(lagos_mask.sum()) * area_pixel_m2 / 1e6)))
         append_diagnostic_log(
             debug_log_path, "superficies_dagua",
             mar_km2=float(mar_mask.sum()) * area_pixel_m2 / 1e6,
@@ -5194,10 +4998,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             if feedback:
                 labels = _ford_labels()
                 counts = [int(((stream_class == k) & valid_mask).sum()) for k in range(len(FORD_CLASSES) + 1)]
-                feedback.pushInfo(
-                    "Cursos d'agua por classe de bacia (celulas): " + "; ".join(
-                        "{} = {:,}".format(labels[k], counts[k]) for k in range(len(labels))) +
-                    ". Acima de {:.1f} km2 a travessia a vau nao e presumida.".format(stream_ford_max_km2))
+                feedback.pushInfo(t(
+                    "msg_cursos_classe", ford=stream_ford_max_km2, items=t("msg_sep_itens").join(
+                        t("msg_classe_contagem", label=labels[k], n=counts[k]) for k in range(len(labels)))))
 
         layer_mask = None
         if constraint_layer is not None:
@@ -5230,10 +5033,8 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 route_constraint_mask, zone_constraint_mask,
                 layer_mask, stream_factor, constraint_mode)
             if feedback:
-                feedback.pushInfo(
-                    "Restricoes: {:,} celulas atingidas ({:.2f}% da area valida), {}.".format(
-                        affected, 100.0 * affected / max(1, int(valid_mask.sum())), tratamento)
-                )
+                feedback.pushInfo(t("msg_restricoes", cells=affected, pct=100.0 * affected / max(1, int(valid_mask.sum())),
+                                    treatment=tratamento))
             append_diagnostic_log(
                 debug_log_path, "restricoes_aplicadas",
                 celulas=affected, modo=("evitar" if constraint_mode == CONSTRAINT_AVOID else "encarecer"),
@@ -5252,21 +5053,17 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             below = int(np.sum(valid_mask & (dem_data < min_altitude)))
             if valid_count and (above + below) > 0.01 * valid_count:
                 dem_valid = dem_data[valid_mask]
-                feedback.pushWarning(
-                    "A faixa de altitude configurada ({:.0f}-{:.0f} m) descarta "
-                    "{:.1f}% da area: {:.1f}% acima do maximo e {:.1f}% abaixo do minimo. "
-                    "O MDE cobre de {:.0f} a {:.0f}. Se o relevo desta area sai dessa faixa, "
-                    "ajuste os limites antes de interpretar o resultado.".format(
-                        min_altitude, max_altitude,
-                        100.0 * (above + below) / valid_count,
-                        100.0 * above / valid_count, 100.0 * below / valid_count,
-                        float(np.nanmin(dem_valid)), float(np.nanmax(dem_valid)),
-                    )
-                )
+                feedback.pushWarning(t(
+                    "msg_faixa_altitude", min=min_altitude, max=max_altitude,
+                    pct=100.0 * (above + below) / valid_count, above=100.0 * above / valid_count,
+                    below=100.0 * below / valid_count, dem_min=float(np.nanmin(dem_valid)),
+                    dem_max=float(np.nanmax(dem_valid))))
             viable = int(np.sum(zone_constraint_mask))
             route_viable = int(np.sum(route_constraint_mask))
-            feedback.pushInfo(f"Máscara de zonas: {viable} pixels viáveis de {dem_data.size} ({viable / dem_data.size * 100:.2f}%)")
-            feedback.pushInfo(f"Máscara de rota: {route_viable} pixels navegáveis de {dem_data.size} ({route_viable / dem_data.size * 100:.2f}%)")
+            feedback.pushInfo(t("msg_mascara_zonas", viable=viable, total=int(dem_data.size),
+                                pct=viable / dem_data.size * 100))
+            feedback.pushInfo(t("msg_mascara_rota", viable=route_viable, total=int(dem_data.size),
+                                pct=route_viable / dem_data.size * 100))
         append_diagnostic_log(
             debug_log_path,
             "mascara_booleana",
@@ -5284,33 +5081,24 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         extra_norm = None
         if extra_weight > 0:
             if extra_layer is None:
-                raise _erro(
-                    "O peso do criterio adicional é maior que zero, mas nenhum raster foi "
-                    "informado. Escolha a camada ou zere o peso."
-                )
+                raise _erro(t("msg_extra_sem_raster"))
             extra_aligned = align_raster_to_reference(
                 extra_layer.source(), prepared_rasters["dem"],
                 os.path.join(temp_work_dir, "criterio_adicional_alinhado.tif"),
                 resampling="bilinear", feedback=feedback, log_path=debug_log_path)
             extra_data, _, _ = read_raster(extra_aligned, feedback)
             report_absurd_criterion_values(
-                extra_data, "Criterio adicional", feedback, debug_log_path)
+                extra_data, t("msg_nome_extra"), feedback, debug_log_path)
             extra_valid = valid_mask & np.isfinite(extra_data)
             if not np.any(extra_valid):
-                raise _erro(
-                    "O raster do criterio adicional nao tem nenhuma celula valida sobre a "
-                    "area do MDE. Verifique se ele cobre a area de estudo."
-                )
+                raise _erro(t("msg_extra_sem_validos"))
             # Normalizacao robusta pelos percentis 5 e 95 da propria cena: a
             # unidade do raster e desconhecida -- pode ser %, indice, contagem --
             # e os percentis absorvem tanto a escala quanto valores extremos.
             low = float(np.percentile(extra_data[extra_valid], 5))
             high = float(np.percentile(extra_data[extra_valid], 95))
             if high - low < 1e-12:
-                raise _erro(
-                    "O raster do criterio adicional e praticamente constante sobre a area "
-                    f"de estudo (P05 = {low:.4g}, P95 = {high:.4g}); ele nao distingue nada."
-                )
+                raise _erro(t("msg_extra_constante", low=low, high=high))
             scaled = np.clip((extra_data - low) / (high - low), 0.0, 1.0)
             extra_norm = (scaled if extra_direction == CRITERION_HIGHER_IS_BETTER
                           else 1.0 - scaled).astype(np.float32)
@@ -5326,19 +5114,12 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             )
             if feedback:
                 cobertura = 100.0 * extra_valid.sum() / max(1, int(valid_mask.sum()))
-                feedback.pushInfo(
-                    "Criterio adicional: P05={:.4g}, P95={:.4g}, cobre {:.1f}% da area valida, "
-                    "peso {:.2f}, {}.".format(
-                        low, high, cobertura, extra_weight,
-                        "maiores sao melhores" if extra_direction == CRITERION_HIGHER_IS_BETTER
-                        else "maiores sao piores")
-                )
+                feedback.pushInfo(t(
+                    "msg_extra_resumo", low=low, high=high, coverage=cobertura, weight=extra_weight,
+                    direction=t("msg_maiores_melhores" if extra_direction == CRITERION_HIGHER_IS_BETTER
+                                else "msg_maiores_piores")))
                 if cobertura < 95.0:
-                    feedback.pushWarning(
-                        "O criterio adicional cobre apenas {:.1f}% da area de estudo. As "
-                        "celulas descobertas sao pontuadas apenas pelos demais criterios, "
-                        "com os pesos renormalizados; compare-as com cautela.".format(cobertura)
-                    )
+                    feedback.pushWarning(t("msg_extra_cobertura", coverage=cobertura))
 
         roughness_data = None
         if roughness_weight > 0:
@@ -5354,10 +5135,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         wetness_norm = None
         if wetness_weight > 0:
             if twi_data is None:
-                raise _erro(
-                    "O peso da umidade do terreno exige a hidrografia extraida do MDE. "
-                    "Marque \"Considerar cursos d'agua extraidos do MDE\" ou zere esse peso."
-                )
+                raise _erro(t("msg_twi_sem_drenagem", option=_rotulo("alg_streams")))
             limites["umidade_twi"] = (wetness_limit if wetness_limit > 0
                                       else robust_limit(twi_data, valid_mask))
             origem_limites["umidade_twi"] = ("parametro" if wetness_limit > 0
@@ -5377,8 +5155,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         append_diagnostic_log(debug_log_path, "limites_normalizacao",
                               limites=limites, origem=origem_limites)
         if feedback:
-            feedback.pushInfo("Limites de normalizacao: " + "; ".join(
-                "{} = {:.6g} ({})".format(k, v, origem_limites[k]) for k, v in limites.items()))
+            feedback.pushInfo(t("msg_limites_normalizacao", items=t("msg_sep_itens").join(
+                t("msg_limite_item", name=_nome_do_limite(k), value=v, origin=_origem_do_limite(origem_limites[k]))
+                for k, v in limites.items())))
 
         altitude_component = altitude_weight * altitude_norm
         slope_component = slope_weight * slope_norm
@@ -5410,15 +5189,14 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         causa = explain_empty_mask(dem_data, slope_data, valid_mask,
                                    min_altitude, max_altitude, max_slope)
         if start_point_file and end_point_file and route_valid_scores.size == 0:
-            raise _erro("Nenhuma celula atende as restricoes de rota. " + causa)
+            raise _erro(t("msg_sem_celulas_rota", cause=causa))
         if route_valid_scores.size == 0:
-            raise _erro("Nenhuma celula atende as restricoes configuradas. " + causa)
+            raise _erro(t("msg_sem_celulas", cause=causa))
         if generate_zones and zone_valid_scores.size == 0:
             # Antes a execucao inteira parava aqui, e a rota e os rasters -- que
             # nao dependem da faixa de altitude -- se perdiam junto. Medido no
             # Khumbu com os padroes (0-2600 m): nenhum produto.
-            mensagem = ("Nenhuma celula atende as restricoes das zonas potenciais, entao as zonas "
-                        "nao foram geradas; os rasters e a rota seguem. " + causa)
+            mensagem = t("msg_zonas_sem_celulas", cause=causa)
             if feedback:
                 feedback.pushWarning(mensagem)
             append_diagnostic_log(debug_log_path, "zonas_sem_celulas", motivo=causa)
@@ -5433,9 +5211,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
         if generate_zones and not walkability_zones and threshold_is_auto:
             threshold = float(np.percentile(zone_valid_scores, auto_percentile))
             if feedback:
-                feedback.pushInfo(f"Threshold automatico pelo percentil {auto_percentile:.1f}: {threshold:.4f}")
+                feedback.pushInfo(t("msg_limiar_auto", percentile=auto_percentile, threshold=threshold))
                 if altitude_band_threshold:
-                    feedback.pushInfo("Zonas vetoriais usarao threshold automatico por faixa altimetrica.")
+                    feedback.pushInfo(t("msg_zonas_faixa_auto"))
         append_diagnostic_log(
             debug_log_path,
             "score_e_threshold",
@@ -5448,15 +5226,11 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
 
         if feedback:
             if zone_valid_scores.size:
-                feedback.pushInfo(
-                    f"Score zonas: min={np.nanmin(zone_valid_scores):.4f}, "
-                    f"max={np.nanmax(zone_valid_scores):.4f}, mean={np.nanmean(zone_valid_scores):.4f}"
-                )
+                feedback.pushInfo(t("msg_nota_zonas", min=float(np.nanmin(zone_valid_scores)),
+                                    max=float(np.nanmax(zone_valid_scores)), mean=float(np.nanmean(zone_valid_scores))))
             if route_valid_scores.size:
-                feedback.pushInfo(
-                    f"Score rota: min={np.nanmin(route_valid_scores):.4f}, "
-                    f"max={np.nanmax(route_valid_scores):.4f}, mean={np.nanmean(route_valid_scores):.4f}"
-                )
+                feedback.pushInfo(t("msg_nota_rota", min=float(np.nanmin(route_valid_scores)),
+                                    max=float(np.nanmax(route_valid_scores)), mean=float(np.nanmean(route_valid_scores))))
 
         score_path = save_score_raster(output_score, transform, proj, output_path, feedback)
         risk_path = save_risk_raster(risk_score, transform, proj, output_path, feedback)
@@ -5485,10 +5259,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             **transitability_metrics,
         )
         if feedback and walkable is not None:
-            feedback.pushInfo(
-                "Area transitavel a pe sem esforco excepcional (classes 1 e 2): "
-                "{:.1f}% da area valida.".format(100.0 * walkable)
-            )
+            feedback.pushInfo(t("msg_transitavel", pct=100.0 * walkable))
         append_diagnostic_log(debug_log_path, "raster_adequabilidade_salvo", arquivo=file_diagnostics(score_path))
         append_diagnostic_log(debug_log_path, "raster_risco_topografico_salvo", arquivo=file_diagnostics(risk_path))
         route_path = None
@@ -5563,9 +5334,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                 append_diagnostic_log(debug_log_path, "rota_nao_gerada", erro=rota_falhou,
                                       arquivos_de_rota_removidos=apagados)
                 if feedback:
-                    feedback.reportError(
-                        "A rota nao foi gerada: {} As zonas e os mapas sao entregues mesmo "
-                        "assim.".format(rota_falhou), False)
+                    feedback.reportError(t("msg_rota_nao_gerada", error=rota_falhou), False)
             else:
                 append_diagnostic_log(
                     debug_log_path,
@@ -5600,9 +5369,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             if min_patch_area_ha == MIN_PATCH_AREA_AUTO:
                 area_minima_ha = automatic_min_patch_area_ha(area_analisada_ha)
                 if feedback:
-                    feedback.pushInfo(
-                        "Area minima do fragmento automatica: {:.1f} ha (0,05% de {:,.0f} ha "
-                        "analisados, entre 1 e 50 ha).".format(area_minima_ha, area_analisada_ha))
+                    feedback.pushInfo(t("msg_area_minima_auto", area=area_minima_ha, analysed=area_analisada_ha))
             binary_result = filter_small_regions(binary_result, transform, proj, area_minima_ha, feedback, debug_log_path)
             append_diagnostic_log(
                 debug_log_path,
@@ -5643,9 +5410,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                     gdf.set_column("area_ha", [a / 10000.0 for a in areas_m2])
                 except Exception as e:
                     if feedback:
-                        feedback.pushWarning(f"Não foi possível calcular áreas em CRS métrico: {str(e)}")
+                        feedback.pushWarning(t("msg_areas_metricas", error=e))
         elif feedback:
-            feedback.pushInfo("Geracao de zonas vetoriais desativada; raster, rota e corredor foram preservados.")
+            feedback.pushInfo(t("msg_zonas_desativadas"))
         result = {self.OUTPUT_SCORE_RASTER: score_path, self.OUTPUT_RISK_RASTER: risk_path,
                   self.OUTPUT_TRANSITABILITY: transitability_path}
         if gdf is not None and len(gdf) > 0:
@@ -5653,7 +5420,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             result[self.OUTPUT_VECTOR] = vector_path
             append_diagnostic_log(debug_log_path, "vetor_zonas_salvo", arquivo=file_diagnostics(vector_path))
         elif generate_zones and feedback:
-            feedback.pushWarning("Nenhuma zona potencial atingiu o threshold configurado; raster e rota foram preservados.")
+            feedback.pushWarning(t("msg_nenhuma_zona"))
         if route_path:
             result[self.OUTPUT_ROUTE] = route_path
         if corridor_path:
@@ -5664,8 +5431,7 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
             result[self.OUTPUT_ALTERNATIVES] = alternatives[0]
             result[self.OUTPUT_SLACK] = alternatives[1]
         if rota_falhou and feedback:
-            feedback.pushWarning(
-                "Concluido SEM a rota (as zonas e os mapas foram gerados): " + rota_falhou)
+            feedback.pushWarning(t("msg_concluido_sem_rota", error=rota_falhou))
         result[self.OUTPUT_DEBUG_LOG] = debug_log_path
         # QgsProcessingParameterFileDestination declara automaticamente uma
         # saida com o mesmo nome do parametro, e ate aqui ela nunca era

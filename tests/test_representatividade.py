@@ -43,8 +43,8 @@ def test_a_frase_diz_o_que_falta_e_o_que_fazer(algorithm):
     r = algorithm.zone_representativeness(dem < 1050.0, area, {"altitude": dem, "umidade": None})
     frase, aviso = algorithm.describe_representativeness(r, altitude_bands_on=False)
     assert aviso
-    assert "altitude em 5 de 10 faixas" in frase and "faltam 1050-1099 m" in frase
-    assert "ligue 'Equilibrar zonas por faixa altimetrica'" in frase
+    assert "altitude em 5 de 10 faixas" in frase and "faltam 1050–1099 m" in frase
+    assert "ligue \"Equilibrar zonas por faixa altimétrica\"" in frase
     assert "MapBiomas" in frase                            # o MDE nao ve a cobertura do solo
     # com as faixas ja ligadas, a sugestao muda
     frase2, _ = algorithm.describe_representativeness(r, altitude_bands_on=True)

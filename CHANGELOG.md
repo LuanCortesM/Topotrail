@@ -4,6 +4,18 @@ Mudanças relevantes do TopoTrail. Formato
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões em
 [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.5] - 2026-10-27
+
+### Corrigido
+
+- **O andamento, os avisos e os erros do cálculo saem no idioma escolhido.** Até a 1.5.4, as cerca de 170 frases do algoritmo saíam em português sem acento, qualquer que fosse o idioma da janela. Agora são 288 mensagens nos seis idiomas, nos arquivos `i18n/<código>.json` (chaves `msg_*`), e o idioma é o mesmo dos rótulos: o escolhido na janela ou, sem escolha, o do QGIS.
+  - Os números saem no formato da língua: 1.234,5 em português e espanhol, 1 234,5 em francês, 1,234.5 em inglês, chinês e japonês.
+  - As opções citadas nas mensagens ("Considerar cursos d'água extraídos do MDE", "Equilibrar zonas por faixa altimétrica") vêm com o nome que a janela mostra naquele idioma.
+  - Na camada de travessias, os valores de texto (`tipo` e `aviso`) também saem no idioma escolhido; os nomes dos campos não mudam.
+  - Testes novos: um roda o cálculo nos seis idiomas e barra palavra que só exista em português; outro barra frase escrita direto no código, fora do catálogo.
+  - As frases em espanhol, francês, japonês e chinês ainda não passaram por revisão de falantes nativos.
+- **Coordenadas do ponto deslocado:** o aviso do ponto movido para a célula viável mais próxima escrevia "7.49525e+06"; agora sai em metros, com uma casa decimal.
+
 ## [1.5.4] - 2026-10-27
 
 ### Adicionado

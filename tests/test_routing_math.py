@@ -512,7 +512,7 @@ def test_a_corner_only_contact_is_diagnosed_as_such(algorithm):
     cost[5:10, 5:10] = 1.0                # sala da direita, encostada so no vertice
     with pytest.raises(Exception) as erro:
         algorithm.least_cost_path(cost, (2, 2), (7, 7))
-    assert "vertice" in str(erro.value).lower(), str(erro.value)
+    assert "vértice" in str(erro.value).lower(), str(erro.value)
 
     # abrindo uma celula de passagem, a rota existe e a mensagem some
     cost[5, 4] = 1.0

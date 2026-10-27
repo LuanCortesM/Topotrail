@@ -31,6 +31,20 @@ Only NumPy is required.
 
 import numpy as np
 
+try:
+    from .mensagens import t
+except ImportError:  # carregado por caminho, fora do pacote (suite sem QGIS)
+    import importlib.util as _importlib_util
+    import os as _os
+    import sys as _sys
+
+    if "_topotrail_mensagens" not in _sys.modules:
+        _spec = _importlib_util.spec_from_file_location(
+            "_topotrail_mensagens", _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "mensagens.py"))
+        _sys.modules["_topotrail_mensagens"] = _importlib_util.module_from_spec(_spec)
+        _spec.loader.exec_module(_sys.modules["_topotrail_mensagens"])
+    t = _sys.modules["_topotrail_mensagens"].t
+
 # Codigos das classes gravados no raster. A ordem e crescente em dificuldade,
 # entao o raster pode ser lido diretamente como uma escala ordinal.
 CLASS_NODATA = 0
@@ -132,7 +146,7 @@ def classify(slope_percent, valid_mask, roughness=None, wetness=None,
     """
     breaks = tuple(float(b) for b in slope_breaks)
     if not all(breaks[i] < breaks[i + 1] for i in range(len(breaks) - 1)):
-        raise ValueError("Os limites de declividade das classes devem ser crescentes.")
+        raise ValueError(t("msg_transit_crescentes"))
 
     classes = np.full(slope_percent.shape, CLASS_NODATA, dtype=np.uint8)
     usable = valid_mask & np.isfinite(slope_percent)
@@ -155,13 +169,7 @@ def classify(slope_percent, valid_mask, roughness=None, wetness=None,
     if cell_size_m:
         metrics["tamanho_celula_m"] = float(cell_size_m)
         if cell_size_m > COARSE_CELL_WARNING_M and feedback:
-            feedback.pushWarning(
-                "Celula de {:.0f} m: a declividade e suavizada pela resolucao e as "
-                "classes ficam sistematicamente mais brandas do que o terreno real. "
-                "No mesmo terreno, passar de 30 m para 250 m move 27 pontos "
-                "percentuais da area para a classe 1. Informe o tamanho da celula "
-                "junto com qualquer numero tirado deste mapa.".format(cell_size_m)
-            )
+            feedback.pushWarning(t("msg_transit_celula_grossa", cell=cell_size_m))
 
     # Modificadores: pioram uma classe, nunca melhoram, e nunca criam classe 5 --
     # terreno rugoso ou encharcado e pior de caminhar, mas nao e um paredao.
@@ -185,11 +193,7 @@ def classify(slope_percent, valid_mask, roughness=None, wetness=None,
             metrics["limiar_rugosidade_vrm"] = limit
             moved = worsen(np.isfinite(roughness) & (roughness > limit), "rugosidade")
             if feedback:
-                feedback.pushInfo(
-                    "Rugosidade (VRM, adimensional) acima de {:.4f} (P{:.0f} da cena) "
-                    "rebaixou {:,} celulas uma classe.".format(
-                        limit, ROUGHNESS_PERCENTILE, moved)
-                )
+                feedback.pushInfo(t("msg_transit_vrm", limit=limit, p=ROUGHNESS_PERCENTILE, cells=moved))
 
     if wetness is not None:
         finite = wetness[usable & np.isfinite(wetness)]
@@ -198,10 +202,7 @@ def classify(slope_percent, valid_mask, roughness=None, wetness=None,
             metrics["limiar_umidade_twi"] = limit
             moved = worsen(np.isfinite(wetness) & (wetness > limit), "umidade")
             if feedback:
-                feedback.pushInfo(
-                    "Umidade acima de TWI {:.2f} (P{:.0f} da cena) rebaixou {:,} celulas "
-                    "uma classe.".format(limit, WETNESS_PERCENTILE, moved)
-                )
+                feedback.pushInfo(t("msg_transit_twi", limit=limit, p=WETNESS_PERCENTILE, cells=moved))
 
     if blocked_mask is not None:
         blocked = blocked_mask & usable
@@ -220,13 +221,10 @@ def classify(slope_percent, valid_mask, roughness=None, wetness=None,
     metrics["celulas_validas"] = total
 
     if feedback and total:
-        feedback.pushInfo("Classes de transitabilidade:")
+        feedback.pushInfo(t("msg_transit_titulo"))
         for code, label in labels.items():
             count = int((classes == code).sum())
-            feedback.pushInfo(
-                "  {:34s} {:>12,} celulas  {:5.1f}%".format(
-                    label, count, 100.0 * count / total)
-            )
+            feedback.pushInfo(t("msg_transit_linha", label=label, cells=count, pct=100.0 * count / total))
     return classes, metrics
 
 

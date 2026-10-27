@@ -48,7 +48,7 @@ def test_empty_mask_explains_altitude_and_slope(algorithm):
     declividade = np.full((20, 20), 70.0)
     valido = np.ones((20, 20), dtype=bool)
     texto = algorithm.explain_empty_mask(dem, declividade, valido, 0.0, 2600.0, 55.0)
-    assert "0 a 2600 m" in texto and "2800" in texto and "6500" in texto
+    assert "0 a 2.600 m" in texto and "2.800" in texto and "6.500" in texto
     assert "55%" in texto and "70%" in texto
 
 
