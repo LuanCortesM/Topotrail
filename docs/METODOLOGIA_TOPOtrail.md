@@ -425,6 +425,23 @@ outside the search window is not a barrier — it is terrain the window does not
 cover. When two points stop connecting because of this, the error message says
 that what is missing is width, and not admitted slope.
 
+### Detour around steep terrain (since 1.5.4)
+
+Cells above `SLOPE_MAX` are impassable, and where a real trail climbs such a
+section — cables, steps, scrambling, or switchbacks a 30 m grid cannot
+resolve — the route goes round it, sometimes for kilometres. After the route,
+the plugin traces a second one with the same cost, points and barriers (rivers
+above the fordable ceiling, the avoided layer) but without the slope limit, and
+warns when the route is at least `DETOUR_WARN_RATIO` (1.25) times and
+`DETOUR_WARN_MIN_M` (500 m) longer and the second route really crosses cells
+above the limit. The message gives both lengths and the highest slope the
+second route uses; since the limit only blocks cells and does not enter the
+score, raising it to that value returns exactly the second route. The route is
+not changed. On 101 real trails the warning appeared on 10, those with cable or
+scramble sections, and on all 10 the route with the relaxed limit came closer to
+the trail. The second route is skipped when the eight-cell distance between the
+points already rules the warning out.
+
 ### Several destinations
 
 With intermediate destinations the route is the concatenation of consecutive
@@ -547,6 +564,7 @@ alongside any result taken from the plugin.
 | `FORD_CLASSES` | 2 / 10 km², factor 1 | Crossing classes by contributing area; reported, not charged (×2 ×4 ×8 up to 1.4.1). |
 | `DEFAULT_STREAM_FORD_MAX_KM2` | 50.0 | Default fordable ceiling; above it, a barrier. |
 | `MAX_OPTIMISED_WAYPOINTS` | 8 | Ceiling for exact visiting-order optimisation. |
+| `DETOUR_WARN_RATIO` / `DETOUR_WARN_MIN_M` | 1.25 / 500 m | When a route that goes round terrain above the maximum slope is warned about. Calibrated on 101 real trails. |
 | `DEFAULT_SLOPE_BREAKS` (`transitability.py`) | 20, 35, 60, 100 % | The four transitability thresholds. |
 | `ROUGHNESS_PERCENTILE` (`transitability.py`) | 90.0 | Ruggedness above which a cell is demoted one class. |
 | `WETNESS_PERCENTILE` (`transitability.py`) | 95.0 | Wetness above which a cell is demoted one class. |

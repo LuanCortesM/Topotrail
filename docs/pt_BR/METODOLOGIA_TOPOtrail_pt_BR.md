@@ -399,6 +399,23 @@ barreira — é terreno que a janela não cobre. Quando os dois pontos passam a 
 se conectar por causa disso, a mensagem de erro diz que o que falta é largura, e
 não declividade admitida.
 
+### Desvio de terreno íngreme (desde a 1.5.4)
+
+Células acima de `SLOPE_MAX` são intransponíveis, e onde a trilha real sobe um
+trecho assim — cabo, escada, escalaminhada, ou zigue-zague que a grade de 30 m
+não resolve — a rota o contorna, às vezes por quilômetros. Depois da rota, o
+plugin traça uma segunda com o mesmo custo, os mesmos pontos e as mesmas
+barreiras (rios acima do teto vadeável, camada evitada), mas sem o limite de
+declividade, e avisa quando a rota é ao menos `DETOUR_WARN_RATIO` (1,25) vezes e
+`DETOUR_WARN_MIN_M` (500 m) mais longa e a segunda rota passa de fato por
+células acima do limite. A mensagem dá os dois comprimentos e a maior
+declividade que a segunda rota usa; como o limite só bloqueia células e não
+entra na nota, subir o limite para esse valor devolve exatamente a segunda rota.
+A rota não muda. Em 101 trilhas reais o aviso saiu em 10, as de trecho com cabo
+ou escalaminhada, e nas 10 a rota com o limite relaxado ficou mais perto da
+trilha. A segunda rota não é feita quando a distância em oito direções entre os
+pontos já descarta o aviso.
+
 ### Vários destinos
 
 Com destinos intermediários, a rota é a concatenação dos trechos consecutivos, o
@@ -494,6 +511,7 @@ de qualquer resultado tirado do plugin.
 | `FORD_CLASSES` | 2 / 10 km², fator 1 | Classes de travessia por área de contribuição; informadas, não cobradas (×2 ×4 ×8 até a 1.4.1). |
 | `DEFAULT_STREAM_FORD_MAX_KM2` | 50,0 | Teto vadeável padrão; acima dele, barreira. |
 | `MAX_OPTIMISED_WAYPOINTS` | 8 | Teto da otimização exata de ordem de visita. |
+| `DETOUR_WARN_RATIO` / `DETOUR_WARN_MIN_M` | 1,25 / 500 m | Quando se avisa que a rota contorna terreno acima da declividade máxima. Calibrado em 101 trilhas reais. |
 | `DEFAULT_SLOPE_BREAKS` (`transitability.py`) | 20, 35, 60, 100 % | Os quatro limiares de transitabilidade. |
 | `ROUGHNESS_PERCENTILE` (`transitability.py`) | 90,0 | Rugosidade acima da qual a célula é rebaixada uma classe. |
 | `WETNESS_PERCENTILE` (`transitability.py`) | 95,0 | Umidade acima da qual a célula é rebaixada uma classe. |

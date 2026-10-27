@@ -4,6 +4,16 @@ Mudanças relevantes do TopoTrail. Formato
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões em
 [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.4] - 2026-10-27
+
+### Adicionado
+
+- **Aviso de desvio pela declividade máxima.** Com o limite padrão de 85%, a rota existe mas pode contornar por quilômetros um terreno que o MDE vê mais íngreme, onde a trilha real sobe por cabo, escada ou zigue-zague que a grade de 30 m não resolve.
+  - **O que faz.** Depois da rota, o plugin traça a rota sem o limite de declividade; os rios acima do teto vadeável e as restrições no modo evitar continuam barrando. Avisa quando a rota é ao menos 25% e 500 m mais longa e a rota sem limite passa de fato por terreno acima dele. A mensagem dá os dois comprimentos e a declividade máxima que permitiria a rota curta.
+  - **A rota não muda.** Se a comparação falhar, isso fica só no registro técnico, no evento `desvio_pela_declividade`.
+  - **O teste.** 101 trilhas reais: o aviso saiu em 10, as de trecho com cabo ou escalaminhada (Angels Landing, Bright Angel, Mist Trail, Masada, Madeira PR1, entre outras). Nas 10, a rota com o limite relaxado fica mais perto da trilha real. Rota idêntica à da 1.5.3 nas 101.
+  - **O custo.** Nas rotas longas de montanha, o cálculo da rota leva até o dobro do tempo. Quando a rota já está perto da distância mínima entre os pontos, a segunda rota não é feita.
+
 ## [1.5.3] - 2026-10-27
 
 ### Alterado

@@ -63,7 +63,7 @@ from qgis.core import (  # noqa: E402
 
 _LOG = logging.getLogger("TopoTrail")
 
-PLUGIN_VERSION = "1.5.3"
+PLUGIN_VERSION = "1.5.4"
 STRICT_CRS_MODE = True
 
 # Sentinela gravado nas quinas vazias que a reprojecao do MDE cria. Precisa ser
@@ -199,6 +199,18 @@ FIELD_SURVEY_SPEED_KMH = 2.4
 # arbitrio, e o que falta para separar 2,0 de 4,0 sao mais trilhas, nao mais
 # analise. Ver docs/VALIDACAO.md, secao 8.
 TERRAIN_SLOWDOWN_MAX = 2.0
+
+# Aviso de desvio pela declividade maxima. Quando a rota existe, mas contorna
+# terreno acima do limite, ela pode passar longe da trilha real: em 23 de 95
+# trilhas reais a trilha sobe trecho que o MDE de 30 m ve acima de 85% (cabo,
+# escada, zigue-zague que a grade nao resolve), e ali a rota a 85% desviava, as
+# vezes por quilometros. O plugin compara a rota com a rota sem o limite (que
+# ainda respeita rios e restricoes) e avisa quando ela e ao menos 25% e 500 m
+# mais longa. Nas 95 trilhas, isso aconteceu em 10, e nas 10 a rota sem o
+# limite ficou mais perto da trilha real (testes do artigo, 27/10/2026). O
+# limite nao muda: o aviso so informa e diz quanto subir.
+DETOUR_WARN_RATIO = 1.25
+DETOUR_WARN_MIN_M = 500.0
 
 # ATENCAO ao usar cursos d'agua como restricao em paisagem sazonalmente seca.
 # Nos trajetos de campo da caatinga, as trilhas reais cruzaram 1,37 canais por
@@ -3108,6 +3120,90 @@ def check_route_connectivity(cost_array, points, slope=None, penalty=None,
         "entre eles." + sugestao)
 
 
+def path_length_m(path_cells, pixel_size_m):
+    """Comprimento de uma rota em celulas (passos ortogonais e diagonais), em metros."""
+    if len(path_cells) < 2:
+        return 0.0
+    passos = np.diff(np.asarray(path_cells, dtype=float), axis=0)
+    return float(np.hypot(passos[:, 0], passos[:, 1]).sum() * float(pixel_size_m))
+
+
+def slope_detour(route_cells, free_cells, slope, max_slope, pixel_size_m):
+    """A rota contorna terreno acima da declividade maxima? Compara com a rota sem o limite.
+
+    `free_cells` e a rota de menor custo sem o limite de declividade (os rios e
+    as restricoes continuam valendo). Devolve os comprimentos, a razao, a maior
+    declividade que a rota sem limite usa e quantos metros dela ficam acima do
+    limite. `avisar` e verdadeiro quando a rota e ao menos DETOUR_WARN_RATIO vezes
+    e DETOUR_WARN_MIN_M metros mais longa e a rota sem limite de fato passa por
+    terreno acima dele.
+    """
+    comprimento = path_length_m(route_cells, pixel_size_m)
+    livre = path_length_m(free_cells, pixel_size_m)
+    decl = np.array([slope[r, c] for r, c in free_cells], dtype=float)
+    acima = np.isfinite(decl) & (decl > float(max_slope))
+    metros_acima = 0.0
+    if len(free_cells) >= 2:
+        passos = np.diff(np.asarray(free_cells, dtype=float), axis=0)
+        trecho = np.hypot(passos[:, 0], passos[:, 1]) * float(pixel_size_m)
+        metros_acima = float(trecho[acima[1:] | acima[:-1]].sum())
+    maior = float(np.nanmax(decl)) if np.isfinite(decl).any() else float("nan")
+    razao = comprimento / livre if livre > 0 else float("nan")
+    return {
+        "comprimento_m": comprimento,
+        "comprimento_sem_limite_m": livre,
+        "razao": razao,
+        "declividade_max_sem_limite_pct": maior,
+        "declividade_que_encurta_pct": int(np.ceil(maior)) if np.isfinite(maior) else None,
+        "metros_acima_do_limite": metros_acima,
+        "avisar": bool(np.isfinite(razao) and razao >= DETOUR_WARN_RATIO
+                       and comprimento - livre >= DETOUR_WARN_MIN_M and metros_acima > 0),
+    }
+
+
+def check_slope_detour(score_crop, free_crop, sequence, path_cells, slope_crop, max_slope,
+                       cost_model, contrast, penalty_crop, elevation_crop, pixel_size_m,
+                       anisotropic, feedback=None, log_path=None):
+    """Depois da rota: ela contorna terreno acima da declividade maxima? Se sim, avisa.
+
+    So roda quando ha, no recorte, celulas barradas apenas pela declividade. A
+    rota sem limite usa o mesmo custo, os mesmos pontos na mesma ordem e as
+    mesmas barreiras (rios acima do teto vadeavel, restricao no modo evitar). A
+    comparacao nunca derruba a rota que ja existe: se falhar, fica so no log.
+    """
+    if not (np.isfinite(free_crop) & ~np.isfinite(score_crop)).any():
+        return None
+    # Atalho exato: o A* anda em 8 direcoes, entao nenhuma rota entre os pontos
+    # e mais curta que a distancia octil. Se a rota ja esta perto dela, o desvio
+    # nao tem como chegar a 25% e 500 m, e a segunda rota nao precisa ser feita.
+    comprimento = path_length_m(path_cells, pixel_size_m)
+    passos = np.abs(np.diff(np.asarray(sequence, dtype=float), axis=0))
+    octil = float((passos.max(axis=1) + (np.sqrt(2.0) - 1.0) * passos.min(axis=1)).sum() * pixel_size_m)
+    if comprimento < DETOUR_WARN_RATIO * octil or comprimento - octil < DETOUR_WARN_MIN_M:
+        return None
+    try:
+        custo_livre = build_route_cost(free_crop, cost_model, contrast, penalty_crop).astype(np.float32)
+        livre, _, _ = multi_leg_route(custo_livre, sequence, elevation=elevation_crop,
+                                      pixel_size_m=pixel_size_m, anisotropic=anisotropic,
+                                      crossing_factor=penalty_crop)
+    except Exception as erro:  # noqa: BLE001
+        append_diagnostic_log(log_path, "desvio_pela_declividade", erro=str(erro)[:300])
+        return None
+    desvio = slope_detour(path_cells, livre, slope_crop, max_slope, pixel_size_m)
+    append_diagnostic_log(log_path, "desvio_pela_declividade", limite_pct=float(max_slope), **desvio)
+    if desvio["avisar"] and feedback:
+        feedback.pushWarning(
+            "A rota contorna terreno acima da declividade maxima ({:g}%). Sem o limite ela teria "
+            "{:.1f} km em vez de {:.1f} km, passando {:.0f} m por rampas de ate {}%. Trilhas reais "
+            "costumam atravessar esse terreno por cabo, escada ou zigue-zague que o MDE de {:.0f} m "
+            "nao resolve: se a rota procurada e desse tipo, aumente a declividade maxima para {}%. "
+            "Se nao, o desvio e o caminho que evita esse terreno.".format(
+                max_slope, desvio["comprimento_sem_limite_m"] / 1000.0, desvio["comprimento_m"] / 1000.0,
+                desvio["metros_acima_do_limite"], desvio["declividade_que_encurta_pct"], pixel_size_m,
+                desvio["declividade_que_encurta_pct"]))
+    return desvio
+
+
 def least_cost_path(cost_array, start_rc, end_rc, elevation=None,
                     pixel_size_m=None, anisotropic=False, feedback=None,
                     progress_range=None, crossing_factor=None):
@@ -3594,6 +3690,7 @@ def save_access_route(
     slope_array=None,
     max_slope=None,
     lake_mask=None,
+    free_score=None,
 ):
     """Generate least-cost route and metric corridor files.
 
@@ -3745,6 +3842,12 @@ def save_access_route(
             "O ponto inicial e o ponto final caem na mesma celula do raster. "
             "Use pontos mais afastados ou um raster de maior resolucao para gerar uma rota."
         )
+    if free_score is not None and slope_crop is not None and max_slope:
+        check_slope_detour(
+            cost_crop, free_score[row_min:row_max, col_min:col_max], ordem, path_cells, slope_crop,
+            max_slope, cost_model, contrast, penalty_crop, elevation_crop,
+            pixel_size_m or float(np.sqrt(max(estimate_pixel_area_m2(transform, score_array.shape, proj), 1e-9))),
+            anisotropic, feedback, log_path)
     coordinates = [pixel_to_world(transform, row + row_min, col + col_min) for row, col in path_cells]
     if lake_mask is not None:
         no_lago = sum(1 for row, col in path_cells if lake_mask[row + row_min, col + col_min])
@@ -5427,6 +5530,9 @@ class TopotrailAlgorithm(QgsProcessingAlgorithm):
                     slope_array=slope_data,
                     max_slope=max_slope,
                     lake_mask=(lagos_mask if not streams_from_dem and lagos_mask.any() else None),
+                    # sem o limite de declividade, para o aviso de desvio (rios e
+                    # restricao no modo evitar continuam barrando)
+                    free_score=np.where(valid_mask & ~route_barrier, raw_score, np.nan).astype(np.float32),
                 )
             except Exception as erro:
                 # A rota e o ultimo produto antes das zonas: se ela falhava, o
